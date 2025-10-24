@@ -2,7 +2,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_xlate';
-$plugin->version   = 2025102403;
+$plugin->version   = 2025102404;
 $plugin->requires  = 2025000000; // Moodle 5.0+ baseline (adjust to your site's $CFG->version).
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.2.1-moodle5';
+$plugin->release   = '0.2.2-moodle5';

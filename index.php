@@ -18,19 +18,18 @@ echo $OUTPUT->heading(get_string('pluginname', 'local_xlate'));
 
 if ($canmanage) {
     echo html_writer::div(
-        html_writer::tag('p', get_string('capturemode_intro', 'local_xlate')) .
-        html_writer::tag('button', get_string('capturemode_start', 'local_xlate'), [
-            'id' => 'xlate-capture-toggle',
-            'class' => 'btn btn-primary',
-            'data-action' => 'toggle-capture'
+        html_writer::tag('p', get_string('autodetect_intro', 'local_xlate')) .
+        html_writer::tag('button', get_string('autodetect_enable', 'local_xlate'), [
+            'id' => 'xlate-autodetect-enable',
+            'class' => 'btn btn-success',
+            'data-action' => 'enable-autodetect'
         ]) .
-        html_writer::tag('button', get_string('capturemode_stop', 'local_xlate'), [
-            'id' => 'xlate-capture-stop',
-            'class' => 'btn btn-secondary ml-2',
-            'data-action' => 'stop-capture',
-            'style' => 'display: none;'
+        html_writer::tag('button', get_string('autodetect_disable', 'local_xlate'), [
+            'id' => 'xlate-autodetect-disable',
+            'class' => 'btn btn-warning ml-2',
+            'data-action' => 'disable-autodetect'
         ]),
-        'xlate-capture-controls mb-4'
+        'xlate-autodetect-controls mb-4'
     );
     
     echo html_writer::div(
@@ -43,21 +42,38 @@ if ($canmanage) {
         'xlate-rebuild-controls mb-4'
     );
     
-    // Include capture mode JavaScript
-    $PAGE->requires->js_call_amd('local_xlate/capture', 'init');
+    echo html_writer::div(
+        html_writer::tag('h4', get_string('autodetect_status', 'local_xlate')) .
+        html_writer::tag('p', get_string('autodetect_status_desc', 'local_xlate'), [
+            'id' => 'xlate-status-text'
+        ]),
+        'xlate-status-display mb-4'
+    );
     
     echo html_writer::script("
-        require(['jquery', 'local_xlate/capture', 'core/ajax', 'core/notification'], function($, Capture, Ajax, Notification) {
-            $('#xlate-capture-toggle').on('click', function() {
-                Capture.enter();
-                $(this).hide();
-                $('#xlate-capture-stop').show();
+        require(['jquery', 'local_xlate/translator', 'core/ajax', 'core/notification'], function($, Translator, Ajax, Notification) {
+            
+            // Check current auto-detect status
+            function updateStatus() {
+                $('#xlate-status-text').text('Auto-detection is currently active on this page.');
+            }
+            
+            $('#xlate-autodetect-enable').on('click', function() {
+                Translator.setAutoDetect(true);
+                Notification.addNotification({
+                    message: 'Automatic string detection enabled',
+                    type: 'success'
+                });
+                updateStatus();
             });
             
-            $('#xlate-capture-stop').on('click', function() {
-                Capture.exit();
-                $(this).hide();
-                $('#xlate-capture-toggle').show();
+            $('#xlate-autodetect-disable').on('click', function() {
+                Translator.setAutoDetect(false);
+                Notification.addNotification({
+                    message: 'Automatic string detection disabled',
+                    type: 'info'
+                });
+                $('#xlate-status-text').text('Auto-detection is currently disabled.');
             });
             
             $('#xlate-rebuild-bundles').on('click', function() {
@@ -82,6 +98,9 @@ if ($canmanage) {
                     button.prop('disabled', false).text('" . get_string('rebuild_bundles', 'local_xlate') . "');
                 });
             });
+            
+            // Initialize status
+            updateStatus();
         });
     ");
 } else {

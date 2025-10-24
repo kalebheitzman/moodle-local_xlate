@@ -73,14 +73,24 @@ Request → Security check → Get cached bundle → Return JSON
 - **Query**: Joins `local_xlate_key` + `local_xlate_tr` where `status=1`
 - **Output**: `{"Dashboard.Title": "Dashboard", "Menu.Home": "Home"}`
 
-3. **Client-Side Translation** (`amd/src/translator.js` + `amd/src/capture.js`)
+### Building AMD Modules
+
+After making changes to `amd/src/translator.js`, rebuild with:
+
+```bash
+cd /path/to/moodle/local/xlate
+grunt amd
 ```
-Bundle loaded → DOM walk → Apply translations → Watch for changes
-                  ↓
-              Capture mode available → Visual overlay → Key assignment → Auto-save
+
+**Note**: If you encounter permission issues with `.eslintignore`, use:
+
+```bash
+grunt amd --force
 ```
-- **Translator**: Applies `data-xlate` translations, watches mutations, removes loading class
-- **Capture**: Visual interface for assigning keys, modal dialogs, AJAX saving
+
+**File Ownership**: Ensure the plugin directory maintains proper ownership for git compatibility:
+- Plugin files should be owned by the git user (e.g., `ubuntu:ubuntu`)
+- Avoid running grunt as `www-data` to prevent ownership conflicts
 
 ## Anti-FOUT (Flash of Untranslated Text) Strategy
 
