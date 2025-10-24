@@ -41,6 +41,7 @@ $string['translation_key_added'] = 'Translation key added successfully';
 $string['error_adding_key'] = 'Error adding translation key';
 $string['translation_saved'] = 'Translation saved successfully';
 $string['translation_deleted'] = 'Translation deleted successfully';
+$string['translation_empty'] = 'Translation text cannot be empty';
 
 // Search and filtering
 $string['search_and_filter'] = 'Search and Filter';

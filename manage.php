@@ -119,7 +119,7 @@ require_login();
 $context = context_system::instance();
 require_capability('local/xlate:manage', $context);
 
-$action = optional_param('action', '', PARAM_ALPHA);
+$action = optional_param('action', '', PARAM_ALPHANUMEXT);
 $keyid = optional_param('keyid', 0, PARAM_INT);
 $lang = optional_param('lang', '', PARAM_ALPHA);
 $page = optional_param('page', 0, PARAM_INT);
@@ -161,31 +161,41 @@ if ($action === 'add' && confirm_sesskey()) {
     }
 }
 
-if ($action === 'save_translation' && confirm_sesskey()) {
+if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
     $lang = required_param('lang', PARAM_ALPHA);
-    $translation = required_param('translation', PARAM_TEXT);
-    $status = optional_param('status', 1, PARAM_INT);
+    $translation = required_param('translation', PARAM_RAW);
+    $status = optional_param('status', 0, PARAM_INT);
+    
+    // Only save if there's actual translation text
+    if (empty(trim($translation))) {
+        redirect($PAGE->url, get_string('translation_empty', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
+    }
     
     // Check if translation exists
     $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
     
-    if ($existing) {
-        $existing->text = $translation;
-        $existing->status = $status;
-        $existing->mtime = time();
-        $DB->update_record('local_xlate_tr', $existing);
-    } else {
-        $trrecord = new stdClass();
-        $trrecord->keyid = $keyid;
-        $trrecord->lang = $lang;
-        $trrecord->text = $translation;
-        $trrecord->status = $status;
-        $trrecord->mtime = time();
-        $DB->insert_record('local_xlate_tr', $trrecord);
+    try {
+        if ($existing) {
+            $existing->text = $translation;
+            $existing->status = $status;
+            $existing->mtime = time();
+            $DB->update_record('local_xlate_tr', $existing);
+        } else {
+            $trrecord = new stdClass();
+            $trrecord->keyid = $keyid;
+            $trrecord->lang = $lang;
+            $trrecord->text = $translation;
+            $trrecord->status = $status;
+            $trrecord->ctime = time();
+            $trrecord->mtime = time();
+            $DB->insert_record('local_xlate_tr', $trrecord);
+        }
+        
+        redirect($PAGE->url, get_string('translation_saved', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
+    } catch (Exception $e) {
+        redirect($PAGE->url, 'Database error: ' . $e->getMessage(), null, \core\output\notification::NOTIFY_ERROR);
     }
-    
-    redirect($PAGE->url, get_string('translation_saved', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 if ($action === 'delete' && confirm_sesskey()) {
@@ -467,13 +477,13 @@ if (!empty($keys)) {
                 echo html_writer::end_div();
                 
                 echo html_writer::start_div('col-md-2');
-                $checked = $translation && $translation->status ? 'checked' : '';
+                $checked = $translation && $translation->status ? true : false;
                 echo html_writer::tag('label', 
                     html_writer::empty_tag('input', [
                         'type' => 'checkbox',
                         'name' => 'status',
                         'value' => '1',
-                        'checked' => $checked
+                        'checked' => $checked ? 'checked' : null
                     ]) . ' ' . get_string('active', 'local_xlate'),
                     ['class' => 'form-check-label']
                 );
