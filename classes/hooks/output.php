@@ -3,8 +3,6 @@ namespace local_xlate\hooks;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once(__DIR__ . '/../local/api.php');
-
 use core\hook\output\before_standard_head_html_generation as Head;
 use core\hook\output\before_standard_top_of_body_html_generation as Body;
 

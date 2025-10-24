@@ -73,15 +73,14 @@ Request → Security check → Get cached bundle → Return JSON
 - **Query**: Joins `local_xlate_key` + `local_xlate_tr` where `status=1`
 - **Output**: `{"Dashboard.Title": "Dashboard", "Menu.Home": "Home"}`
 
-### 3. Client-Side Translation (`amd/src/translator.js`)
+3. **Client-Side Translation** (`amd/src/translator.js` + `amd/src/capture.js`)
 ```
 Bundle loaded → DOM walk → Apply translations → Watch for changes
+                  ↓
+              Capture mode available → Visual overlay → Key assignment → Auto-save
 ```
-- Translates `data-xlate` attributes (textContent)
-- Translates `data-xlate-{attr}` attributes (placeholder, title, alt, aria-label)
-- Respects `data-xlate-ignore` to skip subtrees
-- Uses `MutationObserver` for dynamic content
-- Removes `xlate-loading` class when complete
+- **Translator**: Applies `data-xlate` translations, watches mutations, removes loading class
+- **Capture**: Visual interface for assigning keys, modal dialogs, AJAX saving
 
 ## Anti-FOUT (Flash of Untranslated Text) Strategy
 
@@ -190,6 +189,31 @@ $text = required_param('text', PARAM_TEXT);
 ## Development Workflows
 
 ### Adding New Translation Keys
+
+#### Method 1: Capture Mode (Recommended)
+The plugin now includes a visual capture mode for easily assigning translation keys to page elements:
+
+1. **Access admin interface**: `/local/xlate/index.php` (requires `local/xlate:manage` capability)
+2. **Start capture mode**: Click "Start Capture Mode" button
+3. **Navigate to any page**: Capture overlay appears with instructions
+4. **Click on text elements**: Modal opens with auto-suggested keys
+5. **Customize and save**: Keys are automatically stored and applied
+
+**Capture Mode Features**:
+- **Smart key suggestions**: Based on element type (Button.Save, Heading.Title, Input.Placeholder)
+- **Multi-attribute support**: Handles text content, placeholder, title, and alt attributes
+- **Component detection**: Suggests appropriate component based on context
+- **Real-time application**: Elements immediately get `data-xlate` attributes
+- **Automatic versioning**: Bundle versions update for cache invalidation
+
+**Supported Elements**:
+- Text content in any HTML element
+- Form input placeholders (`data-xlate-placeholder`)
+- Element titles (`data-xlate-title`) 
+- Image alt text (`data-xlate-alt`)
+- Respects `data-xlate-ignore` to skip subtrees
+
+#### Method 2: Manual Database Operations
 1. Insert into `local_xlate_key`:
    ```sql
    INSERT INTO {local_xlate_key} (component, xkey, source, mtime) 
@@ -265,7 +289,7 @@ After installing the plugin:
 
 ### Core Files
 - `bundle.php` - JSON bundle endpoint
-- `index.php` - Admin UI (placeholder)
+- `index.php` - Admin UI with capture mode controls
 - `settings.php` - Plugin configuration
 - `version.php` - Plugin metadata
 
@@ -277,28 +301,200 @@ After installing the plugin:
 
 ### PHP Classes
 - `classes/hooks/output.php` - Page injection hooks
-- `classes/local/api.php` - Bundle/version API
+- `classes/local/api.php` - Bundle/version API and CRUD operations
+- `classes/external.php` - External functions for AJAX operations
 
 ### Client Assets
 - `amd/src/translator.js` - DOM translation engine
+- `amd/src/capture.js` - Capture mode functionality for key assignment
 - `lang/en/local_xlate.php` - English strings
+
+### External Functions (AJAX API)
+- `classes/external.php` - Web service functions
+- `db/services.php` - External function definitions
+
+## API Reference
+
+### Core API Methods (`classes/local/api.php`)
+
+#### Bundle Generation
+```php
+// Get translation bundle for a language
+api::get_bundle(string $lang): array
+
+// Get version hash for cache busting
+api::get_version(string $lang): string
+
+// Generate new version hash based on translation timestamps
+api::generate_version_hash(string $lang): string
+
+// Update bundle version for a language
+api::update_bundle_version(string $lang): string
+
+// Invalidate bundle cache
+api::invalidate_bundle_cache(string $lang): void
+
+// Rebuild all language bundles
+api::rebuild_all_bundles(): array
+```
+
+#### CRUD Operations
+```php
+// Get translation key by component and xkey
+api::get_key_by_component_xkey(string $component, string $xkey): object|false
+
+// Create or update a translation key
+api::create_or_update_key(string $component, string $xkey, string $source = ''): int
+
+// Save translation for a key
+api::save_translation(int $keyid, string $lang, string $text, int $status = 1): int
+
+// Save key with translation in one atomic operation
+api::save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation): int
+
+// Get paginated list of keys with search
+api::get_keys_paginated(int $offset = 0, int $limit = 50, string $search = ''): array
+
+// Count total keys (with optional search filter)
+api::count_keys(string $search = ''): int
+```
+
+### External Functions (`classes/external.php`)
+
+#### Available AJAX Methods
+```javascript
+// Save a translation key via AJAX
+Ajax.call([{
+    methodname: 'local_xlate_save_key',
+    args: {
+        component: 'core',
+        key: 'Dashboard.Title', 
+        source: 'Dashboard',
+        lang: 'en',
+        translation: 'Dashboard'
+    }
+}]);
+
+// Get existing key data
+Ajax.call([{
+    methodname: 'local_xlate_get_key',
+    args: {
+        component: 'core',
+        key: 'Dashboard.Title'
+    }
+}]);
+
+// Rebuild all translation bundles
+Ajax.call([{
+    methodname: 'local_xlate_rebuild_bundles',
+    args: {}
+}]);
+```
+
+## Capture Mode Implementation
+
+### Architecture Overview
+The capture mode provides a visual interface for assigning translation keys to page elements without requiring technical knowledge.
+
+### Component Breakdown
+
+#### 1. Capture AMD Module (`amd/src/capture.js`)
+```javascript
+// Public API
+require(['local_xlate/capture'], function(Capture) {
+    Capture.enter();     // Start capture mode
+    Capture.exit();      // Stop capture mode  
+    Capture.toggle();    // Toggle on/off
+    Capture.isActive();  // Check status
+});
+```
+
+**Core Features**:
+- **Visual overlay**: Semi-transparent background with instructions
+- **Element highlighting**: Orange outline on hover for translatable elements
+- **Smart filtering**: Skips scripts, styles, already-translated elements
+- **Event handling**: Click detection with keyboard shortcuts (ESC to exit)
+- **Modal integration**: Key assignment dialog with form validation
+
+#### 2. Element Detection Logic
+```javascript
+// Elements are considered translatable if they:
+// 1. Don't already have xlate attributes
+// 2. Aren't in data-xlate-ignore subtrees  
+// 3. Aren't script/style/meta tags
+// 4. Have text content OR relevant attributes (placeholder, title, alt)
+
+function isTranslatableElement(element) {
+    // Implementation handles all filtering logic
+}
+```
+
+#### 3. Key Generation Algorithm
+```javascript
+// Auto-generates suggested keys based on:
+// - Element content (cleaned and formatted)
+// - Element type context (Button.*, Heading.*, Input.*)
+// - Attribute type (placeholder, title, alt)
+
+function generateSuggestedKey(element) {
+    // Returns keys like: "Button.Save", "Heading.Welcome", "Input.SearchPlaceholder"
+}
+```
+
+#### 4. Modal Assignment Interface
+- **Multi-field support**: Handles text + attributes in single dialog
+- **Validation**: Requires key and component fields
+- **Preview**: Shows content being translated
+- **Customization**: Allows editing of suggested keys
+
+### Integration Points
+
+#### Admin UI (`index.php`)
+```php
+// Capability-based UI rendering
+if (has_capability('local/xlate:manage', $context)) {
+    // Show capture mode controls
+    // Include JavaScript for button handlers
+    // Provide rebuild bundles functionality
+}
+```
+
+#### External Function Security
+```php
+// All AJAX operations require proper capabilities
+require_capability('local/xlate:manage', context_system::instance());
+
+// Input validation on all parameters
+$params = self::validate_parameters(self::save_key_parameters(), $args);
+```
+
+### Usage Workflow
+1. **Admin Access**: Navigate to `/local/xlate/index.php`
+2. **Activate**: Click "Start Capture Mode" (requires manage capability)
+3. **Navigation**: Visit any Moodle page - overlay appears
+4. **Selection**: Hover highlights elements, click to assign keys
+5. **Assignment**: Modal opens with suggested key and component
+6. **Customization**: Edit key structure and component as needed
+7. **Saving**: Keys stored via AJAX, element gets data attributes
+8. **Automatic Updates**: Bundle versions regenerated, caches invalidated
 
 ## Future Development Areas
 
-### Admin CRUD Interface
-- Key management (add/edit/delete translation keys)
-- Translation management (per-language editing)
-- Bulk import/export (CSV/JSON)
-- Bundle rebuild action (regenerate version hashes)
+### Admin CRUD Interface (In Progress)
+- ✅ Capture mode for easy key assignment
+- 🔄 Key management (add/edit/delete translation keys)  
+- 🔄 Translation management (per-language editing)
+- 🔄 Bulk import/export (CSV/JSON)
+- ✅ Bundle rebuild action (regenerate version hashes)
 
 ### Advanced Features
-- Translation capture mode (auto-assign keys to untranslated elements)
-- Translation memory (suggest similar translations)
-- Approval workflow (draft → review → published)
-- Usage analytics (track which keys are actually used)
+- ✅ Translation capture mode (auto-assign keys to untranslated elements)
+- 🔄 Translation memory (suggest similar translations)
+- 🔄 Approval workflow (draft → review → published)
+- 🔄 Usage analytics (track which keys are actually used)
 
 ### Performance Optimizations
-- Bundle splitting (per-component bundles)
-- Progressive loading (critical keys first)
-- Service worker caching
-- Bundle compression (gzip/brotli)
+- 🔄 Bundle splitting (per-component bundles)
+- 🔄 Progressive loading (critical keys first)
+- 🔄 Service worker caching
+- 🔄 Bundle compression (gzip/brotli)
