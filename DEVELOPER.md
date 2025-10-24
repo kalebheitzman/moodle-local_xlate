@@ -200,30 +200,41 @@ $text = required_param('text', PARAM_TEXT);
 
 ### Adding New Translation Keys
 
-#### Method 1: Capture Mode (Recommended)
-The plugin now includes a visual capture mode for easily assigning translation keys to page elements:
+#### Method 1: Automatic Detection (Recommended)
+The plugin includes intelligent automatic string detection that captures translatable content:
 
-1. **Access admin interface**: `/local/xlate/index.php` (requires `local/xlate:manage` capability)
-2. **Start capture mode**: Click "Start Capture Mode" button
-3. **Navigate to any page**: Capture overlay appears with instructions
-4. **Click on text elements**: Modal opens with auto-suggested keys
-5. **Customize and save**: Keys are automatically stored and applied
+1. **Enable auto-detection**: Go to Site Administration → Plugins → Local plugins → Xlate settings
+2. **Configure languages**: Select which languages to enable for translation
+3. **Browse your site**: Auto-detection runs in the background capturing text
+4. **Manage translations**: Visit the "Manage Translations" page to edit detected keys
+5. **Smart filtering**: System ignores admin elements and captures only user-facing content
 
-**Capture Mode Features**:
-- **Smart key suggestions**: Based on element type (Button.Save, Heading.Title, Input.Placeholder)
+**Auto-Detection Features**:
+- **Smart key generation**: Based on element type (Button.Save, Heading.Title, Input.Placeholder)
 - **Multi-attribute support**: Handles text content, placeholder, title, and alt attributes
 - **Component detection**: Suggests appropriate component based on context
+- **Content filtering**: Automatically excludes admin text, navigation, and non-translatable content
+- **HTML handling**: Extracts clean text from elements with simple formatting
 - **Real-time application**: Elements immediately get `data-xlate` attributes
-- **Automatic versioning**: Bundle versions update for cache invalidation
 
 **Supported Elements**:
-- Text content in any HTML element
+- Text content in any HTML element (with smart filtering)
 - Form input placeholders (`data-xlate-placeholder`)
 - Element titles (`data-xlate-title`) 
 - Image alt text (`data-xlate-alt`)
 - Respects `data-xlate-ignore` to skip subtrees
 
-#### Method 2: Manual Database Operations
+#### Method 2: Translation Management Interface
+Use the web interface for manual key management:
+
+1. **Access management**: Go to Site Administration → Plugins → Local plugins → Xlate → "Manage Translations" link
+2. **Add new keys**: Use the form to create component.key pairs manually
+3. **Edit translations**: Update translations for each enabled language
+4. **Search and filter**: Find specific keys using pagination and filters
+5. **Bulk operations**: Export/import translation data (future feature)
+
+#### Method 3: Manual Database Operations
+For direct database access or bulk operations:
 1. Insert into `local_xlate_key`:
    ```sql
    INSERT INTO {local_xlate_key} (component, xkey, source, mtime) 
@@ -299,7 +310,7 @@ After installing the plugin:
 
 ### Core Files
 - `bundle.php` - JSON bundle endpoint
-- `index.php` - Admin UI with capture mode controls
+- `manage.php` - Translation management interface with pagination and filtering
 - `settings.php` - Plugin configuration
 - `version.php` - Plugin metadata
 
@@ -459,7 +470,17 @@ function generateSuggestedKey(element) {
 
 ### Integration Points
 
-#### Admin UI (`index.php`)
+#### Admin Interface
+
+The plugin provides two main admin interfaces:
+
+**Settings Page**: Site Administration → Plugins → Local plugins → Xlate
+- Enable/disable the plugin and auto-detection
+- Select which languages to enable for translation
+- Configure component mapping rules
+- Access link to translation management
+
+**Translation Management**: `/local/xlate/manage.php`
 ```php
 // Capability-based UI rendering
 if (has_capability('local/xlate:manage', $context)) {
@@ -479,7 +500,7 @@ $params = self::validate_parameters(self::save_key_parameters(), $args);
 ```
 
 ### Usage Workflow
-1. **Admin Access**: Navigate to `/local/xlate/index.php`
+1. **Admin Access**: Navigate to Site Administration → Plugins → Local plugins → Xlate settings
 2. **Activate**: Click "Start Capture Mode" (requires manage capability)
 3. **Navigation**: Visit any Moodle page - overlay appears
 4. **Selection**: Hover highlights elements, click to assign keys

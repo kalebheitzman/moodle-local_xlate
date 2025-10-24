@@ -53,7 +53,152 @@ define(['core/ajax'], function (Ajax) {
       return true;
     }
 
+    // Skip admin paths entirely - these should use Moodle language strings
+    var currentPath = window.location.pathname;
+    var adminPaths = [
+      '/admin/',
+      '/local/xlate/',
+      '/course/modedit.php',
+      '/grade/edit/',
+      '/backup/',
+      '/restore/',
+      '/user/editadvanced.php'
+    ];
+
+    for (var p = 0; p < adminPaths.length; p++) {
+      if (currentPath.includes(adminPaths[p])) {
+        return true;
+      }
+    }
+
+    // Skip admin/navigation elements that shouldn't be translated
+    var adminSelectors = [
+      '.navbar', '.navigation', '.breadcrumb', '.nav',
+      '.admin-menu', '.settings-menu', '.user-menu',
+      '.page-header-headings', '.page-context-header',
+      '.activity-navigation', '.course-content-header',
+      '.block_settings', '.block_navigation',
+      '#page-navbar', '#nav-drawer', '.drawer',
+      '.form-autocomplete-suggestions', '.popover',
+      '.tooltip', '.dropdown-menu'
+    ];
+
+    for (var i = 0; i < adminSelectors.length; i++) {
+      if (element.closest(adminSelectors[i])) {
+        return true;
+      }
+    }
+
+    // Skip if element or parent has admin-related classes
+    var adminClasses = [
+      'editing', 'editor', 'admin-only', 'teacher-only',
+      'form-control', 'btn-secondary', 'btn-outline',
+      'text-muted', 'small', 'sr-only', 'accesshide'
+    ];
+
+    var elementClasses = (element.className || '').split(' ');
+    for (var j = 0; j < adminClasses.length; j++) {
+      if (elementClasses.includes(adminClasses[j])) {
+        return true;
+      }
+    }
+
+    // Skip elements with very short or common admin text
+    var text = element.textContent.trim();
+    if (text.length < 3) {
+      return true;
+    }
+
+    var adminWords = [
+      'edit', 'delete', 'save', 'cancel', 'ok', 'yes', 'no',
+      'settings', 'config', 'admin', 'manage', 'update',
+      'hide', 'show', 'move', 'copy', 'options', 'actions'
+    ];
+
+    var lowerText = text.toLowerCase();
+    if (adminWords.includes(lowerText)) {
+      return true;
+    }
+
     return false;
+  }  /**
+   * Check if text content is worth translating
+   * @param {string} text - Text to analyze
+   * @returns {boolean} True if should be translated
+   */
+  function isTranslatableText(text) {
+    if (!text || text.length < 3) {
+      return false;
+    }
+
+    // Skip if mostly numbers, symbols, or code
+    var alphaCount = (text.match(/[a-zA-Z]/g) || []).length;
+    if (alphaCount < text.length * 0.5) {
+      return false;
+    }
+
+    // Skip common non-translatable patterns
+    var skipPatterns = [
+      /^\d+[\s\d]*$/, // Just numbers
+      /^[A-Z]{2,}$/, // All caps abbreviations
+      /^[a-z_]+$/, // Variable names
+      /^\w+\.\w+/, // File extensions or dot notation
+      /^https?:/, // URLs
+      /^\/\w+/, // Paths
+      /^\{[^}]+\}$/, // Template variables
+      /^\[[^\]]+\]$/, // Bracketed content
+      /^<[^>]+>$/ // HTML tags
+    ];
+
+    for (var i = 0; i < skipPatterns.length; i++) {
+      if (skipPatterns[i].test(text.trim())) {
+        return false;
+      }
+    }
+
+    // Skip single common words that don't need translation
+    var commonWords = ['ok', 'id', 'url', 'api', 'css', 'js', 'html', 'php'];
+    if (commonWords.includes(text.toLowerCase().trim())) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Extract clean text from element, handling HTML
+   * @param {Element} element - Element to extract text from
+   * @returns {string} Clean text content
+   */
+  function extractCleanText(element) {
+    var text = '';
+
+    // If element has only text nodes and simple formatting
+    if (element.children.length === 0) {
+      text = element.textContent.trim();
+    } else {
+      // Check if element has only simple formatting (b, i, em, strong, span)
+      var simpleFormatting = true;
+      var children = element.children;
+
+      for (var i = 0; i < children.length; i++) {
+        var tagName = children[i].tagName.toLowerCase();
+        if (!['b', 'i', 'em', 'strong', 'span', 'small'].includes(tagName)) {
+          simpleFormatting = false;
+          break;
+        }
+      }
+
+      if (simpleFormatting) {
+        text = element.textContent.trim();
+      }
+    }
+
+    // Clean up the text
+    return text
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .replace(/^\s+|\s+$/g, '') // Trim
+      .replace(/['"]/g, "'"); // Normalize quotes
   }
 
   /**
@@ -211,24 +356,32 @@ define(['core/ajax'], function (Ajax) {
 
     processedElements.add(element);
 
-    // Check text content
-    if (element.childNodes.length === 1 &&
-      element.childNodes[0].nodeType === 3 && // Text node
-      element.textContent.trim()) {
-      autoDetectString(element, element.textContent.trim(), 'text');
+    // Check text content with smart extraction
+    var textContent = extractCleanText(element);
+    if (textContent && isTranslatableText(textContent)) {
+      autoDetectString(element, textContent, 'text');
     }
 
     // Check attributes
-    if (element.hasAttribute('placeholder') && element.getAttribute('placeholder').trim()) {
-      autoDetectString(element, element.getAttribute('placeholder').trim(), 'placeholder');
+    if (element.hasAttribute('placeholder')) {
+      var placeholder = element.getAttribute('placeholder').trim();
+      if (placeholder && isTranslatableText(placeholder)) {
+        autoDetectString(element, placeholder, 'placeholder');
+      }
     }
 
-    if (element.hasAttribute('title') && element.getAttribute('title').trim()) {
-      autoDetectString(element, element.getAttribute('title').trim(), 'title');
+    if (element.hasAttribute('title')) {
+      var title = element.getAttribute('title').trim();
+      if (title && isTranslatableText(title)) {
+        autoDetectString(element, title, 'title');
+      }
     }
 
-    if (element.hasAttribute('alt') && element.getAttribute('alt').trim()) {
-      autoDetectString(element, element.getAttribute('alt').trim(), 'alt');
+    if (element.hasAttribute('alt')) {
+      var alt = element.getAttribute('alt').trim();
+      if (alt && isTranslatableText(alt)) {
+        autoDetectString(element, alt, 'alt');
+      }
     }
   }
 

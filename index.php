@@ -50,6 +50,17 @@ if ($canmanage) {
         'xlate-status-display mb-4'
     );
     
+    // Translation Management Section
+    echo html_writer::div(
+        html_writer::tag('h4', get_string('manage_translations', 'local_xlate')) .
+        html_writer::tag('p', get_string('manage_translations_desc', 'local_xlate')) .
+        html_writer::tag('a', get_string('view_manage_translations', 'local_xlate'), [
+            'href' => new moodle_url('/local/xlate/manage.php'),
+            'class' => 'btn btn-primary'
+        ]),
+        'xlate-manage-section mb-4'
+    );
+    
     echo html_writer::script("
         require(['jquery', 'local_xlate/translator', 'core/ajax', 'core/notification'], function($, Translator, Ajax, Notification) {
             

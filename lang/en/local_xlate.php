@@ -2,31 +2,60 @@
 $string['pluginname'] = 'Xlate (client-side translations)';
 $string['enable'] = 'Enable Xlate';
 $string['enable_desc'] = 'Turn on/off client-side translation injection.';
-$string['languages'] = 'Languages';
-$string['languages_desc'] = 'Comma-separated language codes to manage bundles for.';
 $string['xlate:manage'] = 'Manage Xlate translations';
 $string['xlate:viewui'] = 'View Xlate admin UI';
 
 // Auto-detection settings
 $string['autodetect'] = 'Auto-detect strings';
 $string['autodetect_desc'] = 'Automatically detect and create translation keys for text content on pages.';
+$string['enabled_languages'] = 'Enabled languages';
+$string['enabled_languages_desc'] = 'Select which installed languages should have translation bundles generated and managed.';
 $string['component_mapping'] = 'Component mapping';
 $string['component_mapping_desc'] = 'Define how page contexts map to components. One mapping per line in format: selector=component';
-
-// Auto-detection UI strings
-$string['autodetect_intro'] = 'Auto-detection automatically scans pages and creates translation keys for text content. When enabled, the system will analyze page elements and generate appropriate translation keys based on context.';
-$string['autodetect_enable'] = 'Enable Auto-Detection';
-$string['autodetect_disable'] = 'Disable Auto-Detection';
-$string['autodetect_status'] = 'Auto-Detection Status';
-$string['autodetect_status_desc'] = 'Current status of automatic string detection on this page.';
-$string['nomanagepermission'] = 'You do not have permission to manage translations. Contact your administrator.';
-$string['about'] = 'About Xlate';
-$string['about_desc'] = 'Xlate provides client-side translation capabilities for Moodle 5+. Text elements are automatically detected and translated based on the current user language.';
 
 // Bundle management
 $string['bundles_rebuilt'] = 'Translation bundles rebuilt successfully';
 $string['rebuild_bundles'] = 'Rebuild Bundles';
 $string['rebuild_bundles_desc'] = 'Regenerate version hashes for all language bundles to clear caches.';
+
+// Translation management
+$string['manage_translations'] = 'Manage Translations';
+$string['manage_translations_desc'] = 'Add, edit, and manage translation keys and their translations across all enabled languages.';
+$string['view_manage_translations'] = 'Manage Translations';
+$string['add_translation_key'] = 'Add New Translation Key';
+$string['edit_translation'] = 'Edit Translation';
+$string['translation_key'] = 'Translation Key';
+$string['component'] = 'Component';
+$string['source_text'] = 'Source Text';
+$string['translation_text'] = 'Translation';
+$string['language'] = 'Language';
+$string['status'] = 'Status';
+$string['active'] = 'Active';
+$string['inactive'] = 'Inactive';
+$string['save_translation'] = 'Save Translation';
+$string['delete_translation'] = 'Delete Translation';
+$string['confirm_delete'] = 'Are you sure you want to delete this translation?';
+
+// Success/error messages for management
+$string['translation_key_added'] = 'Translation key added successfully';
+$string['error_adding_key'] = 'Error adding translation key';
+$string['translation_saved'] = 'Translation saved successfully';
+$string['translation_deleted'] = 'Translation deleted successfully';
+
+// Search and filtering
+$string['search_and_filter'] = 'Search and Filter';
+$string['search'] = 'Search';
+$string['search_placeholder'] = 'Search keys, components, or source text...';
+$string['filter'] = 'Filter';
+$string['all_components'] = 'All Components';
+$string['all_statuses'] = 'All Statuses';
+$string['fully_translated'] = 'Fully Translated';
+$string['partially_translated'] = 'Partially Translated';
+$string['untranslated'] = 'Untranslated';
+$string['per_page'] = 'Per Page';
+$string['translation_keys_pagination'] = 'Translation Keys {$a->start}-{$a->end} of {$a->total}';
+$string['no_results_found'] = 'No translation keys match your search criteria. Try adjusting your filters.';
+$string['no_keys_found'] = 'No translation keys found. Use auto-detection or add keys manually above.';
 
 // Success/error messages
 $string['autodetect_enabled'] = 'Automatic string detection enabled';
