@@ -214,6 +214,11 @@ $text = required_param('text', PARAM_TEXT);
    php admin/cli/purge_caches.php
    ```
 
+### Versioning & Upgrades
+- Bump `$plugin->version` in `version.php` whenever database/cache structure or upgrade logic changes.
+- Add/extend `db/upgrade.php` with incremental checkpoints and call `upgrade_plugin_savepoint()`.
+- After bumping the version, trigger the upgrade via `php admin/cli/upgrade.php --non-interactive` on the target site.
+
 ### Testing Translation Changes
 1. **View bundle directly**: `/local/xlate/bundle.php?lang=ar`
 2. **Check localStorage**: Developer Tools → Application → Local Storage
@@ -225,6 +230,36 @@ $text = required_param('text', PARAM_TEXT);
 - **Translations not loading**: Verify bundle URL and JSON validity
 - **Stale translations**: Clear localStorage and Moodle caches
 - **Missing translations**: Check `status=1` and proper key format
+- **Settings undefined variable**: Create an `admin_settingpage` and add via `$ADMIN->add()` (no direct `$settings` global)
+- **Class autoload misses**: `classes/autoload.php` maps key classes; `db/hooks.php`, `classes/hooks/output.php`, and `bundle.php` also include `require_once` fallbacks when Moodle's classmap is stale
+- **Nothing injecting**: Plugin may not be enabled - check `mdl_config_plugins` table
+- **Settings not appearing**: Purge all caches after installing plugin
+
+### First-Time Plugin Setup
+
+After installing the plugin:
+
+1. **Enable the plugin** (run on VM/server):
+   ```bash
+   php admin/cli/cfg.php --component=local_xlate --name=enable --set=1
+   ```
+   
+   Or via SQL:
+   ```sql
+   INSERT INTO mdl_config_plugins (plugin, name, value) 
+   VALUES ('local_xlate', 'enable', '1')
+   ON DUPLICATE KEY UPDATE value = '1';
+   ```
+
+2. **Purge all caches**: Site Administration → Development → Purge all caches
+
+3. **Verify settings appear**: Site Administration → Plugins → Local plugins → Xlate
+
+-4. **Check HTML injection**: View page source, look for:
+   - In `<head>`: `<style>html.xlate-loading body{visibility:hidden}</style>`
+   - In `<body>`: `<script>` with bootloader code
+
+5. **Test bundle endpoint**: Visit `/local/xlate/bundle.php?lang=en` (should return `{}`)
 
 ## File Structure Reference
 
