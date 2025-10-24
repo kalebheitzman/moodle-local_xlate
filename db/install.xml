@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/xlate/db" VERSION="2025102400" COMMENT="xlate" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <TABLES>
+    <TABLE NAME="local_xlate_key" COMMENT="canonical phrase keys">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="component" TYPE="char" LENGTH="100" NOTNULL="true" DEFAULT="core"/>
+        <FIELD NAME="xkey" TYPE="char" LENGTH="191" NOTNULL="true"/>
+        <FIELD NAME="source" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="uniq_key" UNIQUE="true" FIELDS="component,xkey"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_xlate_tr" COMMENT="translations">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="keyid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
+        <FIELD NAME="text" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="uniq" UNIQUE="true" FIELDS="keyid,lang"/>
+        <INDEX NAME="idx_lang_status" UNIQUE="false" FIELDS="lang,status"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_xlate_bundle" COMMENT="per-lang bundle versions">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
+        <FIELD NAME="version" TYPE="char" LENGTH="40" NOTNULL="true"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="uniq_lang" UNIQUE="true" FIELDS="lang"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
