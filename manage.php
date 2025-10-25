@@ -140,27 +140,6 @@ $PAGE->set_pagelayout('admin');
 $PAGE->set_title(get_string('manage_translations', 'local_xlate'));
 $PAGE->set_heading(get_string('manage_translations', 'local_xlate'));
 
-// Handle form submissions
-if ($action === 'add' && confirm_sesskey()) {
-    $component = required_param('component', PARAM_ALPHANUMEXT);
-    $key = required_param('key', PARAM_ALPHANUMEXT);
-    $source = required_param('source', PARAM_TEXT);
-    
-    // Insert translation key
-    $keyrecord = new stdClass();
-    $keyrecord->component = $component;
-    $keyrecord->xkey = $key;
-    $keyrecord->source = $source;
-    $keyrecord->mtime = time();
-    
-    try {
-        $keyid = $DB->insert_record('local_xlate_key', $keyrecord);
-        redirect($PAGE->url, get_string('translation_key_added', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
-    } catch (dml_exception $e) {
-        redirect($PAGE->url, get_string('error_adding_key', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
-    }
-}
-
 if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
     $lang = required_param('lang', PARAM_ALPHA);
@@ -198,22 +177,6 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
     }
 }
 
-if ($action === 'delete' && confirm_sesskey()) {
-    $keyid = required_param('keyid', PARAM_INT);
-    $lang = optional_param('lang', '', PARAM_ALPHA);
-    
-    if ($lang) {
-        // Delete specific translation
-        $DB->delete_records('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
-    } else {
-        // Delete entire key and all translations
-        $DB->delete_records('local_xlate_tr', ['keyid' => $keyid]);
-        $DB->delete_records('local_xlate_key', ['id' => $keyid]);
-    }
-    
-    redirect($PAGE->url, get_string('translation_deleted', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
-}
-
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('manage_translations', 'local_xlate'));
 
@@ -222,64 +185,12 @@ $enabledlangs = get_config('local_xlate', 'enabled_languages');
 $enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
 $installedlangs = get_string_manager()->get_list_of_translations();
 
-// Add new translation key form
+// Information card describing automatic key capture
 echo html_writer::start_div('card mb-4');
-echo html_writer::div(get_string('add_translation_key', 'local_xlate'), 'card-header');
+echo html_writer::div(get_string('automatic_keys_heading', 'local_xlate'), 'card-header');
 echo html_writer::start_div('card-body');
-
-echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url]);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'add']);
-
-echo html_writer::start_div('row');
-
-echo html_writer::start_div('col-md-3');
-echo html_writer::tag('label', get_string('component', 'local_xlate'), ['for' => 'component']);
-echo html_writer::empty_tag('input', [
-    'type' => 'text', 
-    'id' => 'component', 
-    'name' => 'component', 
-    'class' => 'form-control',
-    'placeholder' => 'core, mod_quiz, etc.',
-    'required' => true
-]);
-echo html_writer::end_div();
-
-echo html_writer::start_div('col-md-3');
-echo html_writer::tag('label', get_string('translation_key', 'local_xlate'), ['for' => 'key']);
-echo html_writer::empty_tag('input', [
-    'type' => 'text', 
-    'id' => 'key', 
-    'name' => 'key', 
-    'class' => 'form-control',
-    'placeholder' => 'Button.Submit',
-    'required' => true
-]);
-echo html_writer::end_div();
-
-echo html_writer::start_div('col-md-4');
-echo html_writer::tag('label', get_string('source_text', 'local_xlate'), ['for' => 'source']);
-echo html_writer::empty_tag('input', [
-    'type' => 'text', 
-    'id' => 'source', 
-    'name' => 'source', 
-    'class' => 'form-control',
-    'placeholder' => 'Submit',
-    'required' => true
-]);
-echo html_writer::end_div();
-
-echo html_writer::start_div('col-md-2');
-echo html_writer::tag('label', '&nbsp;', ['for' => 'submit']);
-echo html_writer::tag('button', get_string('add_translation_key', 'local_xlate'), [
-    'type' => 'submit',
-    'class' => 'btn btn-primary form-control'
-]);
-echo html_writer::end_div();
-
-echo html_writer::end_div();
-echo html_writer::end_tag('form');
-
+echo html_writer::tag('p', get_string('automatic_keys_description', 'local_xlate'));
+echo html_writer::tag('p', get_string('automatic_keys_hint', 'local_xlate'), ['class' => 'mb-0 text-muted']);
 echo html_writer::end_div();
 echo html_writer::end_div();
 
@@ -500,18 +411,6 @@ if (!empty($keys)) {
                 echo html_writer::end_tag('form');
             }
         }
-        
-        // Delete key button
-        echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url, 'style' => 'display: inline;']);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'delete']);
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
-        echo html_writer::tag('button', get_string('delete_translation', 'local_xlate'), [
-            'type' => 'submit',
-            'class' => 'btn btn-sm btn-danger',
-            'onclick' => 'return confirm("' . get_string('confirm_delete', 'local_xlate') . '")'
-        ]);
-        echo html_writer::end_tag('form');
         
         echo html_writer::end_div();
         echo html_writer::end_div();

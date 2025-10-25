@@ -16,9 +16,9 @@ dynamically injected content.
 	placeholders, titles, and alt text) through the Moodle web service API.
 - **Caching stack**: Moodle application cache → browser `localStorage` → long-
 	lived HTTP responses for efficient repeat visits.
-- **Translation management UI**: Admins can add/edit keys, track translation
-	status, and rebuild bundles from `Site administration → Plugins → Local
-	plugins → Xlate → Manage Translations`.
+- **Translation management UI**: Admins can review automatically captured keys,
+	enter translations, and rebuild bundles from `Site administration → Plugins →
+	Local plugins → Xlate → Manage Translations`.
 
 ## Installation
 1. Copy this folder to `moodle/local/xlate` (or extract the release archive
@@ -39,7 +39,8 @@ dynamically injected content.
 4. Select which installed languages should have bundles generated.
 5. Adjust component mappings if you need to force specific component prefixes
 	 for captured keys.
-6. Use the **Manage Translations** button to open the CRUD UI.
+6. Use the **Manage Translations** button to review captured keys and provide
+	translations.
 
 ## Capturing Strings
 - Browse the site in the site’s default language (e.g. English) while logged in

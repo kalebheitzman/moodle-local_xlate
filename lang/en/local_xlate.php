@@ -20,9 +20,8 @@ $string['rebuild_bundles_desc'] = 'Regenerate version hashes for all language bu
 
 // Translation management
 $string['manage_translations'] = 'Manage Translations';
-$string['manage_translations_desc'] = 'Add, edit, and manage translation keys and their translations across all enabled languages.';
+$string['manage_translations_desc'] = 'Review automatically captured keys and manage translations across all enabled languages.';
 $string['view_manage_translations'] = 'Manage Translations';
-$string['add_translation_key'] = 'Add New Translation Key';
 $string['edit_translation'] = 'Edit Translation';
 $string['translation_key'] = 'Translation Key';
 $string['component'] = 'Component';
@@ -33,14 +32,12 @@ $string['status'] = 'Status';
 $string['active'] = 'Active';
 $string['inactive'] = 'Inactive';
 $string['save_translation'] = 'Save Translation';
-$string['delete_translation'] = 'Delete Translation';
-$string['confirm_delete'] = 'Are you sure you want to delete this translation?';
+$string['automatic_keys_heading'] = 'Automatic Key Capture';
+$string['automatic_keys_description'] = 'Translation keys are created by the auto-detection engine while you browse the site in its default language. Manual key creation is disabled.';
+$string['automatic_keys_hint'] = 'Browse pages in the default language with the manage capability to capture new strings, then enter translations below.';
 
 // Success/error messages for management
-$string['translation_key_added'] = 'Translation key added successfully';
-$string['error_adding_key'] = 'Error adding translation key';
 $string['translation_saved'] = 'Translation saved successfully';
-$string['translation_deleted'] = 'Translation deleted successfully';
 $string['translation_empty'] = 'Translation text cannot be empty';
 
 // Search and filtering
@@ -56,7 +53,7 @@ $string['untranslated'] = 'Untranslated';
 $string['per_page'] = 'Per Page';
 $string['translation_keys_pagination'] = 'Translation Keys {$a->start}-{$a->end} of {$a->total}';
 $string['no_results_found'] = 'No translation keys match your search criteria. Try adjusting your filters.';
-$string['no_keys_found'] = 'No translation keys found. Use auto-detection or add keys manually above.';
+$string['no_keys_found'] = 'No translation keys found yet. Browse the site in the default language to trigger automatic capture.';
 
 // Success/error messages
 $string['autodetect_enabled'] = 'Automatic string detection enabled';

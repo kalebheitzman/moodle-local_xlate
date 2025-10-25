@@ -71,9 +71,11 @@ filter by component; that behaviour is disabled until requirements are finalised
   `local/xlate:manage`).
 
 ## 7. Admin Interface (`manage.php`)
-- CRUD for keys + translations with search, filters, pagination, and per-language
-  editing.
-- Visible only to users with `local/xlate:manage`; read-only access uses
+- Displays automatically captured keys with search, filters, pagination, and
+  per-language translation inputs.
+- Manual key creation/deletion is disabled; rely on the AMD auto-detect flow to
+  capture new strings.
+- Visible only to users with `local_xlate:manage`; read-only access uses
   `local/xlate:viewui`.
 - Tracks coverage for each language listed in `enabled_languages`.
 
