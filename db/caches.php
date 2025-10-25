@@ -5,8 +5,10 @@ $definitions = [
     'bundle' => [
         'mode' => cache_store::MODE_APPLICATION,
         'simplekeys' => true,
-        'simpledata' => true,
-        'ttl' => 3600,
+        'simpledata' => false,
+        'staticacceleration' => true,
+        'staticaccelerationsize' => 20, // Increased for context-specific bundles
+        'ttl' => 1800, // 30 minutes (shorter for context-sensitive data)
     ],
     'keymap' => [
         'mode' => cache_store::MODE_APPLICATION,

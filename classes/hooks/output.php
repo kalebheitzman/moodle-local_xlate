@@ -32,7 +32,6 @@ class output {
         $lang = current_language();
         $site_lang = get_config('core', 'lang') ?: 'en'; // Site's default language
         $version = \local_xlate\local\api::get_version($lang);
-        $bundleurl = (new \moodle_url('/local/xlate/bundle.php', ['lang' => $lang, 'v' => $version]))->out(false);
         $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
         
         $script = sprintf("
@@ -41,10 +40,24 @@ class output {
   var lang = %s;
   var siteLang = %s;
   var ver  = %s;
-  var bundleURL = %s;
   var autoDetect = %s;
+  
+  // Get context information from page
+  var contextid = document.body.getAttribute('data-contextid') || 
+                 (window.M && window.M.cfg && window.M.cfg.contextid) || '1';
+  var pagetype = document.body.getAttribute('data-pagetype') || 
+                (window.M && window.M.cfg && window.M.cfg.pagetype) || 'site-index';
+  var courseid = document.body.getAttribute('data-courseid') || 
+                (window.M && window.M.cfg && window.M.cfg.courseid) || '0';
+  
+  // Build context-aware bundle URL
+  var bundleURL = '/local/xlate/bundle.php?lang=' + encodeURIComponent(lang) +
+                  '&contextid=' + encodeURIComponent(contextid) +
+                  '&pagetype=' + encodeURIComponent(pagetype) +
+                  '&courseid=' + encodeURIComponent(courseid);
+  
   document.documentElement.classList.add('xlate-loading');
-  var k = 'xlate:' + lang + ':' + ver;
+  var k = 'xlate:' + lang + ':' + contextid + ':' + pagetype + ':' + ver;
   function run(b){ 
     window.__XLATE__={lang:lang,siteLang:siteLang,map:b}; 
     require(['local_xlate/translator'], function(t){ 
@@ -55,16 +68,22 @@ class output {
   try{
     var s = localStorage.getItem(k);
     if (s) { run(JSON.parse(s)); }
-    fetch(bundleURL, {credentials:'same-origin'}).then(function(r){return r.json();}).then(function(b){
+    fetch(bundleURL, {credentials:'same-origin'}).then(function(r){
+      if (!r.ok) throw new Error('Bundle fetch failed: ' + r.status);
+      return r.json();
+    }).then(function(b){
       try{ localStorage.setItem(k, JSON.stringify(b)); }catch(e){}
       if (!s) run(b);
-    }).catch(function(){ if(!window.__XLATE__) run({}); });
+    }).catch(function(error){ 
+      console.warn('Translation bundle load failed:', error);
+      if(!window.__XLATE__ || !window.__XLATE__.map) run({}); 
+    });
   }catch(e){
-    fetch(bundleURL).then(function(r){return r.json();}).then(run).catch(function(){run({});});
+    fetch(bundleURL, {credentials:'same-origin'}).then(function(r){return r.json();}).then(run).catch(function(){run({});});
   }
 })();
 </script>
-", json_encode($lang), json_encode($site_lang), json_encode($version), json_encode($bundleurl), $autodetect);
+", json_encode($lang), json_encode($site_lang), json_encode($version), $autodetect);
         $hook->add_html($script);
     }
     

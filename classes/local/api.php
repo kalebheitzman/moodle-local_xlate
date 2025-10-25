@@ -22,6 +22,96 @@ class api {
         $cache->set($lang, $bundle);
         return $bundle;
     }
+    
+    /**
+     * Get page-specific translation bundle with context filtering
+     * @param string $lang Language code
+     * @param string $pagetype Moodle page type
+     * @param \context $context Current context
+     * @param \stdClass $user Current user
+     * @param int $courseid Course ID if applicable
+     * @return array Translation bundle
+     */
+    public static function get_page_bundle(string $lang, string $pagetype = '', \context $context = null, \stdClass $user = null, int $courseid = 0): array {
+        global $DB, $USER;
+        
+        $user = $user ?: $USER;
+        $context = $context ?: \context_system::instance();
+        
+        // Create cache key that includes context and user permissions
+        $cache_key = $lang . '_' . $context->id . '_' . $pagetype . '_' . $courseid;
+        $cache = \cache::make('local_xlate', 'bundle');
+        
+        if ($hit = $cache->get($cache_key)) {
+            return $hit;
+        }
+        
+        // Build component filter based on page type and context
+        $component_filters = self::get_component_filters($pagetype, $context, $courseid);
+        
+        if (empty($component_filters)) {
+            // If no specific filters, return safe UI components only
+            $component_filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
+        }
+        
+        // Build SQL with component filtering
+        list($component_sql, $component_params) = $DB->get_in_or_equal($component_filters, SQL_PARAMS_NAMED, 'comp', true, null);
+        $component_sql = str_replace('comp', 'k.component', $component_sql);
+        
+        $sql = "SELECT k.xkey, t.text, k.component
+                  FROM {local_xlate_key} k
+                  JOIN {local_xlate_tr} t ON t.keyid = k.id
+                 WHERE t.lang = :lang AND t.status = 1 AND (" . $component_sql . ")";
+        
+        $params = array_merge(['lang' => $lang], $component_params);
+        $recs = $DB->get_records_sql($sql, $params);
+        
+        $bundle = [];
+        foreach ($recs as $r) {
+            $bundle[$r->xkey] = $r->text;
+        }
+        
+        // Cache for shorter time due to context sensitivity
+        $cache->set($cache_key, $bundle);
+        return $bundle;
+    }
+    
+    /**
+     * Get component filters based on page context
+     * @param string $pagetype
+     * @param \context $context
+     * @param int $courseid
+     * @return array
+     */
+    private static function get_component_filters(string $pagetype, \context $context, int $courseid): array {
+        $filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
+        
+        // Add context-specific components
+        if ($context->contextlevel == CONTEXT_COURSE || $courseid > 0) {
+            $filters[] = 'course';
+            $filters[] = 'grades';
+            $filters[] = 'completion';
+        }
+        
+        // Add page-type specific components
+        if (strpos($pagetype, 'mod-') === 0) {
+            // Activity pages - allow specific module translations
+            $modname = substr($pagetype, 4, strpos($pagetype, '-', 4) - 4);
+            $filters[] = 'mod_' . $modname;
+        }
+        
+        if (strpos($pagetype, 'course-') === 0) {
+            $filters[] = 'course';
+            $filters[] = 'enrol_%';
+        }
+        
+        if (strpos($pagetype, 'admin-') === 0) {
+            $filters[] = 'admin';
+            $filters[] = 'tool_%';
+        }
+        
+        return $filters;
+    }
 
     public static function get_version(string $lang): string {
         global $DB;
