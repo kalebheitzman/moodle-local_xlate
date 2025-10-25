@@ -1,21 +1,74 @@
-# local_xlate (Moodle 5+ minimal)
+# local_xlate
 
-Client-side translation plugin (LocalizeJS-style).
+Client-side translation plugin for Moodle 5+ inspired by LocalizeJS. It injects
+versioned translation bundles during page rendering, prevents flash-of-
+untranslated-text (FOUT), and translates the DOM in real time – including
+dynamically injected content.
 
-## Install
-1. Unzip so folder path is `moodle/local/xlate`.
-2. Go to **Site administration → Notifications** to install DB.
-3. Enable at **Site administration → Plugins → Local plugins → Xlate**.
-4. Purge caches.
+## Highlights
+- **FOUT-free bootloader**: CSS gate plus inline loader fetch a versioned bundle
+	and hydrate from `localStorage` when possible.
+- **Automatic DOM translation**: Elements marked with `data-xlate` attributes –
+	or captured automatically – are translated on load, on MutationObserver
+	events, and after user interactions that add new DOM nodes.
+- **Optional auto-capture**: When browsing in the site’s default language with
+	the `local/xlate:manage` capability, the plugin records new strings (text,
+	placeholders, titles, and alt text) through the Moodle web service API.
+- **Caching stack**: Moodle application cache → browser `localStorage` → long-
+	lived HTTP responses for efficient repeat visits.
+- **Translation management UI**: Admins can add/edit keys, track translation
+	status, and rebuild bundles from `Site administration → Plugins → Local
+	plugins → Xlate → Manage Translations`.
 
-## Use
+## Installation
+1. Copy this folder to `moodle/local/xlate` (or extract the release archive
+	 there).
+2. Visit **Site administration → Notifications** to run the installation.
+3. Purge caches: **Site administration → Development → Purge all caches** (or
+	 run `php admin/cli/purge_caches.php`).
+4. Verify the plugin appears under **Site administration → Plugins → Local
+	 plugins → Xlate**.
+
+## Configuration
+1. Open **Site administration → Plugins → Local plugins → Xlate**.
+2. Ensure *Enable Xlate* is checked. When disabled no CSS or scripts are
+	 injected and bundles are never requested.
+3. (Optional) Toggle *Auto-detect strings*. Auto-detection only runs while the
+	 current page language equals the site’s default language and the viewer has
+	 the `local/xlate:manage` capability.
+4. Select which installed languages should have bundles generated.
+5. Adjust component mappings if you need to force specific component prefixes
+	 for captured keys.
+6. Use the **Manage Translations** button to open the CRUD UI.
+
+## Capturing Strings
+- Browse the site in the site’s default language (e.g. English) while logged in
+	with the `local/xlate:manage` capability.
+- With auto-detect enabled the translator captures user-facing strings,
+	generates stable keys (e.g. `Heading.CourseIndexOpen.Title`), and stores them
+	via the `local_xlate_save_key` web service.
+- Dynamic content (drawer menus, modals, lazy-loaded blocks, etc.) is processed
+	automatically; the MutationObserver re-runs detection as nodes are added.
+- Mark markup you never want translated with `data-xlate-ignore`.
+
+## Using Translations Manually
 ```html
 <h2 data-xlate="Dashboard.Title"></h2>
 <input data-xlate-placeholder="Search.Input" placeholder="">
 <div data-xlate-ignore>Do not translate this subtree</div>
 ```
 
-## Notes
-- Add CRUD UI to manage keys/translations and bump per-lang version to bust caches.
-- AMD module watches for new nodes.
-- Target: Moodle 5+. Update `$plugin->requires` to match your site baseline if needed.
+- Supported attributes: `data-xlate`, `data-xlate-placeholder`, `data-xlate-
+	title`, `data-xlate-alt`, `data-xlate-aria-label`.
+- When a translation bundle contains a matching key, the translator replaces
+	text content or attributes immediately.
+
+## Verifying the Plugin
+- View page source: you should see the `html.xlate-loading` CSS in `<head>` and
+	an inline bootloader near the top of `<body>`.
+- Inspect `/local/xlate/bundle.php?lang=en` to confirm bundles return JSON
+	(empty object when no keys exist for the language).
+- In the browser console check `window.__XLATE__` to see the active language,
+	site default language, and in-memory translation map.
+
+Need help? File issues or submit PRs on GitHub.
