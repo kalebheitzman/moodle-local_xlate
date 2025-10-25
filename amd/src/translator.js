@@ -354,6 +354,14 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
+    // Only auto-detect when viewing in the site's default language
+    // This prevents capturing translations as source text
+    var currentLang = M.cfg.language || 'en';
+    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
+    if (currentLang !== siteLang) {
+      return;
+    }
+
     processedElements.add(element);
 
     // Check text content with smart extraction

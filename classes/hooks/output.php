@@ -30,6 +30,7 @@ class output {
             return;
         }
         $lang = current_language();
+        $site_lang = get_config('core', 'lang') ?: 'en'; // Site's default language
         $version = \local_xlate\local\api::get_version($lang);
         $bundleurl = (new \moodle_url('/local/xlate/bundle.php', ['lang' => $lang, 'v' => $version]))->out(false);
         $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
@@ -38,13 +39,14 @@ class output {
 <script>
 (function(){
   var lang = %s;
+  var siteLang = %s;
   var ver  = %s;
   var bundleURL = %s;
   var autoDetect = %s;
   document.documentElement.classList.add('xlate-loading');
   var k = 'xlate:' + lang + ':' + ver;
   function run(b){ 
-    window.__XLATE__={lang:lang,map:b}; 
+    window.__XLATE__={lang:lang,siteLang:siteLang,map:b}; 
     require(['local_xlate/translator'], function(t){ 
       if (!autoDetect) t.setAutoDetect(false);
       t.run(b); 
@@ -62,7 +64,7 @@ class output {
   }
 })();
 </script>
-", json_encode($lang), json_encode($version), json_encode($bundleurl), $autodetect);
+", json_encode($lang), json_encode($site_lang), json_encode($version), json_encode($bundleurl), $autodetect);
         $hook->add_html($script);
     }
     
