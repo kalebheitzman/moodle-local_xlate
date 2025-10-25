@@ -3,6 +3,8 @@ define(['core/ajax'], function (Ajax) {
   var autoDetectEnabled = true;
   var detectedStrings = new Set();
   var processedElements = new WeakSet();
+  var lastProcessTime = 0;
+  var processThrottle = 250; // Minimum ms between full DOM scans
 
   /**
    * Translate a single element when metadata is present.
@@ -14,10 +16,27 @@ define(['core/ajax'], function (Ajax) {
     if (node.nodeType !== 1) {
       return;
     }
+
+    // First check for explicit data-xlate attribute
     var key = node.getAttribute && node.getAttribute('data-xlate');
     if (key && map[key]) {
       node.textContent = map[key];
+      return;
     }
+
+    // Then check if text content matches any source text (for auto-detected content)
+    if (node.childNodes.length === 1 && node.childNodes[0].nodeType === 3) {
+      var textContent = node.textContent.trim();
+      if (textContent && window.__XLATE__ && window.__XLATE__.sourceMap) {
+        var translationKey = window.__XLATE__.sourceMap[textContent];
+        if (translationKey && map[translationKey]) {
+          node.textContent = map[translationKey];
+          return;
+        }
+      }
+    }
+
+    // Handle attribute translations
     ['placeholder', 'title', 'alt', 'aria-label'].forEach(function (attr) {
       var akey = node.getAttribute && node.getAttribute('data-xlate-' + attr);
       if (akey && map[akey]) {
@@ -350,18 +369,22 @@ define(['core/ajax'], function (Ajax) {
    * @param {Element} element - Element to analyze
    */
   function autoDetectElement(element) {
-    if (shouldIgnoreElement(element) || processedElements.has(element)) {
+    if (shouldIgnoreElement(element)) {
       return;
     }
 
     // Only auto-detect when viewing in the site's default language
     // This prevents capturing translations as source text
-    var currentLang = M.cfg.language || 'en';
+    var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
     var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
+
     if (currentLang !== siteLang) {
       return;
     }
 
+    if (processedElements.has(element)) {
+      return;
+    }
     processedElements.add(element);
 
     // Check text content with smart extraction
@@ -433,23 +456,61 @@ define(['core/ajax'], function (Ajax) {
     try {
       walk(document.body, map || {});
 
-      // Start auto-detection after initial translation
+      // Process dynamic content with multiple strategies
       if (autoDetectEnabled) {
+        // Strategy 1: Delayed processing for initial dynamic content
         setTimeout(function () {
           walk(document.body, map || {});
-        }, 1000); // Delay to let page fully load
+        }, 1000);
+
+        // Strategy 2: Additional delay for slower loading content
+        setTimeout(function () {
+          walk(document.body, map || {});
+        }, 3000);
       }
 
+      // Strategy 3: Comprehensive MutationObserver
       var mo = new MutationObserver(function (muts) {
         muts.forEach(function (m) {
           (m.addedNodes || []).forEach(function (n) {
             if (n.nodeType === 1) {
               walk(n, map || {});
+              // Also process any children that might have been added
+              if (n.querySelectorAll) {
+                var children = n.querySelectorAll('*');
+                for (var i = 0; i < children.length; i++) {
+                  walk(children[i], map || {});
+                }
+              }
             }
           });
         });
       });
       mo.observe(document.body, { childList: true, subtree: true });
+
+      // Strategy 4: Listen for common Moodle AJAX events
+      if (typeof window.addEventListener === 'function') {
+        // Listen for RequireJS module loads
+        document.addEventListener('DOMContentLoaded', function () {
+          setTimeout(function () {
+            walk(document.body, map || {});
+          }, 2000);
+        });
+
+        // Listen for focus/click events that might trigger dynamic content (throttled)
+        ['focus', 'click', 'scroll'].forEach(function (eventType) {
+          document.addEventListener(eventType, function () {
+            var now = Date.now();
+            if (now - lastProcessTime > processThrottle) {
+              lastProcessTime = now;
+              setTimeout(function () {
+                walk(document.body, map || {});
+              }, 100);
+            }
+          }, true);
+        });
+      }
+
     } finally {
       document.documentElement.classList.remove('xlate-loading');
     }
@@ -464,29 +525,45 @@ define(['core/ajax'], function (Ajax) {
     document.documentElement.classList.add('xlate-loading');
     var k = 'xlate:' + config.lang + ':' + config.version;
 
-    window.__XLATE__ = { lang: config.lang, map: {} };
+    window.__XLATE__ = { lang: config.lang, siteLang: config.siteLang, map: {}, sourceMap: {} };
 
     try {
       var cached = localStorage.getItem(k);
       if (cached) {
-        var bundle = JSON.parse(cached);
-        window.__XLATE__.map = bundle;
-        run(bundle);
+        var bundleData = JSON.parse(cached);
+        // Handle both old and new bundle formats
+        if (bundleData.translations) {
+          window.__XLATE__.map = bundleData.translations;
+          window.__XLATE__.sourceMap = bundleData.sourceMap || {};
+          run(bundleData.translations);
+        } else {
+          // Old format fallback
+          window.__XLATE__.map = bundleData;
+          run(bundleData);
+        }
       }
 
       fetch(config.bundleurl, { credentials: 'same-origin' })
         .then(function (r) {
           return r.json();
         })
-        .then(function (bundle) {
+        .then(function (bundleData) {
           try {
-            localStorage.setItem(k, JSON.stringify(bundle));
+            localStorage.setItem(k, JSON.stringify(bundleData));
           } catch (e) {
             // Storage quota exceeded, ignore
           }
           if (!cached) {
-            window.__XLATE__.map = bundle;
-            run(bundle);
+            // Handle both old and new bundle formats
+            if (bundleData.translations) {
+              window.__XLATE__.map = bundleData.translations;
+              window.__XLATE__.sourceMap = bundleData.sourceMap || {};
+              run(bundleData.translations);
+            } else {
+              // Old format fallback
+              window.__XLATE__.map = bundleData;
+              run(bundleData);
+            }
           }
 
           return true;

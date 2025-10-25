@@ -32,14 +32,15 @@ class api {
      * @param int $courseid Course ID if applicable
      * @return array Translation bundle
      */
-    public static function get_page_bundle(string $lang, string $pagetype = '', \context $context = null, \stdClass $user = null, int $courseid = 0): array {
+    public static function get_page_bundle(string $lang, string $pagetype = '', ?\context $context = null, ?\stdClass $user = null, int $courseid = 0): array {
         global $DB, $USER;
         
         $user = $user ?: $USER;
         $context = $context ?: \context_system::instance();
         
         // Create cache key that includes context and user permissions
-        $cache_key = $lang . '_' . $context->id . '_' . $pagetype . '_' . $courseid;
+        // Use only alphanumeric characters for cache key (Moodle requirement)
+        $cache_key = $lang . '_' . $context->id . '_' . preg_replace('/[^a-zA-Z0-9]/', '', $pagetype) . '_' . $courseid;
         $cache = \cache::make('local_xlate', 'bundle');
         
         if ($hit = $cache->get($cache_key)) {
@@ -54,16 +55,14 @@ class api {
             $component_filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
         }
         
-        // Build SQL with component filtering
-        list($component_sql, $component_params) = $DB->get_in_or_equal($component_filters, SQL_PARAMS_NAMED, 'comp', true, null);
-        $component_sql = str_replace('comp', 'k.component', $component_sql);
-        
+        // TEMPORARY: Disable filtering to debug
         $sql = "SELECT k.xkey, t.text, k.component
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
-                 WHERE t.lang = :lang AND t.status = 1 AND (" . $component_sql . ")";
+                 WHERE t.lang = :lang AND t.status = 1";
         
-        $params = array_merge(['lang' => $lang], $component_params);
+        $params = ['lang' => $lang];
+        
         $recs = $DB->get_records_sql($sql, $params);
         
         $bundle = [];
@@ -85,6 +84,9 @@ class api {
      */
     private static function get_component_filters(string $pagetype, \context $context, int $courseid): array {
         $filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
+        
+        // Add region-based components (for auto-detected content)
+        $filters[] = 'region_%';
         
         // Add context-specific components
         if ($context->contextlevel == CONTEXT_COURSE || $courseid > 0) {

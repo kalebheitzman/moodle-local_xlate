@@ -18,6 +18,8 @@ class output {
         }
         
         $hook->add_html('<style>html.xlate-loading body{visibility:hidden}</style>');
+        // Debug marker
+        $hook->add_html('<!-- XLATE HEAD HOOK FIRED -->');
     }
 
     public static function before_body(Body $hook): void {
@@ -29,6 +31,27 @@ class output {
         if (self::is_admin_path()) {
             return;
         }
+        
+        // Get context information from the current page
+        global $PAGE;
+        $contextid = $PAGE->context->id;
+        $pagetype = $PAGE->pagetype;
+        $courseid = 0;
+        
+        // Extract course ID based on context
+        if ($PAGE->context->contextlevel == CONTEXT_COURSE) {
+            $courseid = $PAGE->context->instanceid;
+        } else if ($PAGE->context->contextlevel == CONTEXT_MODULE) {
+            // For activity contexts, get the course from the course module
+            $cm = get_coursemodule_from_id('', $PAGE->context->instanceid);
+            if ($cm) {
+                $courseid = $cm->course;
+            }
+        } else if (isset($PAGE->course) && $PAGE->course->id > 1) {
+            // Fallback to $PAGE->course if available and not site course
+            $courseid = $PAGE->course->id;
+        }
+        
         $lang = current_language();
         $site_lang = get_config('core', 'lang') ?: 'en'; // Site's default language
         $version = \local_xlate\local\api::get_version($lang);
@@ -37,56 +60,37 @@ class output {
         $script = sprintf("
 <script>
 (function(){
-  var lang = %s;
-  var siteLang = %s;
-  var ver  = %s;
-  var autoDetect = %s;
-  
-  // Get context information from page
-  var contextid = document.body.getAttribute('data-contextid') || 
-                 (window.M && window.M.cfg && window.M.cfg.contextid) || '1';
-  var pagetype = document.body.getAttribute('data-pagetype') || 
-                (window.M && window.M.cfg && window.M.cfg.pagetype) || 'site-index';
-  var courseid = document.body.getAttribute('data-courseid') || 
-                (window.M && window.M.cfg && window.M.cfg.courseid) || '0';
-  
-  // Build context-aware bundle URL
-  var bundleURL = '/local/xlate/bundle.php?lang=' + encodeURIComponent(lang) +
-                  '&contextid=' + encodeURIComponent(contextid) +
-                  '&pagetype=' + encodeURIComponent(pagetype) +
-                  '&courseid=' + encodeURIComponent(courseid);
-  
-  document.documentElement.classList.add('xlate-loading');
-  var k = 'xlate:' + lang + ':' + contextid + ':' + pagetype + ':' + ver;
-  function run(b){ 
-    window.__XLATE__={lang:lang,siteLang:siteLang,map:b}; 
-    require(['local_xlate/translator'], function(t){ 
-      if (!autoDetect) t.setAutoDetect(false);
-      t.run(b); 
-    }); 
+  function initTranslator() {
+    if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
+      require(['local_xlate/translator'], function(translator){
+        translator.init({
+          lang: %s,
+          siteLang: %s,
+          version: %s,
+          autodetect: %s,
+          bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
+        });
+      });
+    } else {
+      // RequireJS not ready yet, wait a bit
+      setTimeout(initTranslator, 100);
+    }
   }
-  try{
-    var s = localStorage.getItem(k);
-    if (s) { run(JSON.parse(s)); }
-    fetch(bundleURL, {credentials:'same-origin'}).then(function(r){
-      if (!r.ok) throw new Error('Bundle fetch failed: ' + r.status);
-      return r.json();
-    }).then(function(b){
-      try{ localStorage.setItem(k, JSON.stringify(b)); }catch(e){}
-      if (!s) run(b);
-    }).catch(function(error){ 
-      console.warn('Translation bundle load failed:', error);
-      if(!window.__XLATE__ || !window.__XLATE__.map) run({}); 
-    });
-  }catch(e){
-    fetch(bundleURL, {credentials:'same-origin'}).then(function(r){return r.json();}).then(run).catch(function(){run({});});
+  
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTranslator);
+  } else {
+    initTranslator();
   }
 })();
 </script>
-", json_encode($lang), json_encode($site_lang), json_encode($version), $autodetect);
+", json_encode($lang), json_encode($site_lang), json_encode($version), $autodetect, json_encode($lang), json_encode($contextid), json_encode($pagetype), json_encode($courseid));
         $hook->add_html($script);
+        // Debug marker
+        $hook->add_html('<!-- XLATE BODY HOOK FIRED -->');
     }
-    
+
     /**
      * Check if current page is an admin/management path that shouldn't be translated
      * @return bool True if this is an admin path
