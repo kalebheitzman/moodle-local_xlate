@@ -362,13 +362,13 @@ if (!empty($keys)) {
     // Show source text in a row styled like the translation fields
     $sitelang = $CFG->lang;
     $sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
-    echo html_writer::start_div('row align-items-start mb-2');
+    echo html_writer::start_div('row align-items-center mb-2');
     // Label column (same as translation label col-md-2)
-    echo html_writer::start_div('col-md-2 d-flex align-items-baseline pt-2');
+    echo html_writer::start_div('col-md-2 d-flex align-items-center');
     echo html_writer::tag('label', 'Source (' . $sitelangname . ' ' . $sitelang . ')', ['class' => 'fw-bold mb-0']);
     echo html_writer::end_div();
     // Source text column (same as translation input col-md-6)
-    echo html_writer::start_div('col-md-6 d-flex align-items-baseline');
+    echo html_writer::start_div('col-md-6 d-flex align-items-center');
     echo html_writer::div(s($key->source), 'form-control-plaintext mb-0');
     echo html_writer::end_div();
     // Empty columns for checkbox and button (col-md-2 each)
@@ -395,13 +395,28 @@ if (!empty($keys)) {
                 echo html_writer::tag('label', $installedlangs[$langcode] . ' (' . $langcode . ')');
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-6');
-                echo html_writer::empty_tag('input', [
-                    'type' => 'text',
-                    'name' => 'translation',
-                    'value' => $translation ? $translation->text : '',
-                    'class' => 'form-control',
-                    'placeholder' => 'Enter translation...'
-                ]);
+                $trval = $translation ? $translation->text : '';
+                // Use textarea if the SOURCE is long or multiline
+                $usesource = (strlen($key->source) > 80 || strpos($key->source, "\n") !== false);
+                if ($usesource) {
+                    // Guess rows: number of lines in source, or based on length, min 3, max 8
+                    $sourcelines = max(1, substr_count($key->source, "\n") + 1);
+                    $rows = max(3, min(8, $sourcelines, ceil(strlen($key->source)/80)));
+                    echo html_writer::tag('textarea', s($trval), [
+                        'name' => 'translation',
+                        'class' => 'form-control',
+                        'rows' => $rows,
+                        'placeholder' => 'Enter translation...'
+                    ]);
+                } else {
+                    echo html_writer::empty_tag('input', [
+                        'type' => 'text',
+                        'name' => 'translation',
+                        'value' => $trval,
+                        'class' => 'form-control',
+                        'placeholder' => 'Enter translation...'
+                    ]);
+                }
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-2');
                 $checked = $translation && $translation->status ? true : false;
