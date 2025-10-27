@@ -359,24 +359,41 @@ if (!empty($keys)) {
         echo html_writer::end_div();
         
         echo html_writer::start_div('card-body');
-        echo html_writer::tag('p', html_writer::tag('strong', 'Source: ') . s($key->source));
+    // Show source text in a row styled like the translation fields
+    $sitelang = $CFG->lang;
+    $sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
+    echo html_writer::start_div('row align-items-start mb-2');
+    // Label column (same as translation label col-md-2)
+    echo html_writer::start_div('col-md-2 d-flex align-items-baseline pt-2');
+    echo html_writer::tag('label', 'Source (' . $sitelangname . ' ' . $sitelang . ')', ['class' => 'fw-bold mb-0']);
+    echo html_writer::end_div();
+    // Source text column (same as translation input col-md-6)
+    echo html_writer::start_div('col-md-6 d-flex align-items-baseline');
+    echo html_writer::div(s($key->source), 'form-control-plaintext mb-0');
+    echo html_writer::end_div();
+    // Empty columns for checkbox and button (col-md-2 each)
+    echo html_writer::start_div('col-md-2');
+    echo html_writer::end_div();
+    echo html_writer::start_div('col-md-2');
+    echo html_writer::end_div();
+    echo html_writer::end_div();
         
-        // Show translations for each enabled language
+        // Show translations for each enabled language except the site language
         foreach ($enabledlangsarray as $langcode) {
+            if ($langcode === $sitelang) {
+                continue;
+            }
             if (isset($installedlangs[$langcode])) {
                 $translation = $DB->get_record('local_xlate_tr', ['keyid' => $key->id, 'lang' => $langcode]);
-                
                 echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url, 'class' => 'mb-2']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save_translation']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'lang', 'value' => $langcode]);
-                
                 echo html_writer::start_div('row align-items-center');
                 echo html_writer::start_div('col-md-2');
                 echo html_writer::tag('label', $installedlangs[$langcode] . ' (' . $langcode . ')');
                 echo html_writer::end_div();
-                
                 echo html_writer::start_div('col-md-6');
                 echo html_writer::empty_tag('input', [
                     'type' => 'text',
@@ -386,7 +403,6 @@ if (!empty($keys)) {
                     'placeholder' => 'Enter translation...'
                 ]);
                 echo html_writer::end_div();
-                
                 echo html_writer::start_div('col-md-2');
                 $checked = $translation && $translation->status ? true : false;
                 echo html_writer::tag('label', 
@@ -399,14 +415,12 @@ if (!empty($keys)) {
                     ['class' => 'form-check-label']
                 );
                 echo html_writer::end_div();
-                
                 echo html_writer::start_div('col-md-2');
                 echo html_writer::tag('button', get_string('save_translation', 'local_xlate'), [
                     'type' => 'submit',
                     'class' => 'btn btn-sm btn-success'
                 ]);
                 echo html_writer::end_div();
-                
                 echo html_writer::end_div();
                 echo html_writer::end_tag('form');
             }
