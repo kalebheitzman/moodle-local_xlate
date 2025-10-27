@@ -106,7 +106,7 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Generate translation key from element structure + text
+   * Generate translation key from element structure + direct text (ignoring children)
    * @param {Element} element - The element to generate key for
    * @param {string} text - The text content
    * @param {string} type - The type (text, placeholder, etc)
@@ -146,11 +146,20 @@ define(['core/ajax'], function (Ajax) {
       parts.push(dataAttrs);
     }
 
-    // Type and text
+    // Type and direct text only (ignore children)
     if (type && type !== 'text') {
       parts.push(type);
     }
-    parts.push(text);
+    // Get only direct text nodes (ignore children)
+    var directText = '';
+    for (var i = 0; i < element.childNodes.length; i++) {
+      var node = element.childNodes[i];
+      if (node.nodeType === 3) { // TEXT_NODE
+        directText += node.textContent;
+      }
+    }
+    directText = directText.trim();
+    parts.push(directText);
 
     return simpleHash(parts.join('.'));
   }
@@ -311,7 +320,17 @@ define(['core/ajax'], function (Ajax) {
     }
 
     var tagName = element.tagName.toLowerCase();
-    if (['script', 'style', 'meta', 'link', 'noscript', 'head'].indexOf(tagName) !== -1) {
+    if ([
+      'script', 'style', 'meta', 'link', 'noscript', 'head'
+    ].indexOf(tagName) !== -1) {
+      return true;
+    }
+
+    // Ignore .accesshide and descendants
+    if (element.classList && element.classList.contains('accesshide')) {
+      return true;
+    }
+    if (element.closest && element.closest('.accesshide')) {
       return true;
     }
 
@@ -365,31 +384,6 @@ define(['core/ajax'], function (Ajax) {
     return true;
   }
 
-  /**
-   * Extract clean text from element
-   * @param {Element} element - The element to extract text from
-   * @returns {string} Cleaned text content
-   */
-  function extractCleanText(element) {
-    if (!element) {
-      return '';
-    }
-
-    if (element.children.length === 0) {
-      return element.textContent.trim();
-    }
-
-    var simpleFormatting = true;
-    for (var i = 0; i < element.children.length; i++) {
-      var tag = element.children[i].tagName.toLowerCase();
-      if (['b', 'i', 'em', 'strong', 'span', 'small'].indexOf(tag) === -1) {
-        simpleFormatting = false;
-        break;
-      }
-    }
-
-    return simpleFormatting ? element.textContent.trim() : '';
-  }
 
   /**
    * Collect any data-xlate-key-* attribute values from an element into a set-like object
@@ -429,15 +423,22 @@ define(['core/ajax'], function (Ajax) {
     var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
     var isCapture = (currentLang === siteLang);
 
-    // Process text content
-    var textContent = extractCleanText(element);
-    if (textContent && isTranslatableText(textContent)) {
-      var textKey = generateKey(element, textContent, 'text');
+    // Process text content: only if direct text (excluding children) is non-empty
+    var directText = '';
+    for (var i = 0; i < element.childNodes.length; i++) {
+      var node = element.childNodes[i];
+      if (node.nodeType === 3) { // TEXT_NODE
+        directText += node.textContent;
+      }
+    }
+    directText = directText.trim();
+    if (directText && isTranslatableText(directText)) {
+      var textKey = generateKey(element, directText, 'text');
       if (textKey) {
         setKeyAttribute(element, 'text', textKey); // Step 1: TAG
         if (!tagOnly) {
           if (isCapture) {
-            saveToDatabase(element, textContent, 'text', textKey, map); // Step 2: SAVE (skip if in map)
+            saveToDatabase(element, directText, 'text', textKey, map); // Step 2: SAVE (skip if in map)
           } else if (map) {
             translateElement(element, 'text', map); // Step 3: TRANSLATE
           }
@@ -506,9 +507,16 @@ define(['core/ajax'], function (Ajax) {
     try {
       walk(document.body, map || {});
 
+      // Fallback: periodic refreshes to catch late-injected content
       setTimeout(function () {
         walk(document.body, map || {});
       }, 1000);
+      setTimeout(function () {
+        walk(document.body, map || {});
+      }, 3000);
+      setTimeout(function () {
+        walk(document.body, map || {});
+      }, 6000);
 
       var mo = new MutationObserver(function (muts) {
         muts.forEach(function (mutation) {

@@ -40,10 +40,7 @@ class api {
         list($insql, $inparams) = $DB->get_in_or_equal($clean, SQL_PARAMS_NAMED, 'k');
         $params = array_merge(['lang' => $lang], $inparams);
 
-        $sql = "SELECT k.xkey, t.text
-                  FROM {local_xlate_key} k
-                  JOIN {local_xlate_tr} t ON t.keyid = k.id
-                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql";
+        $sql = "SELECT k.xkey, t.text\n                  FROM {local_xlate_key} k\n                  JOIN {local_xlate_tr} t ON t.keyid = k.id\n                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql";
 
         $recs = $DB->get_records_sql($sql, $params);
 
@@ -53,28 +50,6 @@ class api {
         }
 
         return $map;
-    }
-    public static function get_bundle(string $lang): array {
-        $cache = \cache::make('local_xlate', 'bundle');
-        if ($hit = $cache->get($lang)) {
-            return $hit;
-        }
-        global $DB;
-        $sql = "SELECT k.xkey, k.source, t.text
-                  FROM {local_xlate_key} k
-                  JOIN {local_xlate_tr} t ON t.keyid = k.id
-                 WHERE t.lang = ? AND t.status = 1";
-        $recs = $DB->get_records_sql($sql, [$lang]);
-        $bundle = ['translations' => [], 'sourceMap' => []];
-        foreach ($recs as $r) {
-            $bundle['translations'][$r->xkey] = $r->text;
-            $normalized = self::normalise_source($r->source ?? '');
-            if ($normalized !== '' && !isset($bundle['sourceMap'][$normalized])) {
-                $bundle['sourceMap'][$normalized] = $r->xkey;
-            }
-        }
-        $cache->set($lang, $bundle);
-        return $bundle;
     }
     
     /**
