@@ -17,8 +17,8 @@ dynamically injected content.
 - **Caching stack**: Moodle application cache → browser `localStorage` → long-
 	lived HTTP responses for efficient repeat visits.
 - **Translation management UI**: Admins can review automatically captured keys,
-	enter translations, and rebuild bundles from `Site administration → Plugins →
-	Local plugins → Xlate → Manage Translations`.
+  enter translations, and rebuild bundles from `Site administration → Plugins →
+  Local plugins → Xlate → Manage Translations`.
 
 ## Installation
 1. Copy this folder to `moodle/local/xlate` (or extract the release archive
@@ -54,13 +54,15 @@ dynamically injected content.
 
 ## Using Translations Manually
 ```html
-<h2 data-xlate="Dashboard.Title"></h2>
-<input data-xlate-placeholder="Search.Input" placeholder="">
+<h2 data-xlate-key="Heading.DashboardTitle.ABC12345"></h2>
+<input data-xlate-key-placeholder="Input.SearchPlaceholder.ABC12345" placeholder="">
 <div data-xlate-ignore>Do not translate this subtree</div>
 ```
 
-- Supported attributes: `data-xlate`, `data-xlate-placeholder`, `data-xlate-
-	title`, `data-xlate-alt`, `data-xlate-aria-label`.
+- Preferred attributes: `data-xlate-key`, `data-xlate-key-placeholder`, `data-
+	xlate-key-title`, `data-xlate-key-alt`, `data-xlate-key-aria-label`.
+- Legacy support remains for `data-xlate*` attributes; the translator keeps both
+	in sync for backward compatibility.
 - When a translation bundle contains a matching key, the translator replaces
 	text content or attributes immediately.
 

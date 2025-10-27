@@ -1,10 +1,165 @@
 // Local/xlate/amd/src/translator.js
+// Handles DOM translation, automatic key capture, and fuzzy key attribution.
 define(['core/ajax'], function (Ajax) {
+  var ATTR_KEY_PREFIX = 'data-xlate-key-';
+  var LEGACY_ATTR_PREFIX = 'data-xlate-';
+  var ATTRIBUTE_TYPES = ['placeholder', 'title', 'alt', 'aria-label'];
+
   var autoDetectEnabled = true;
   var detectedStrings = new Set();
   var processedElements = new WeakSet();
   var lastProcessTime = 0;
   var processThrottle = 250; // Minimum ms between full DOM scans
+
+  /**
+   * Convert a string to PascalCase.
+   * @param {string} value
+   * @returns {string}
+   */
+  function toPascalCase(value) {
+    if (!value) {
+      return '';
+    }
+    return value
+      .split(/[\s_\-]+/)
+      .filter(function (part) {
+        return part.length > 0;
+      })
+      .map(function (part) {
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      })
+      .join('');
+  }
+
+  /**
+   * Normalise text for fuzzy key matching.
+   * @param {string} text
+   * @returns {string}
+   */
+  function normalizeTextForKey(text) {
+    if (!text) {
+      return '';
+    }
+
+    var normalised = text;
+    try {
+      if (normalised.normalize) {
+        normalised = normalised.normalize('NFKC');
+      }
+    } catch (err) {
+      // Ignore normalization errors (older browsers)
+    }
+
+    normalised = normalised.toLowerCase()
+      .replace(/[\u200B-\u200D\uFEFF]/g, ''); // Remove zero-width chars
+
+    try {
+      normalised = normalised.replace(/[^\p{L}\p{N}]+/gu, ' ');
+    } catch (err) {
+      normalised = normalised.replace(/[^0-9a-zA-Z]+/g, ' ');
+    }
+
+    normalised = normalised.replace(/\s+/g, ' ').trim();
+    return normalised;
+  }
+
+  /**
+   * Compute a stable hash from normalised text (first 8 chars of base64).
+   * @param {string} normalised
+   * @returns {string}
+   */
+  function computeHash(normalised) {
+    if (!normalised) {
+      return '';
+    }
+
+    var base;
+    try {
+      base = btoa(unescape(encodeURIComponent(normalised)));
+    } catch (err) {
+      // Fallback: derive from char codes when btoa can't handle input
+      var charcodes = [];
+      for (var i = 0; i < normalised.length; i++) {
+        charcodes.push(normalised.charCodeAt(i).toString(16));
+      }
+      base = charcodes.join('');
+    }
+
+    base = base.replace(/[^A-Za-z0-9]/g, '');
+    if (base.length < 8) {
+      base = (base + 'XXXXXXXX').substring(0, 8);
+    } else {
+      base = base.substring(0, 8);
+    }
+
+    return base.toUpperCase();
+  }
+
+
+  /**
+   * Build a fingerprint from text (slug + hash) and expose normalised form.
+   * @param {string} text
+   * @returns {{slug: string, hash: string, normalized: string}}
+   */
+  function createTextFingerprint(text) {
+    var normalised = normalizeTextForKey(text);
+    if (!normalised) {
+      return { slug: '', hash: '', normalized: '' };
+    }
+
+    var words = normalised.split(' ');
+    var slugParts = [];
+    for (var i = 0; i < words.length && slugParts.length < 4; i++) {
+      if (words[i].length === 0) {
+        continue;
+      }
+      slugParts.push(toPascalCase(words[i]));
+    }
+    var slug = slugParts.join('');
+    if (!slug) {
+      slug = 'Text';
+    }
+    if (slug.length > 48) {
+      slug = slug.substring(0, 48);
+    }
+
+    return {
+      slug: slug,
+      hash: computeHash(normalised),
+      normalized: normalised
+    };
+  }
+
+  /**
+   * Set the appropriate key attribute on an element.
+   * @param {Element} element
+   * @param {string} type
+   * @param {string} key
+   */
+  function setKeyAttribute(element, type, key) {
+    if (!element || !key) {
+      return;
+    }
+
+    // Always use data-xlate-key-{type} format for consistency
+    var attrType = type === 'text' ? 'content' : type;
+    element.setAttribute(ATTR_KEY_PREFIX + attrType, key);
+  }
+
+  /**
+   * Retrieve an existing key attribute from the element.
+   * @param {Element} element
+   * @param {string} type
+   * @returns {string|null}
+   */
+  function getKeyFromAttributes(element, type) {
+    if (!element) {
+      return null;
+    }
+
+    var attrType = type === 'text' ? 'content' : type;
+    return element.getAttribute(ATTR_KEY_PREFIX + attrType) || element.getAttribute(LEGACY_ATTR_PREFIX + attrType);
+  }
 
   /**
    * Translate a single element when metadata is present.
@@ -13,34 +168,46 @@ define(['core/ajax'], function (Ajax) {
    * @returns {void}
    */
   function translateNode(node, map) {
-    if (node.nodeType !== 1) {
+    if (!node || node.nodeType !== 1) {
       return;
     }
 
-    // First check for explicit data-xlate attribute
-    var key = node.getAttribute && node.getAttribute('data-xlate');
+    var key = getKeyFromAttributes(node, 'text');
     if (key && map[key]) {
       node.textContent = map[key];
-      return;
-    }
-
-    // Then check if text content matches any source text (for auto-detected content)
-    if (node.childNodes.length === 1 && node.childNodes[0].nodeType === 3) {
+      setKeyAttribute(node, 'text', key); // Ensure key is visible in DOM
+    } else if (node.childNodes.length === 1 && node.childNodes[0].nodeType === 3) {
       var textContent = node.textContent.trim();
-      if (textContent && window.__XLATE__ && window.__XLATE__.sourceMap) {
-        var translationKey = window.__XLATE__.sourceMap[textContent];
+      var normalized = normalizeTextForKey(textContent);
+      if (normalized && window.__XLATE__ && window.__XLATE__.sourceMap) {
+        var translationKey = window.__XLATE__.sourceMap[normalized];
         if (translationKey && map[translationKey]) {
+          setKeyAttribute(node, 'text', translationKey); // Inject key before translation
           node.textContent = map[translationKey];
-          return;
         }
       }
     }
 
-    // Handle attribute translations
-    ['placeholder', 'title', 'alt', 'aria-label'].forEach(function (attr) {
-      var akey = node.getAttribute && node.getAttribute('data-xlate-' + attr);
-      if (akey && map[akey]) {
-        node.setAttribute(attr, map[akey]);
+    ATTRIBUTE_TYPES.forEach(function (attr) {
+      var attrKey = getKeyFromAttributes(node, attr);
+      if (attrKey && map[attrKey]) {
+        node.setAttribute(attr, map[attrKey]);
+        setKeyAttribute(node, attr, attrKey); // Ensure key is visible in DOM
+        return;
+      }
+
+      var value = node.getAttribute && node.getAttribute(attr);
+      if (!value) {
+        return;
+      }
+
+      var normalisedAttr = normalizeTextForKey(value);
+      if (normalisedAttr && window.__XLATE__ && window.__XLATE__.sourceMap) {
+        var attrTranslationKey = window.__XLATE__.sourceMap[normalisedAttr];
+        if (attrTranslationKey && map[attrTranslationKey]) {
+          node.setAttribute(attr, map[attrTranslationKey]);
+          setKeyAttribute(node, attr, attrTranslationKey); // Inject key before translation
+        }
       }
     });
   }
@@ -51,29 +218,35 @@ define(['core/ajax'], function (Ajax) {
    * @returns {boolean} True if should be ignored
    */
   function shouldIgnoreElement(element) {
+    if (!element || !element.tagName) {
+      return true;
+    }
+
     var tagName = element.tagName.toLowerCase();
 
-    // Skip script, style, meta tags
-    if (['script', 'style', 'meta', 'link', 'noscript', 'head'].includes(tagName)) {
+    if (['script', 'style', 'meta', 'link', 'noscript', 'head'].indexOf(tagName) !== -1) {
       return true;
     }
 
-    // Skip if marked to ignore
-    if (element.hasAttribute('data-xlate-ignore') ||
-      element.closest('[data-xlate-ignore]')) {
+    if (element.hasAttribute('data-xlate-ignore') || element.closest('[data-xlate-ignore]')) {
       return true;
     }
 
-    // Skip if already has xlate attributes
-    if (element.hasAttribute('data-xlate') ||
-      element.hasAttribute('data-xlate-placeholder') ||
-      element.hasAttribute('data-xlate-title') ||
-      element.hasAttribute('data-xlate-alt')) {
+    // Check for content key (text content)
+    if (element.hasAttribute(ATTR_KEY_PREFIX + 'content') ||
+      element.hasAttribute(LEGACY_ATTR_PREFIX + 'content')) {
       return true;
     }
 
-    // Skip admin paths entirely - these should use Moodle language strings
-    var currentPath = window.location.pathname;
+    // Check for attribute keys
+    for (var i = 0; i < ATTRIBUTE_TYPES.length; i++) {
+      if (element.hasAttribute(ATTR_KEY_PREFIX + ATTRIBUTE_TYPES[i]) ||
+        element.hasAttribute(LEGACY_ATTR_PREFIX + ATTRIBUTE_TYPES[i])) {
+        return true;
+      }
+    }
+
+    var currentPath = window.location.pathname || '';
     var adminPaths = [
       '/admin/',
       '/local/xlate/',
@@ -85,12 +258,11 @@ define(['core/ajax'], function (Ajax) {
     ];
 
     for (var p = 0; p < adminPaths.length; p++) {
-      if (currentPath.includes(adminPaths[p])) {
+      if (currentPath.indexOf(adminPaths[p]) === 0) {
         return true;
       }
     }
 
-    // Skip admin/navigation elements that shouldn't be translated
     var adminSelectors = [
       '.navbar', '.navigation', '.breadcrumb', '.nav',
       '.admin-menu', '.settings-menu', '.user-menu',
@@ -102,13 +274,12 @@ define(['core/ajax'], function (Ajax) {
       '.tooltip', '.dropdown-menu'
     ];
 
-    for (var i = 0; i < adminSelectors.length; i++) {
-      if (element.closest(adminSelectors[i])) {
+    for (var iSel = 0; iSel < adminSelectors.length; iSel++) {
+      if (element.closest(adminSelectors[iSel])) {
         return true;
       }
     }
 
-    // Skip if element or parent has admin-related classes
     var adminClasses = [
       'editing', 'editor', 'admin-only', 'teacher-only',
       'form-control', 'btn-secondary', 'btn-outline',
@@ -117,13 +288,12 @@ define(['core/ajax'], function (Ajax) {
 
     var elementClasses = (element.className || '').split(' ');
     for (var j = 0; j < adminClasses.length; j++) {
-      if (elementClasses.includes(adminClasses[j])) {
+      if (elementClasses.indexOf(adminClasses[j]) !== -1) {
         return true;
       }
     }
 
-    // Skip elements with very short or common admin text
-    var text = element.textContent.trim();
+    var text = element.textContent ? element.textContent.trim() : '';
     if (text.length < 3) {
       return true;
     }
@@ -134,13 +304,14 @@ define(['core/ajax'], function (Ajax) {
       'hide', 'show', 'move', 'copy', 'options', 'actions'
     ];
 
-    var lowerText = text.toLowerCase();
-    if (adminWords.includes(lowerText)) {
+    if (adminWords.indexOf(text.toLowerCase()) !== -1) {
       return true;
     }
 
     return false;
-  }  /**
+  }
+
+  /**
    * Check if text content is worth translating
    * @param {string} text - Text to analyze
    * @returns {boolean} True if should be translated
@@ -150,34 +321,18 @@ define(['core/ajax'], function (Ajax) {
       return false;
     }
 
-    // Skip if mostly numbers, symbols, or code
-    var alphaCount = (text.match(/[a-zA-Z]/g) || []).length;
-    if (alphaCount < text.length * 0.5) {
+    var normalized = normalizeTextForKey(text);
+    if (!normalized) {
       return false;
     }
 
-    // Skip common non-translatable patterns
-    var skipPatterns = [
-      /^\d+[\s\d]*$/, // Just numbers
-      /^[A-Z]{2,}$/, // All caps abbreviations
-      /^[a-z_]+$/, // Variable names
-      /^\w+\.\w+/, // File extensions or dot notation
-      /^https?:/, // URLs
-      /^\/\w+/, // Paths
-      /^\{[^}]+\}$/, // Template variables
-      /^\[[^\]]+\]$/, // Bracketed content
-      /^<[^>]+>$/ // HTML tags
-    ];
-
-    for (var i = 0; i < skipPatterns.length; i++) {
-      if (skipPatterns[i].test(text.trim())) {
-        return false;
-      }
+    var alphaCount = (normalized.match(/[a-zA-Z\p{L}]/gu) || []).length;
+    if (alphaCount < normalized.length * 0.5) {
+      return false;
     }
 
-    // Skip single common words that don't need translation
     var commonWords = ['ok', 'id', 'url', 'api', 'css', 'js', 'html', 'php'];
-    if (commonWords.includes(text.toLowerCase().trim())) {
+    if (commonWords.indexOf(normalized) !== -1) {
       return false;
     }
 
@@ -185,39 +340,34 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Extract clean text from element, handling HTML
+   * Extract clean text from element, handling simple HTML
    * @param {Element} element - Element to extract text from
-   * @returns {string} Clean text content
+   * @returns {string}
    */
   function extractCleanText(element) {
-    var text = '';
+    if (!element) {
+      return '';
+    }
 
-    // If element has only text nodes and simple formatting
     if (element.children.length === 0) {
-      text = element.textContent.trim();
-    } else {
-      // Check if element has only simple formatting (b, i, em, strong, span)
-      var simpleFormatting = true;
-      var children = element.children;
+      return element.textContent.trim();
+    }
 
-      for (var i = 0; i < children.length; i++) {
-        var tagName = children[i].tagName.toLowerCase();
-        if (!['b', 'i', 'em', 'strong', 'span', 'small'].includes(tagName)) {
-          simpleFormatting = false;
-          break;
-        }
-      }
-
-      if (simpleFormatting) {
-        text = element.textContent.trim();
+    var simpleFormatting = true;
+    var children = element.children;
+    for (var i = 0; i < children.length; i++) {
+      var tagName = children[i].tagName.toLowerCase();
+      if (['b', 'i', 'em', 'strong', 'span', 'small'].indexOf(tagName) === -1) {
+        simpleFormatting = false;
+        break;
       }
     }
 
-    // Clean up the text
-    return text
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .replace(/^\s+|\s+$/g, '') // Trim
-      .replace(/['"]/g, "'"); // Normalize quotes
+    if (simpleFormatting) {
+      return element.textContent.trim();
+    }
+
+    return '';
   }
 
   /**
@@ -226,7 +376,10 @@ define(['core/ajax'], function (Ajax) {
    * @returns {string} Component name
    */
   function detectComponent(element) {
-    // Check for Moodle-specific containers
+    if (!element) {
+      return 'core';
+    }
+
     var container = element.closest('[data-region]');
     if (container) {
       var region = container.getAttribute('data-region');
@@ -235,7 +388,6 @@ define(['core/ajax'], function (Ajax) {
       }
     }
 
-    // Check for block containers
     container = element.closest('.block');
     if (container) {
       var blockClass = container.className.match(/block_(\w+)/);
@@ -244,7 +396,6 @@ define(['core/ajax'], function (Ajax) {
       }
     }
 
-    // Check for course module containers
     container = element.closest('.activity');
     if (container) {
       var activityClass = container.className.match(/modtype_(\w+)/);
@@ -253,13 +404,89 @@ define(['core/ajax'], function (Ajax) {
       }
     }
 
-    // Check for admin pages
     if (document.body.classList.contains('path-admin')) {
       return 'admin';
     }
 
-    // Default to core
     return 'core';
+  }
+
+  /**
+   * Collect meaningful class names from element (filtering dynamic/utility classes)
+   * @param {Element} element - Element to extract classes from
+   * @returns {string} Comma-separated class names
+   */
+  function collectContextClasses(element) {
+    if (!element) {
+      return '';
+    }
+
+    var blacklist = ['active', 'show', 'hide', 'hidden', 'collapsed', 'expanded', 'selected', 'current',
+      'focus', 'open', 'close', 'tooltip', 'dropdown', 'modal', 'd-flex', 'd-none', 'd-block',
+      'mt-1', 'mt-2', 'mt-3', 'mt-4', 'mt-5', 'mb-1', 'mb-2', 'mb-3', 'mb-4', 'mb-5',
+      'ml-1', 'ml-2', 'ml-3', 'ml-4', 'ml-5', 'mr-1', 'mr-2', 'mr-3', 'mr-4', 'mr-5',
+      'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 'sr-only', 'visually-hidden'];
+
+    var classes = [];
+    if (element.classList) {
+      var classList = Array.prototype.slice.call(element.classList);
+      classList.forEach(function (cls) {
+        if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
+          !/^[0-9]/.test(cls) && classes.indexOf(cls) === -1) {
+          classes.push(cls);
+        }
+      });
+    }
+
+    return classes.join(',');
+  }
+
+  /**
+   * Collect all data-* attributes from an element
+   * @param {Element} element - Element to extract data attributes from
+   * @returns {string} Concatenated data attribute values
+   */
+  function collectDataAttributes(element) {
+    if (!element || !element.attributes) {
+      return '';
+    }
+
+    var dataAttrs = [];
+    for (var i = 0; i < element.attributes.length; i++) {
+      var attr = element.attributes[i];
+      if (attr.name.indexOf('data-') === 0 && attr.value) {
+        // Skip data-xlate-* attributes to avoid circular references
+        if (attr.name.indexOf('data-xlate') !== 0) {
+          dataAttrs.push(attr.value);
+        }
+      }
+    }
+
+    return dataAttrs.join(',');
+  }
+
+  /**
+   * Simple hash function to create consistent 12-character keys
+   * @param {string} str - String to hash
+   * @returns {string} 12-character hash
+   */
+  function simpleHash(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+      var char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+
+    // Convert to base36 and pad/truncate to 12 chars
+    var hashStr = Math.abs(hash).toString(36);
+    if (hashStr.length < 12) {
+      hashStr = (hashStr + '000000000000').substring(0, 12);
+    } else {
+      hashStr = hashStr.substring(0, 12);
+    }
+
+    return hashStr;
   }
 
   /**
@@ -267,52 +494,56 @@ define(['core/ajax'], function (Ajax) {
    * @param {Element} element - Element to generate key for
    * @param {string} text - Text content
    * @param {string} type - Type of content (text, placeholder, title, alt)
-   * @returns {string} Generated key
+   * @returns {string} Generated key (12-character hash)
    */
   function generateKey(element, text, type) {
-    var tagName = element.tagName.toLowerCase();
-    var keyParts = [];
-
-    // Add context based on element type
-    if (type === 'placeholder') {
-      keyParts.push('Input');
-    } else if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
-      keyParts.push('Heading');
-    } else if (tagName === 'button' || (tagName === 'input' && element.type === 'submit')) {
-      keyParts.push('Button');
-    } else if (tagName === 'a') {
-      keyParts.push('Link');
-    } else if (tagName === 'label') {
-      keyParts.push('Label');
-    } else if (type === 'alt') {
-      keyParts.push('Image');
-    } else if (type === 'title') {
-      keyParts.push('Title');
+    if (!element || !text) {
+      return '';
     }
 
-    // Clean and format text as key part
-    var cleanText = text
-      .replace(/[^\w\s]/g, '') // Remove special chars
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .trim()
-      .split(' ')
-      .map(function (word) {
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      })
-      .join('');
+    var parts = [];
 
-    if (cleanText) {
-      keyParts.push(cleanText);
-    } else {
-      keyParts.push('Text');
+    // Get parent context (one level up)
+    var parent = element.parentElement;
+    if (parent && parent.tagName) {
+      parts.push(parent.tagName.toLowerCase());
+      var parentClasses = collectContextClasses(parent);
+      if (parentClasses) {
+        parts.push(parentClasses);
+      }
+      var parentData = collectDataAttributes(parent);
+      if (parentData) {
+        parts.push(parentData);
+      }
     }
 
-    // Add type suffix if not text content
+    // Get current element context
+    var tagName = element.tagName ? element.tagName.toLowerCase() : '';
+    if (tagName) {
+      parts.push(tagName);
+    }
+
+    var classes = collectContextClasses(element);
+    if (classes) {
+      parts.push(classes);
+    }
+
+    var dataAttrs = collectDataAttributes(element);
+    if (dataAttrs) {
+      parts.push(dataAttrs);
+    }
+
+    // Add type if not text
     if (type && type !== 'text') {
-      keyParts.push(type.charAt(0).toUpperCase() + type.slice(1));
+      parts.push(type);
     }
 
-    return keyParts.join('.');
+    // Add the text content
+    parts.push(text);
+
+    // Create composite string and hash it
+    var composite = parts.join('.');
+    return simpleHash(composite);
   }
 
   /**
@@ -322,45 +553,53 @@ define(['core/ajax'], function (Ajax) {
    * @param {string} type - Type of content (text, placeholder, title, alt)
    */
   function autoDetectString(element, text, type) {
-    if (!autoDetectEnabled || !text || text.length < 2) {
+    if (!autoDetectEnabled || !text) {
       return;
     }
 
-    // Skip if already processed
-    var uniqueId = text + ':' + type + ':' + element.tagName;
-    if (detectedStrings.has(uniqueId)) {
+    var fingerprint = createTextFingerprint(text);
+    if (!fingerprint.normalized) {
       return;
     }
-
-    detectedStrings.add(uniqueId);
 
     var component = detectComponent(element);
-    var key = generateKey(element, text, type);
+    var dedupeKey = component + ':' + fingerprint.normalized + ':' + type;
+    if (detectedStrings.has(dedupeKey)) {
+      return;
+    }
+    detectedStrings.add(dedupeKey);
 
-    // Save via AJAX
+    var key = generateKey(element, text, type);
+    if (!key) {
+      return;
+    }
+
     Ajax.call([{
       methodname: 'local_xlate_save_key',
       args: {
         component: component,
         key: key,
         source: text,
-        lang: M.cfg.language || 'en',
+        lang: (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en',
         translation: text
       }
     }])[0].then(function () {
-      // Apply the attribute to the element
-      var attrName = 'data-xlate' + (type !== 'text' ? '-' + type : '');
-      element.setAttribute(attrName, key);
+      setKeyAttribute(element, type, key);
 
-      // Update the global map
-      if (window.__XLATE__ && window.__XLATE__.map) {
+      if (window.__XLATE__) {
+        if (!window.__XLATE__.map) {
+          window.__XLATE__.map = {};
+        }
+        if (!window.__XLATE__.sourceMap) {
+          window.__XLATE__.sourceMap = {};
+        }
         window.__XLATE__.map[key] = text;
+        window.__XLATE__.sourceMap[fingerprint.normalized] = key;
       }
 
       return true;
     }).catch(function () {
-      // Silently fail - don't break the page if auto-detection fails
-      detectedStrings.delete(uniqueId);
+      detectedStrings.delete(dedupeKey);
     });
   }
 
@@ -369,12 +608,14 @@ define(['core/ajax'], function (Ajax) {
    * @param {Element} element - Element to analyze
    */
   function autoDetectElement(element) {
+    if (!autoDetectEnabled || !element) {
+      return;
+    }
+
     if (shouldIgnoreElement(element)) {
       return;
     }
 
-    // Only auto-detect when viewing in the site's default language
-    // This prevents capturing translations as source text
     var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
     var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
 
@@ -387,33 +628,20 @@ define(['core/ajax'], function (Ajax) {
     }
     processedElements.add(element);
 
-    // Check text content with smart extraction
     var textContent = extractCleanText(element);
     if (textContent && isTranslatableText(textContent)) {
       autoDetectString(element, textContent, 'text');
     }
 
-    // Check attributes
-    if (element.hasAttribute('placeholder')) {
-      var placeholder = element.getAttribute('placeholder').trim();
-      if (placeholder && isTranslatableText(placeholder)) {
-        autoDetectString(element, placeholder, 'placeholder');
+    ATTRIBUTE_TYPES.forEach(function (attr) {
+      if (!element.hasAttribute(attr)) {
+        return;
       }
-    }
-
-    if (element.hasAttribute('title')) {
-      var title = element.getAttribute('title').trim();
-      if (title && isTranslatableText(title)) {
-        autoDetectString(element, title, 'title');
+      var value = element.getAttribute(attr).trim();
+      if (value && isTranslatableText(value)) {
+        autoDetectString(element, value, attr);
       }
-    }
-
-    if (element.hasAttribute('alt')) {
-      var alt = element.getAttribute('alt').trim();
-      if (alt && isTranslatableText(alt)) {
-        autoDetectString(element, alt, 'alt');
-      }
-    }
+    });
   }
 
   /**
@@ -423,6 +651,10 @@ define(['core/ajax'], function (Ajax) {
    * @returns {void}
    */
   function walk(root, map) {
+    if (!root) {
+      return;
+    }
+
     var stack = [root];
     while (stack.length) {
       var el = stack.pop();
@@ -431,10 +663,8 @@ define(['core/ajax'], function (Ajax) {
           continue;
         }
 
-        // Translate existing keys
         translateNode(el, map);
 
-        // Auto-detect new strings if enabled
         if (autoDetectEnabled) {
           autoDetectElement(el);
         }
@@ -456,31 +686,25 @@ define(['core/ajax'], function (Ajax) {
     try {
       walk(document.body, map || {});
 
-      // Process dynamic content with multiple strategies
       if (autoDetectEnabled) {
-        // Strategy 1: Delayed processing for initial dynamic content
         setTimeout(function () {
           walk(document.body, map || {});
         }, 1000);
 
-        // Strategy 2: Additional delay for slower loading content
         setTimeout(function () {
           walk(document.body, map || {});
         }, 3000);
       }
 
-      // Strategy 3: Comprehensive MutationObserver
       var mo = new MutationObserver(function (muts) {
-        muts.forEach(function (m) {
-          (m.addedNodes || []).forEach(function (n) {
-            if (n.nodeType === 1) {
-              walk(n, map || {});
-              // Also process any children that might have been added
-              if (n.querySelectorAll) {
-                var children = n.querySelectorAll('*');
-                for (var i = 0; i < children.length; i++) {
-                  walk(children[i], map || {});
-                }
+        muts.forEach(function (mutation) {
+          Array.prototype.slice.call(mutation.addedNodes || []).forEach(function (node) {
+            if (node.nodeType === 1) {
+              walk(node, map || {});
+              if (node.querySelectorAll) {
+                Array.prototype.forEach.call(node.querySelectorAll('*'), function (child) {
+                  walk(child, map || {});
+                });
               }
             }
           });
@@ -488,16 +712,13 @@ define(['core/ajax'], function (Ajax) {
       });
       mo.observe(document.body, { childList: true, subtree: true });
 
-      // Strategy 4: Listen for common Moodle AJAX events
       if (typeof window.addEventListener === 'function') {
-        // Listen for RequireJS module loads
         document.addEventListener('DOMContentLoaded', function () {
           setTimeout(function () {
             walk(document.body, map || {});
           }, 2000);
         });
 
-        // Listen for focus/click events that might trigger dynamic content (throttled)
         ['focus', 'click', 'scroll'].forEach(function (eventType) {
           document.addEventListener(eventType, function () {
             var now = Date.now();
@@ -510,7 +731,6 @@ define(['core/ajax'], function (Ajax) {
           }, true);
         });
       }
-
     } finally {
       document.documentElement.classList.remove('xlate-loading');
     }
@@ -523,49 +743,64 @@ define(['core/ajax'], function (Ajax) {
    */
   function init(config) {
     document.documentElement.classList.add('xlate-loading');
+
+    if (typeof config.autodetect !== 'undefined') {
+      setAutoDetect(!(config.autodetect === false || config.autodetect === 'false'));
+    }
+
     var k = 'xlate:' + config.lang + ':' + config.version;
 
-    window.__XLATE__ = { lang: config.lang, siteLang: config.siteLang, map: {}, sourceMap: {} };
+    window.__XLATE__ = {
+      lang: config.lang,
+      siteLang: config.siteLang,
+      map: {},
+      sourceMap: {}
+    };
+
+    /**
+     * Apply bundle data (cached or fresh) to the runtime, then translate if needed.
+     * @param {Object} bundleData Translation payload from the server/cache.
+     * @param {boolean} cached Indicates whether the payload came from localStorage.
+     * @returns {void}
+     */
+    function processBundle(bundleData, cached) {
+      if (!bundleData) {
+        return;
+      }
+
+      if (bundleData.translations) {
+        window.__XLATE__.map = bundleData.translations;
+        window.__XLATE__.sourceMap = bundleData.sourceMap || {};
+        if (!cached) {
+          run(bundleData.translations);
+        }
+      } else {
+        window.__XLATE__.map = bundleData;
+        window.__XLATE__.sourceMap = bundleData.sourceMap || {};
+        if (!cached) {
+          run(bundleData);
+        }
+      }
+    }
 
     try {
       var cached = localStorage.getItem(k);
       if (cached) {
-        var bundleData = JSON.parse(cached);
-        // Handle both old and new bundle formats
-        if (bundleData.translations) {
-          window.__XLATE__.map = bundleData.translations;
-          window.__XLATE__.sourceMap = bundleData.sourceMap || {};
-          run(bundleData.translations);
-        } else {
-          // Old format fallback
-          window.__XLATE__.map = bundleData;
-          run(bundleData);
-        }
+        processBundle(JSON.parse(cached), true);
       }
 
       fetch(config.bundleurl, { credentials: 'same-origin' })
-        .then(function (r) {
-          return r.json();
+        .then(function (response) {
+          return response.json();
         })
         .then(function (bundleData) {
           try {
             localStorage.setItem(k, JSON.stringify(bundleData));
-          } catch (e) {
-            // Storage quota exceeded, ignore
-          }
-          if (!cached) {
-            // Handle both old and new bundle formats
-            if (bundleData.translations) {
-              window.__XLATE__.map = bundleData.translations;
-              window.__XLATE__.sourceMap = bundleData.sourceMap || {};
-              run(bundleData.translations);
-            } else {
-              // Old format fallback
-              window.__XLATE__.map = bundleData;
-              run(bundleData);
-            }
+          } catch (err) {
+            // Ignore storage errors (quota, etc.)
           }
 
+          processBundle(bundleData, false);
           return true;
         })
         .catch(function () {
@@ -573,15 +808,13 @@ define(['core/ajax'], function (Ajax) {
             run({});
           }
         });
-    } catch (e) {
+    } catch (err) {
       fetch(config.bundleurl)
-        .then(function (r) {
-          return r.json();
+        .then(function (response) {
+          return response.json();
         })
         .then(function (bundle) {
-          window.__XLATE__.map = bundle;
-          run(bundle);
-
+          processBundle(bundle, false);
           return true;
         })
         .catch(function () {
@@ -595,7 +828,7 @@ define(['core/ajax'], function (Ajax) {
    * @param {boolean} enabled - Whether to enable auto-detection
    */
   function setAutoDetect(enabled) {
-    autoDetectEnabled = enabled;
+    autoDetectEnabled = !!enabled;
   }
 
   return {

@@ -10,14 +10,18 @@ class api {
             return $hit;
         }
         global $DB;
-        $sql = "SELECT k.xkey, t.text
+        $sql = "SELECT k.xkey, k.source, t.text
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
                  WHERE t.lang = ? AND t.status = 1";
         $recs = $DB->get_records_sql($sql, [$lang]);
-        $bundle = [];
+        $bundle = ['translations' => [], 'sourceMap' => []];
         foreach ($recs as $r) {
-            $bundle[$r->xkey] = $r->text;
+            $bundle['translations'][$r->xkey] = $r->text;
+            $normalized = self::normalise_source($r->source ?? '');
+            if ($normalized !== '' && !isset($bundle['sourceMap'][$normalized])) {
+                $bundle['sourceMap'][$normalized] = $r->xkey;
+            }
         }
         $cache->set($lang, $bundle);
         return $bundle;
@@ -56,7 +60,7 @@ class api {
         }
         
         // TEMPORARY: Disable filtering to debug
-        $sql = "SELECT k.xkey, t.text, k.component
+    $sql = "SELECT k.xkey, k.source, t.text, k.component
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
                  WHERE t.lang = :lang AND t.status = 1";
@@ -65,14 +69,46 @@ class api {
         
         $recs = $DB->get_records_sql($sql, $params);
         
-        $bundle = [];
+        $bundle = ['translations' => [], 'sourceMap' => []];
         foreach ($recs as $r) {
-            $bundle[$r->xkey] = $r->text;
+            $bundle['translations'][$r->xkey] = $r->text;
+            $normalized = self::normalise_source($r->source ?? '');
+            if ($normalized !== '' && !isset($bundle['sourceMap'][$normalized])) {
+                $bundle['sourceMap'][$normalized] = $r->xkey;
+            }
         }
         
         // Cache for shorter time due to context sensitivity
         $cache->set($cache_key, $bundle);
         return $bundle;
+    }
+
+    /**
+     * Normalise source text for fuzzy lookups (case/punctuation agnostic)
+     * @param string|null $source
+     * @return string
+     */
+    private static function normalise_source(?string $source): string {
+        if ($source === null) {
+            return '';
+        }
+
+        $normalised = trim($source);
+        if ($normalised === '') {
+            return '';
+        }
+
+        if (function_exists('normalizer_normalize')) {
+            $normalised = normalizer_normalize($normalised, \Normalizer::FORM_C);
+        }
+
+        $normalised = mb_strtolower($normalised, 'UTF-8');
+
+        // Replace any sequence of non-letter/digit characters with a single space
+        $normalised = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $normalised);
+        $normalised = preg_replace('/\s+/u', ' ', $normalised);
+
+        return trim($normalised);
     }
     
     /**

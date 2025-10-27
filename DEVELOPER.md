@@ -4,7 +4,8 @@
 `local_xlate` brings LocalizeJS-style client translations to Moodle 5+. The
 plugin injects a bootloader, serves immutable JSON bundles, and runs an AMD
 module that translates DOM nodes (and can capture new strings) without touching
-core or theme code.
+core or theme code. Each translated element receives a stable `data-xlate-key`
+attribute so minor source edits do not invalidate translations.
 
 ```
 DB (local_xlate_key + local_xlate_tr)
@@ -20,7 +21,8 @@ DB (local_xlate_key + local_xlate_tr)
   via Moodle’s hook system (`db/hooks.php`). Hooks are skipped on admin pages to
   preserve core behaviour.
 - **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
-  language bundles with `Cache-Control: public, max-age=31536000, immutable`.
+  language bundles (`{translations, sourceMap}`) with `Cache-Control: public,
+  max-age=31536000, immutable`.
 - **Client runtime** (`amd/src/translator.js`) applies translations, stores state
   on `window.__XLATE__`, observes DOM mutations, and can capture untranslated
   text when enabled.
@@ -43,7 +45,7 @@ DB (local_xlate_key + local_xlate_tr)
 ## 4. Bundle & Cache Layer (`classes/local/api.php`)
 | Method | Purpose |
 | ------ | ------- |
-| `get_bundle($lang)` | Returns `{key => text}`. Cached in Moodle application cache (1-hour TTL). |
+| `get_bundle($lang)` | Returns `{translations, sourceMap}`. Cached in Moodle application cache (1-hour TTL). |
 | `get_version($lang)` | Reads `local_xlate_bundle.version` (`'dev'` fallback). |
 | `generate_version_hash($lang)` | `sha1("<lang>:<max mtime>")`; used for cache busting. |
 | `update_bundle_version($lang)` | Stores new hash + timestamp. |
@@ -52,7 +54,9 @@ DB (local_xlate_key + local_xlate_tr)
 | `get_keys_paginated(...)` | Supports `manage.php` search and pagination. |
 
 `bundle.php` still serves the full bundle even though `get_page_bundle()` can
-filter by component; that behaviour is disabled until requirements are finalised.
+filter by component; that behaviour is disabled until requirements are
+finalised. Bundles include a `sourceMap` keyed by normalised source strings to
+support fuzzy matching during translation.
 
 ## 5. Database Structure (`db/install.xml`)
 - `local_xlate_key`: canonical keys (`component`, `xkey`, `source`, `mtime`),
@@ -74,7 +78,8 @@ filter by component; that behaviour is disabled until requirements are finalised
 - Displays automatically captured keys with search, filters, pagination, and
   per-language translation inputs.
 - Manual key creation/deletion is disabled; rely on the AMD auto-detect flow to
-  capture new strings.
+  capture new strings. The translator writes `data-xlate-key*` attributes as it
+  captures content to ensure consistent reuse.
 - Visible only to users with `local_xlate:manage`; read-only access uses
   `local/xlate:viewui`.
 - Tracks coverage for each language listed in `enabled_languages`.
