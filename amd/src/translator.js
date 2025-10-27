@@ -253,8 +253,16 @@ define(['core/ajax'], function (Ajax) {
    * @param {string} text - The text content
    * @param {string} type - The type (text, placeholder, etc)
    * @param {string} key - The generated key
+   * @param {Object} existingMap - Optional bundle map to check before saving
    */
-  function saveToDatabase(element, text, type, key) {
+  function saveToDatabase(element, text, type, key, existingMap) {
+    // If key already exists in the bundle, skip saving
+    if (existingMap && existingMap[key]) {
+      // eslint-disable-next-line no-console
+      console.log('[XLATE] Skipping save - key exists:', key);
+      return;
+    }
+
     var component = detectComponent(element);
     var dedupeKey = component + ':' + key + ':' + type;
 
@@ -262,6 +270,9 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
     detectedStrings.add(dedupeKey);
+
+    // eslint-disable-next-line no-console
+    console.log('[XLATE] Saving new key:', key, 'component:', component, 'text:', text.substring(0, 50));
 
     Ajax.call([{
       methodname: 'local_xlate_save_key',
@@ -426,7 +437,7 @@ define(['core/ajax'], function (Ajax) {
         setKeyAttribute(element, 'text', textKey); // Step 1: TAG
         if (!tagOnly) {
           if (isCapture) {
-            saveToDatabase(element, textContent, 'text', textKey); // Step 2: SAVE
+            saveToDatabase(element, textContent, 'text', textKey, map); // Step 2: SAVE (skip if in map)
           } else if (map) {
             translateElement(element, 'text', map); // Step 3: TRANSLATE
           }
@@ -446,7 +457,7 @@ define(['core/ajax'], function (Ajax) {
           setKeyAttribute(element, attr, attrKey); // Step 1: TAG
           if (!tagOnly) {
             if (isCapture) {
-              saveToDatabase(element, value, attr, attrKey); // Step 2: SAVE
+              saveToDatabase(element, value, attr, attrKey, map); // Step 2: SAVE (skip if in map)
             } else if (map) {
               translateElement(element, attr, map); // Step 3: TRANSLATE
             }
@@ -556,49 +567,82 @@ define(['core/ajax'], function (Ajax) {
     var siteLang = config.siteLang;
     var isCapture = (currentLang === siteLang) && autoDetectEnabled;
 
-    // In capture mode: tag + save immediately, but optionally fetch bundle for spot checking
-    if (isCapture) {
-      processedElements = new WeakSet();
-      // Normal run will tag and save
-      walk(document.body, {}, false);
-      run({});
+    // eslint-disable-next-line no-console
+    console.log('[XLATE] Initializing:', {
+      currentLang: currentLang,
+      siteLang: siteLang,
+      isCapture: isCapture,
+      autoDetectEnabled: autoDetectEnabled
+    });
 
-      if (config.loadBundleOnSiteLang) {
-        try {
-          // Collect tagged keys from DOM
-          var keySetCap = {};
-          var allCap = document.querySelectorAll('*');
-          for (var ci = 0; ci < allCap.length; ci++) {
-            collectKeysFromElement(allCap[ci], keySetCap);
-          }
-          var keysCap = Object.keys(keySetCap);
-          if (keysCap.length) {
-            fetch(config.bundleurl, {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ keys: keysCap })
-            })
-              .then(function (response) {
-                return response.json();
-              })
-              .then(function (map) {
-                var translations = (map && map.translations) ? map.translations : map;
-                if (!translations || typeof translations !== 'object') {
-                  translations = {};
-                }
-                window.__XLATE__.map = translations; // For console spot-checking
-                return true;
-              })
-              .catch(function () { /* Ignore */ });
-          }
-        } catch (spotErr) {
-          // Ignore
-        }
+    // In capture mode: fetch bundle first to check existing keys, then tag + save only new ones
+    if (isCapture) {
+      // eslint-disable-next-line no-console
+      console.log('[XLATE] Capture mode - starting tag-only pass');
+      processedElements = new WeakSet();
+      // Tag-only first pass to generate keys
+      walk(document.body, {}, true);
+
+      // Collect all tagged keys
+      var keySetCap = {};
+      var allCap = document.querySelectorAll('*');
+      for (var ci = 0; ci < allCap.length; ci++) {
+        collectKeysFromElement(allCap[ci], keySetCap);
       }
+      var keysCap = Object.keys(keySetCap);
+
+      // eslint-disable-next-line no-console
+      console.log('[XLATE] Collected', keysCap.length, 'keys from DOM');
+
+      if (keysCap.length === 0) {
+        // eslint-disable-next-line no-console
+        console.log('[XLATE] No keys found, skipping bundle fetch');
+        run({});
+        return;
+      }
+
+      // eslint-disable-next-line no-console
+      console.log('[XLATE] Fetching bundle to check existing keys...');
+      // Fetch existing translations for these keys
+      fetch(config.bundleurl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({keys: keysCap})
+      })
+      .then(function(response) {
+        return response.json();
+      })
+      .then(function(map) {
+        var translations = (map && map.translations) ? map.translations : map;
+        if (!translations || typeof translations !== 'object') {
+          translations = {};
+        }
+        window.__XLATE__.map = translations;
+
+        var existingCount = Object.keys(translations).length;
+        // eslint-disable-next-line no-console
+        console.log('[XLATE] Bundle returned', existingCount, 'existing translations');
+
+        // Now walk again to save only keys NOT in the bundle
+        processedElements = new WeakSet();
+        walk(document.body, translations, false);
+        run(translations);
+        return true;
+      })
+      .catch(function(err) {
+        // eslint-disable-next-line no-console
+        console.error('[XLATE] Bundle fetch failed:', err);
+        // If bundle fetch fails, save everything
+        processedElements = new WeakSet();
+        walk(document.body, {}, false);
+        run({});
+      });
       return;
     }
 
+    // eslint-disable-next-line no-console
+    console.log('[XLATE] Translation mode - starting tag-only pass');
     // Translation mode: pre-tag, collect keys, request filtered bundle, then translate
     try {
       // Pre-tag only
