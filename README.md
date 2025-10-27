@@ -1,21 +1,18 @@
 # local_xlate
 
 Client-side translation plugin for Moodle 5+ inspired by LocalizeJS. It injects
-versioned translation bundles during page rendering, prevents flash-of-
-untranslated-text (FOUT), and translates the DOM in real time – including
-dynamically injected content.
+versioned translation bundles during page rendering, prevents flash-of-untranslated-text (FOUT), and translates the DOM in real time – including dynamically injected content. Keys are always structure-based, 12-character hashes, and capture is disabled in edit mode.
 
 ## Highlights
 - **FOUT-free bootloader**: CSS gate plus inline loader fetch a versioned bundle
 	and hydrate from `localStorage` when possible.
 - **Automatic DOM translation**: Elements marked with `data-xlate` attributes –
 	or captured automatically – are translated on load, on MutationObserver
-	events, and after user interactions that add new DOM nodes.
+	events, and after user interactions that add new DOM nodes. The translator uses a MutationObserver to handle dynamic content.
 - **Optional auto-capture**: When browsing in the site’s default language with
 	the `local/xlate:manage` capability, the plugin records new strings (text,
-	placeholders, titles, and alt text) through the Moodle web service API.
-- **Caching stack**: Moodle application cache → browser `localStorage` → long-
-	lived HTTP responses for efficient repeat visits.
+	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
+- **Caching stack**: Moodle application cache → browser `localStorage` → long-lived HTTP responses for efficient repeat visits. The bundle endpoint supports POST requests with a list of keys for efficient, page-specific translation.
 - **Translation management UI**: Admins can review automatically captured keys,
   enter translations, and rebuild bundles from `Site administration → Plugins →
   Local plugins → Xlate → Manage Translations`.
@@ -46,8 +43,8 @@ dynamically injected content.
 - Browse the site in the site’s default language (e.g. English) while logged in
 	with the `local/xlate:manage` capability.
 - With auto-detect enabled the translator captures user-facing strings,
-	generates stable keys (e.g. `Heading.CourseIndexOpen.Title`), and stores them
-	via the `local_xlate_save_key` web service.
+	generates stable, structure-based 12-character keys, and stores them
+	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
 - Dynamic content (drawer menus, modals, lazy-loaded blocks, etc.) is processed
 	automatically; the MutationObserver re-runs detection as nodes are added.
 - Mark markup you never want translated with `data-xlate-ignore`.
@@ -59,8 +56,7 @@ dynamically injected content.
 <div data-xlate-ignore>Do not translate this subtree</div>
 ```
 
-- Preferred attributes: `data-xlate-key`, `data-xlate-key-placeholder`, `data-
-	xlate-key-title`, `data-xlate-key-alt`, `data-xlate-key-aria-label`.
+- Preferred attributes: `data-xlate-key`, `data-xlate-key-placeholder`, `data-xlate-key-title`, `data-xlate-key-alt`, `data-xlate-key-aria-label`.
 - Legacy support remains for `data-xlate*` attributes; the translator keeps both
 	in sync for backward compatibility.
 - When a translation bundle contains a matching key, the translator replaces
@@ -70,7 +66,7 @@ dynamically injected content.
 - View page source: you should see the `html.xlate-loading` CSS in `<head>` and
 	an inline bootloader near the top of `<body>`.
 - Inspect `/local/xlate/bundle.php?lang=en` to confirm bundles return JSON
-	(empty object when no keys exist for the language).
+	(empty object when no keys exist for the language). You can POST a list of keys to this endpoint for page-specific bundles.
 - In the browser console check `window.__XLATE__` to see the active language,
 	site default language, and in-memory translation map.
 
