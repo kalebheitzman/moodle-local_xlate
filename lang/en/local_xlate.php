@@ -6,8 +6,6 @@ $string['xlate:manage'] = 'Manage Xlate translations';
 $string['xlate:viewui'] = 'View Xlate admin UI';
 
 // Auto-detection settings
-$string['autodetect'] = 'Auto-detect strings';
-$string['autodetect_desc'] = 'Automatically detect and create translation keys for text content on pages.';
 $string['enabled_languages'] = 'Enabled languages';
 $string['enabled_languages_desc'] = 'Select which installed languages should have translation bundles generated and managed.';
 $string['component_mapping'] = 'Component mapping';
@@ -56,7 +54,3 @@ $string['no_results_found'] = 'No translation keys match your search criteria. T
 $string['no_keys_found'] = 'No translation keys found yet. Browse the site in the default language to trigger automatic capture.';
 
 // Success/error messages
-$string['autodetect_enabled'] = 'Automatic string detection enabled';
-$string['autodetect_disabled'] = 'Automatic string detection disabled';
-$string['detection_active'] = 'Auto-detection is currently active on this page.';
-$string['detection_inactive'] = 'Auto-detection is currently disabled.';

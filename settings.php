@@ -11,9 +11,7 @@ if ($hassiteconfig) {
             get_string('enable', 'local_xlate'),
             get_string('enable_desc', 'local_xlate'), 1));
 
-        $settings->add(new admin_setting_configcheckbox('local_xlate/autodetect',
-            get_string('autodetect', 'local_xlate'),
-            get_string('autodetect_desc', 'local_xlate'), 1));
+        // Autodetect config removed: always enabled
 
         // Get installed languages and create checkboxes for each
         $installedlangs = get_string_manager()->get_list_of_translations();

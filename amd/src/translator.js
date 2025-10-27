@@ -9,7 +9,7 @@ define(['core/ajax'], function (Ajax) {
   var ATTR_KEY_PREFIX = 'data-xlate-key-';
   var ATTRIBUTE_TYPES = ['placeholder', 'title', 'alt', 'aria-label'];
 
-  var autoDetectEnabled = true;
+  // Auto-detection is always enabled; keys are always auto-assigned.
   var detectedStrings = new Set();
   var processedElements = new WeakSet();
   var lastProcessTime = 0;
@@ -427,7 +427,7 @@ define(['core/ajax'], function (Ajax) {
 
     var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
     var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
-    var isCapture = (currentLang === siteLang) && autoDetectEnabled;
+    var isCapture = (currentLang === siteLang);
 
     // Process text content
     var textContent = extractCleanText(element);
@@ -506,11 +506,9 @@ define(['core/ajax'], function (Ajax) {
     try {
       walk(document.body, map || {});
 
-      if (autoDetectEnabled) {
-        setTimeout(function () {
-          walk(document.body, map || {});
-        }, 1000);
-      }
+      setTimeout(function () {
+        walk(document.body, map || {});
+      }, 1000);
 
       var mo = new MutationObserver(function (muts) {
         muts.forEach(function (mutation) {
@@ -556,9 +554,7 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
-    if (typeof config.autodetect !== 'undefined') {
-      autoDetectEnabled = !(config.autodetect === false || config.autodetect === 'false');
-    }
+    // No autodetect config: auto-detection is always enabled.
 
     window.__XLATE__ = {
       lang: config.lang,
@@ -573,15 +569,15 @@ define(['core/ajax'], function (Ajax) {
      */
     var currentLang = config.lang;
     var siteLang = config.siteLang;
-    var isCapture = (currentLang === siteLang) && autoDetectEnabled;
+    var isCapture = (currentLang === siteLang);
 
     // eslint-disable-next-line no-console
     console.log('[XLATE] Initializing:', {
       currentLang: currentLang,
       siteLang: siteLang,
       isCapture: isCapture,
-      autoDetectEnabled: autoDetectEnabled
     });
+    // autoDetectEnabled removed: always true
 
     // In capture mode: fetch bundle first to check existing keys, then tag + save only new ones
     if (isCapture) {
@@ -728,13 +724,10 @@ define(['core/ajax'], function (Ajax) {
    * Enable or disable auto-detect
    * @param {boolean} enabled - Whether to enable auto-detect
    */
-  function setAutoDetect(enabled) {
-    autoDetectEnabled = !!enabled;
-  }
+
 
   return {
     run: run,
-    init: init,
-    setAutoDetect: setAutoDetect
+    init: init
   };
 });
