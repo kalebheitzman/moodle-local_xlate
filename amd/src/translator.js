@@ -1,378 +1,222 @@
 // Local/xlate/amd/src/translator.js
-// Handles DOM translation, automatic key capture, and fuzzy key attribution.
+// Handles DOM translation and automatic key capture with structural-based keys.
+//
+// WORKFLOW:
+// 1. Tag element with data-xlate-key-{type} FIRST (always)
+// 2. If currentLang === siteLang: Save to DB (capture mode)
+// 3. If currentLang !== siteLang: Translate using bundle
 define(['core/ajax'], function (Ajax) {
   var ATTR_KEY_PREFIX = 'data-xlate-key-';
-  var LEGACY_ATTR_PREFIX = 'data-xlate-';
   var ATTRIBUTE_TYPES = ['placeholder', 'title', 'alt', 'aria-label'];
 
   var autoDetectEnabled = true;
   var detectedStrings = new Set();
   var processedElements = new WeakSet();
   var lastProcessTime = 0;
-  var processThrottle = 250; // Minimum ms between full DOM scans
+  var processThrottle = 250;
+
+  // ============================================================================
+  // KEY GENERATION - Create structural 12-character hash keys
+  // ============================================================================
 
   /**
-   * Convert a string to PascalCase.
-   * @param {string} value
-   * @returns {string}
+   * Collect meaningful class names from element
+   * @param {Element} element - The element to collect classes from
+   * @returns {string} Comma-separated class names
    */
-  function toPascalCase(value) {
-    if (!value) {
-      return '';
-    }
-    return value
-      .split(/[\s_\-]+/)
-      .filter(function (part) {
-        return part.length > 0;
-      })
-      .map(function (part) {
-        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
-      })
-      .join('');
-  }
-
-  /**
-   * Normalise text for fuzzy key matching.
-   * @param {string} text
-   * @returns {string}
-   */
-  function normalizeTextForKey(text) {
-    if (!text) {
+  function collectContextClasses(element) {
+    if (!element || !element.classList) {
       return '';
     }
 
-    var normalised = text;
-    try {
-      if (normalised.normalize) {
-        normalised = normalised.normalize('NFKC');
+    var blacklist = ['active', 'show', 'hide', 'hidden', 'collapsed', 'expanded',
+      'd-flex', 'd-none', 'd-block', 'sr-only', 'visually-hidden'];
+
+    var classes = [];
+    Array.prototype.forEach.call(element.classList, function (cls) {
+      if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
+        !/^[0-9]/.test(cls) && !/^[mp][tblr]?-[0-5]$/.test(cls)) {
+        classes.push(cls);
       }
-    } catch (err) {
-      // Ignore normalization errors (older browsers)
-    }
+    });
 
-    normalised = normalised.toLowerCase()
-      .replace(/[\u200B-\u200D\uFEFF]/g, ''); // Remove zero-width chars
-
-    try {
-      normalised = normalised.replace(/[^\p{L}\p{N}]+/gu, ' ');
-    } catch (err) {
-      normalised = normalised.replace(/[^0-9a-zA-Z]+/g, ' ');
-    }
-
-    normalised = normalised.replace(/\s+/g, ' ').trim();
-    return normalised;
+    return classes.join(',');
   }
 
   /**
-   * Compute a stable hash from normalised text (first 8 chars of base64).
-   * @param {string} normalised
-   * @returns {string}
+   * Collect all data-* attributes from element
+   * @param {Element} element - The element to collect attributes from
+   * @returns {string} Comma-separated attribute values
    */
-  function computeHash(normalised) {
-    if (!normalised) {
+  function collectDataAttributes(element) {
+    if (!element || !element.attributes) {
       return '';
     }
 
-    var base;
-    try {
-      base = btoa(unescape(encodeURIComponent(normalised)));
-    } catch (err) {
-      // Fallback: derive from char codes when btoa can't handle input
-      var charcodes = [];
-      for (var i = 0; i < normalised.length; i++) {
-        charcodes.push(normalised.charCodeAt(i).toString(16));
+    var dataAttrs = [];
+    for (var i = 0; i < element.attributes.length; i++) {
+      var attr = element.attributes[i];
+      if (attr.name.indexOf('data-') === 0 && attr.name.indexOf('data-xlate') !== 0 && attr.value) {
+        dataAttrs.push(attr.value);
       }
-      base = charcodes.join('');
     }
-
-    base = base.replace(/[^A-Za-z0-9]/g, '');
-    if (base.length < 8) {
-      base = (base + 'XXXXXXXX').substring(0, 8);
-    } else {
-      base = base.substring(0, 8);
-    }
-
-    return base.toUpperCase();
+    return dataAttrs.join(',');
   }
 
-
   /**
-   * Build a fingerprint from text (slug + hash) and expose normalised form.
-   * @param {string} text
-   * @returns {{slug: string, hash: string, normalized: string}}
+   * Simple deterministic 12-char hash using two 32-bit accumulators (FNV-1a style + mix)
+   * Avoids constant zero padding by combining two hashes and truncating.
+   * @param {string} str - The string to hash
+   * @returns {string} 12-character base36 hash
    */
-  function createTextFingerprint(text) {
-    var normalised = normalizeTextForKey(text);
-    if (!normalised) {
-      return { slug: '', hash: '', normalized: '' };
+  function simpleHash(str) {
+    // eslint-disable-next-line no-bitwise
+    var h1 = 2166136261 >>> 0; // FNV-1a offset basis
+    // eslint-disable-next-line no-bitwise
+    var h2 = 0x9e3779b1 >>> 0; // Golden ratio constant
+
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      // FNV-1a step on h1
+      // eslint-disable-next-line no-bitwise
+      h1 ^= c;
+      h1 = Math.imul(h1, 16777619);
+
+      // Mix on h2 (inspired by Murmur3 avalanching)
+      h2 = (h2 + c) >>> 0; // eslint-disable-line no-bitwise
+      // eslint-disable-next-line no-bitwise
+      var k = h2 ^ (h2 >>> 16);
+      h2 = Math.imul(k, 2246822507);
+      // eslint-disable-next-line no-bitwise
+      k = h2 ^ (h2 >>> 13);
+      h2 = Math.imul(k, 3266489909);
+      // eslint-disable-next-line no-bitwise
+      h2 = (h2 ^ (h2 >>> 16)) >>> 0;
     }
 
-    var words = normalised.split(' ');
-    var slugParts = [];
-    for (var i = 0; i < words.length && slugParts.length < 4; i++) {
-      if (words[i].length === 0) {
-        continue;
-      }
-      slugParts.push(toPascalCase(words[i]));
+    // Combine and encode base36, then truncate to 12 chars
+    // eslint-disable-next-line no-bitwise
+    var s = (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
+    if (s.length < 12) {
+      s = (s + 'qwertyuiopasdfghjklz').substring(0, 12);
+    } else if (s.length > 12) {
+      s = s.substring(0, 12);
     }
-    var slug = slugParts.join('');
-    if (!slug) {
-      slug = 'Text';
-    }
-    if (slug.length > 48) {
-      slug = slug.substring(0, 48);
-    }
-
-    return {
-      slug: slug,
-      hash: computeHash(normalised),
-      normalized: normalised
-    };
+    return s;
   }
 
   /**
-   * Set the appropriate key attribute on an element.
-   * @param {Element} element
-   * @param {string} type
-   * @param {string} key
+   * Generate translation key from element structure + text
+   * @param {Element} element - The element to generate key for
+   * @param {string} text - The text content
+   * @param {string} type - The type (text, placeholder, etc)
+   * @returns {string} 12-character hash key
+   */
+  function generateKey(element, text, type) {
+    if (!element || !text) {
+      return '';
+    }
+
+    var parts = [];
+
+    // Parent context
+    var parent = element.parentElement;
+    if (parent && parent.tagName) {
+      parts.push(parent.tagName.toLowerCase());
+      var parentClasses = collectContextClasses(parent);
+      if (parentClasses) {
+        parts.push(parentClasses);
+      }
+      var parentData = collectDataAttributes(parent);
+      if (parentData) {
+        parts.push(parentData);
+      }
+    }
+
+    // Current element context
+    if (element.tagName) {
+      parts.push(element.tagName.toLowerCase());
+    }
+    var classes = collectContextClasses(element);
+    if (classes) {
+      parts.push(classes);
+    }
+    var dataAttrs = collectDataAttributes(element);
+    if (dataAttrs) {
+      parts.push(dataAttrs);
+    }
+
+    // Type and text
+    if (type && type !== 'text') {
+      parts.push(type);
+    }
+    parts.push(text);
+
+    return simpleHash(parts.join('.'));
+  }
+
+  // ============================================================================
+  // KEY ATTRIBUTE MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Set data-xlate-key-{type} attribute
+   * @param {Element} element - The element to set attribute on
+   * @param {string} type - The type (text, placeholder, etc)
+   * @param {string} key - The key value
    */
   function setKeyAttribute(element, type, key) {
     if (!element || !key) {
       return;
     }
-
-    // Always use data-xlate-key-{type} format for consistency
     var attrType = type === 'text' ? 'content' : type;
     element.setAttribute(ATTR_KEY_PREFIX + attrType, key);
   }
 
   /**
-   * Retrieve an existing key attribute from the element.
-   * @param {Element} element
-   * @param {string} type
-   * @returns {string|null}
+   * Get data-xlate-key-{type} attribute
+   * @param {Element} element - The element to get attribute from
+   * @param {string} type - The type (text, placeholder, etc)
+   * @returns {string|null} The key value
    */
   function getKeyFromAttributes(element, type) {
     if (!element) {
       return null;
     }
-
     var attrType = type === 'text' ? 'content' : type;
-    return element.getAttribute(ATTR_KEY_PREFIX + attrType) || element.getAttribute(LEGACY_ATTR_PREFIX + attrType);
+    return element.getAttribute(ATTR_KEY_PREFIX + attrType);
   }
 
+  // ============================================================================
+  // TRANSLATION (Step 3: currentLang !== siteLang)
+  // ============================================================================
+
   /**
-   * Translate a single element when metadata is present.
-   * @param {Element} node DOM node to translate.
-   * @param {Object<string, string>} map Translation map.
-   * @returns {void}
+   * Translate element using bundle
+   * @param {Element} element - The element to translate
+   * @param {string} type - The type (text, placeholder, etc)
+   * @param {Object} map - The translation map
    */
-  function translateNode(node, map) {
-    if (!node || node.nodeType !== 1) {
+  function translateElement(element, type, map) {
+    var key = getKeyFromAttributes(element, type);
+    if (!key || !map[key]) {
       return;
     }
 
-    var key = getKeyFromAttributes(node, 'text');
-    if (key && map[key]) {
-      node.textContent = map[key];
-      setKeyAttribute(node, 'text', key); // Ensure key is visible in DOM
-    } else if (node.childNodes.length === 1 && node.childNodes[0].nodeType === 3) {
-      var textContent = node.textContent.trim();
-      var normalized = normalizeTextForKey(textContent);
-      if (normalized && window.__XLATE__ && window.__XLATE__.sourceMap) {
-        var translationKey = window.__XLATE__.sourceMap[normalized];
-        if (translationKey && map[translationKey]) {
-          setKeyAttribute(node, 'text', translationKey); // Inject key before translation
-          node.textContent = map[translationKey];
-        }
-      }
+    if (type === 'text') {
+      element.textContent = map[key];
+    } else {
+      element.setAttribute(type, map[key]);
     }
-
-    ATTRIBUTE_TYPES.forEach(function (attr) {
-      var attrKey = getKeyFromAttributes(node, attr);
-      if (attrKey && map[attrKey]) {
-        node.setAttribute(attr, map[attrKey]);
-        setKeyAttribute(node, attr, attrKey); // Ensure key is visible in DOM
-        return;
-      }
-
-      var value = node.getAttribute && node.getAttribute(attr);
-      if (!value) {
-        return;
-      }
-
-      var normalisedAttr = normalizeTextForKey(value);
-      if (normalisedAttr && window.__XLATE__ && window.__XLATE__.sourceMap) {
-        var attrTranslationKey = window.__XLATE__.sourceMap[normalisedAttr];
-        if (attrTranslationKey && map[attrTranslationKey]) {
-          node.setAttribute(attr, map[attrTranslationKey]);
-          setKeyAttribute(node, attr, attrTranslationKey); // Inject key before translation
-        }
-      }
-    });
   }
 
-  /**
-   * Check if element should be ignored for auto-detection
-   * @param {Element} element - Element to check
-   * @returns {boolean} True if should be ignored
-   */
-  function shouldIgnoreElement(element) {
-    if (!element || !element.tagName) {
-      return true;
-    }
-
-    var tagName = element.tagName.toLowerCase();
-
-    if (['script', 'style', 'meta', 'link', 'noscript', 'head'].indexOf(tagName) !== -1) {
-      return true;
-    }
-
-    if (element.hasAttribute('data-xlate-ignore') || element.closest('[data-xlate-ignore]')) {
-      return true;
-    }
-
-    // Check for content key (text content)
-    if (element.hasAttribute(ATTR_KEY_PREFIX + 'content') ||
-      element.hasAttribute(LEGACY_ATTR_PREFIX + 'content')) {
-      return true;
-    }
-
-    // Check for attribute keys
-    for (var i = 0; i < ATTRIBUTE_TYPES.length; i++) {
-      if (element.hasAttribute(ATTR_KEY_PREFIX + ATTRIBUTE_TYPES[i]) ||
-        element.hasAttribute(LEGACY_ATTR_PREFIX + ATTRIBUTE_TYPES[i])) {
-        return true;
-      }
-    }
-
-    var currentPath = window.location.pathname || '';
-    var adminPaths = [
-      '/admin/',
-      '/local/xlate/',
-      '/course/modedit.php',
-      '/grade/edit/',
-      '/backup/',
-      '/restore/',
-      '/user/editadvanced.php'
-    ];
-
-    for (var p = 0; p < adminPaths.length; p++) {
-      if (currentPath.indexOf(adminPaths[p]) === 0) {
-        return true;
-      }
-    }
-
-    var adminSelectors = [
-      '.navbar', '.navigation', '.breadcrumb', '.nav',
-      '.admin-menu', '.settings-menu', '.user-menu',
-      '.page-header-headings', '.page-context-header',
-      '.activity-navigation', '.course-content-header',
-      '.block_settings', '.block_navigation',
-      '#page-navbar', '#nav-drawer', '.drawer',
-      '.form-autocomplete-suggestions', '.popover',
-      '.tooltip', '.dropdown-menu'
-    ];
-
-    for (var iSel = 0; iSel < adminSelectors.length; iSel++) {
-      if (element.closest(adminSelectors[iSel])) {
-        return true;
-      }
-    }
-
-    var adminClasses = [
-      'editing', 'editor', 'admin-only', 'teacher-only',
-      'form-control', 'btn-secondary', 'btn-outline',
-      'text-muted', 'small', 'sr-only', 'accesshide'
-    ];
-
-    var elementClasses = (element.className || '').split(' ');
-    for (var j = 0; j < adminClasses.length; j++) {
-      if (elementClasses.indexOf(adminClasses[j]) !== -1) {
-        return true;
-      }
-    }
-
-    var text = element.textContent ? element.textContent.trim() : '';
-    if (text.length < 3) {
-      return true;
-    }
-
-    var adminWords = [
-      'edit', 'delete', 'save', 'cancel', 'ok', 'yes', 'no',
-      'settings', 'config', 'admin', 'manage', 'update',
-      'hide', 'show', 'move', 'copy', 'options', 'actions'
-    ];
-
-    if (adminWords.indexOf(text.toLowerCase()) !== -1) {
-      return true;
-    }
-
-    return false;
-  }
+  // ============================================================================
+  // CAPTURE (Step 2: currentLang === siteLang)
+  // ============================================================================
 
   /**
-   * Check if text content is worth translating
-   * @param {string} text - Text to analyze
-   * @returns {boolean} True if should be translated
-   */
-  function isTranslatableText(text) {
-    if (!text || text.length < 3) {
-      return false;
-    }
-
-    var normalized = normalizeTextForKey(text);
-    if (!normalized) {
-      return false;
-    }
-
-    var alphaCount = (normalized.match(/[a-zA-Z\p{L}]/gu) || []).length;
-    if (alphaCount < normalized.length * 0.5) {
-      return false;
-    }
-
-    var commonWords = ['ok', 'id', 'url', 'api', 'css', 'js', 'html', 'php'];
-    if (commonWords.indexOf(normalized) !== -1) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Extract clean text from element, handling simple HTML
-   * @param {Element} element - Element to extract text from
-   * @returns {string}
-   */
-  function extractCleanText(element) {
-    if (!element) {
-      return '';
-    }
-
-    if (element.children.length === 0) {
-      return element.textContent.trim();
-    }
-
-    var simpleFormatting = true;
-    var children = element.children;
-    for (var i = 0; i < children.length; i++) {
-      var tagName = children[i].tagName.toLowerCase();
-      if (['b', 'i', 'em', 'strong', 'span', 'small'].indexOf(tagName) === -1) {
-        simpleFormatting = false;
-        break;
-      }
-    }
-
-    if (simpleFormatting) {
-      return element.textContent.trim();
-    }
-
-    return '';
-  }
-
-  /**
-   * Generate component name from element context
-   * @param {Element} element - Element to analyze
+   * Detect component from element context
+   * @param {Element} element - The element to detect component for
    * @returns {string} Component name
    */
   function detectComponent(element) {
@@ -396,14 +240,6 @@ define(['core/ajax'], function (Ajax) {
       }
     }
 
-    container = element.closest('.activity');
-    if (container) {
-      var activityClass = container.className.match(/modtype_(\w+)/);
-      if (activityClass) {
-        return 'mod_' + activityClass[1];
-      }
-    }
-
     if (document.body.classList.contains('path-admin')) {
       return 'admin';
     }
@@ -412,167 +248,20 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Collect meaningful class names from element (filtering dynamic/utility classes)
-   * @param {Element} element - Element to extract classes from
-   * @returns {string} Comma-separated class names
+   * Save translatable string to database
+   * @param {Element} element - The element being saved
+   * @param {string} text - The text content
+   * @param {string} type - The type (text, placeholder, etc)
+   * @param {string} key - The generated key
    */
-  function collectContextClasses(element) {
-    if (!element) {
-      return '';
-    }
-
-    var blacklist = ['active', 'show', 'hide', 'hidden', 'collapsed', 'expanded', 'selected', 'current',
-      'focus', 'open', 'close', 'tooltip', 'dropdown', 'modal', 'd-flex', 'd-none', 'd-block',
-      'mt-1', 'mt-2', 'mt-3', 'mt-4', 'mt-5', 'mb-1', 'mb-2', 'mb-3', 'mb-4', 'mb-5',
-      'ml-1', 'ml-2', 'ml-3', 'ml-4', 'ml-5', 'mr-1', 'mr-2', 'mr-3', 'mr-4', 'mr-5',
-      'p-1', 'p-2', 'p-3', 'p-4', 'p-5', 'sr-only', 'visually-hidden'];
-
-    var classes = [];
-    if (element.classList) {
-      var classList = Array.prototype.slice.call(element.classList);
-      classList.forEach(function (cls) {
-        if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
-          !/^[0-9]/.test(cls) && classes.indexOf(cls) === -1) {
-          classes.push(cls);
-        }
-      });
-    }
-
-    return classes.join(',');
-  }
-
-  /**
-   * Collect all data-* attributes from an element
-   * @param {Element} element - Element to extract data attributes from
-   * @returns {string} Concatenated data attribute values
-   */
-  function collectDataAttributes(element) {
-    if (!element || !element.attributes) {
-      return '';
-    }
-
-    var dataAttrs = [];
-    for (var i = 0; i < element.attributes.length; i++) {
-      var attr = element.attributes[i];
-      if (attr.name.indexOf('data-') === 0 && attr.value) {
-        // Skip data-xlate-* attributes to avoid circular references
-        if (attr.name.indexOf('data-xlate') !== 0) {
-          dataAttrs.push(attr.value);
-        }
-      }
-    }
-
-    return dataAttrs.join(',');
-  }
-
-  /**
-   * Simple hash function to create consistent 12-character keys
-   * @param {string} str - String to hash
-   * @returns {string} 12-character hash
-   */
-  function simpleHash(str) {
-    var hash = 0;
-    for (var i = 0; i < str.length; i++) {
-      var char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-
-    // Convert to base36 and pad/truncate to 12 chars
-    var hashStr = Math.abs(hash).toString(36);
-    if (hashStr.length < 12) {
-      hashStr = (hashStr + '000000000000').substring(0, 12);
-    } else {
-      hashStr = hashStr.substring(0, 12);
-    }
-
-    return hashStr;
-  }
-
-  /**
-   * Generate translation key from element content and context
-   * @param {Element} element - Element to generate key for
-   * @param {string} text - Text content
-   * @param {string} type - Type of content (text, placeholder, title, alt)
-   * @returns {string} Generated key (12-character hash)
-   */
-  function generateKey(element, text, type) {
-    if (!element || !text) {
-      return '';
-    }
-
-    var parts = [];
-
-    // Get parent context (one level up)
-    var parent = element.parentElement;
-    if (parent && parent.tagName) {
-      parts.push(parent.tagName.toLowerCase());
-      var parentClasses = collectContextClasses(parent);
-      if (parentClasses) {
-        parts.push(parentClasses);
-      }
-      var parentData = collectDataAttributes(parent);
-      if (parentData) {
-        parts.push(parentData);
-      }
-    }
-
-    // Get current element context
-    var tagName = element.tagName ? element.tagName.toLowerCase() : '';
-    if (tagName) {
-      parts.push(tagName);
-    }
-
-    var classes = collectContextClasses(element);
-    if (classes) {
-      parts.push(classes);
-    }
-
-    var dataAttrs = collectDataAttributes(element);
-    if (dataAttrs) {
-      parts.push(dataAttrs);
-    }
-
-    // Add type if not text
-    if (type && type !== 'text') {
-      parts.push(type);
-    }
-
-    // Add the text content
-    parts.push(text);
-
-    // Create composite string and hash it
-    var composite = parts.join('.');
-    return simpleHash(composite);
-  }
-
-  /**
-   * Auto-detect and save translatable string
-   * @param {Element} element - Element containing the string
-   * @param {string} text - Text content to save
-   * @param {string} type - Type of content (text, placeholder, title, alt)
-   */
-  function autoDetectString(element, text, type) {
-    if (!autoDetectEnabled || !text) {
-      return;
-    }
-
-    var fingerprint = createTextFingerprint(text);
-    if (!fingerprint.normalized) {
-      return;
-    }
-
+  function saveToDatabase(element, text, type, key) {
     var component = detectComponent(element);
-    var dedupeKey = component + ':' + fingerprint.normalized + ':' + type;
+    var dedupeKey = component + ':' + key + ':' + type;
+
     if (detectedStrings.has(dedupeKey)) {
       return;
     }
     detectedStrings.add(dedupeKey);
-
-    var key = generateKey(element, text, type);
-    if (!key) {
-      return;
-    }
 
     Ajax.call([{
       methodname: 'local_xlate_save_key',
@@ -584,73 +273,200 @@ define(['core/ajax'], function (Ajax) {
         translation: text
       }
     }])[0].then(function () {
-      setKeyAttribute(element, type, key);
-
       if (window.__XLATE__) {
         if (!window.__XLATE__.map) {
           window.__XLATE__.map = {};
         }
-        if (!window.__XLATE__.sourceMap) {
-          window.__XLATE__.sourceMap = {};
-        }
         window.__XLATE__.map[key] = text;
-        window.__XLATE__.sourceMap[fingerprint.normalized] = key;
       }
-
       return true;
     }).catch(function () {
       detectedStrings.delete(dedupeKey);
     });
   }
 
+  // ============================================================================
+  // ELEMENT PROCESSING (Step 1: Tag FIRST)
+  // ============================================================================
+
   /**
-   * Auto-detect translatable content in an element
-   * @param {Element} element - Element to analyze
+   * Check if element should be ignored
+   * @param {Element} element - The element to check
+   * @returns {boolean} True if should be ignored
    */
-  function autoDetectElement(element) {
-    if (!autoDetectEnabled || !element) {
-      return;
+  function shouldIgnoreElement(element) {
+    if (!element || !element.tagName) {
+      return true;
     }
 
-    if (shouldIgnoreElement(element)) {
-      return;
+    var tagName = element.tagName.toLowerCase();
+    if (['script', 'style', 'meta', 'link', 'noscript', 'head'].indexOf(tagName) !== -1) {
+      return true;
     }
 
-    var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
-    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
-
-    if (currentLang !== siteLang) {
-      return;
+    if (element.hasAttribute('data-xlate-ignore') || element.closest('[data-xlate-ignore]')) {
+      return true;
     }
 
-    if (processedElements.has(element)) {
+    // Do not skip elements just because they already have key attributes;
+    // we rely on processedElements to prevent duplicate work.
+
+    // Admin paths
+    var currentPath = window.location.pathname || '';
+    var adminPaths = ['/admin/', '/local/xlate/', '/course/modedit.php'];
+    for (var p = 0; p < adminPaths.length; p++) {
+      if (currentPath.indexOf(adminPaths[p]) === 0) {
+        return true;
+      }
+    }
+
+    // Admin selectors
+    var adminSelectors = ['.navbar', '.navigation', '.breadcrumb', '.drawer', '.tooltip'];
+    for (var s = 0; s < adminSelectors.length; s++) {
+      if (element.closest(adminSelectors[s])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if text is translatable
+   * @param {string} text - The text to check
+   * @returns {boolean} True if translatable
+   */
+  function isTranslatableText(text) {
+    if (!text || text.length < 3) {
+      return false;
+    }
+
+    var alphaCount = (text.match(/[a-zA-Z]/g) || []).length;
+    if (alphaCount < text.length * 0.3) {
+      return false;
+    }
+
+    var commonWords = ['ok', 'id', 'url', 'api'];
+    if (commonWords.indexOf(text.toLowerCase()) !== -1) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Extract clean text from element
+   * @param {Element} element - The element to extract text from
+   * @returns {string} Cleaned text content
+   */
+  function extractCleanText(element) {
+    if (!element) {
+      return '';
+    }
+
+    if (element.children.length === 0) {
+      return element.textContent.trim();
+    }
+
+    var simpleFormatting = true;
+    for (var i = 0; i < element.children.length; i++) {
+      var tag = element.children[i].tagName.toLowerCase();
+      if (['b', 'i', 'em', 'strong', 'span', 'small'].indexOf(tag) === -1) {
+        simpleFormatting = false;
+        break;
+      }
+    }
+
+    return simpleFormatting ? element.textContent.trim() : '';
+  }
+
+  /**
+   * Collect any data-xlate-key-* attribute values from an element into a set-like object
+   * @param {Element} el - Element to inspect
+   * @param {Object} keySet - Object used as a set to store keys
+   */
+  function collectKeysFromElement(el, keySet) {
+    var attrs = el && el.attributes;
+    if (!attrs) {
+      return;
+    }
+    for (var j = 0; j < attrs.length; j++) {
+      var a = attrs[j];
+      var name = a && a.name;
+      if (name && name.indexOf(ATTR_KEY_PREFIX) === 0) {
+        var val = a.value;
+        if (val) {
+          keySet[val] = true;
+        }
+      }
+    }
+  }
+
+  /**
+   * Process single element - TAG, then SAVE or TRANSLATE
+   * @param {Element} element - The element to process
+   * @param {Object} map - The translation map
+   * @param {boolean} tagOnly - When true, only tag keys without saving/translating
+   */
+  function processElement(element, map, tagOnly) {
+    if (shouldIgnoreElement(element) || processedElements.has(element)) {
       return;
     }
     processedElements.add(element);
 
+    var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
+    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
+    var isCapture = (currentLang === siteLang) && autoDetectEnabled;
+
+    // Process text content
     var textContent = extractCleanText(element);
     if (textContent && isTranslatableText(textContent)) {
-      autoDetectString(element, textContent, 'text');
+      var textKey = generateKey(element, textContent, 'text');
+      if (textKey) {
+        setKeyAttribute(element, 'text', textKey); // Step 1: TAG
+        if (!tagOnly) {
+          if (isCapture) {
+            saveToDatabase(element, textContent, 'text', textKey); // Step 2: SAVE
+          } else if (map) {
+            translateElement(element, 'text', map); // Step 3: TRANSLATE
+          }
+        }
+      }
     }
 
+    // Process attributes
     ATTRIBUTE_TYPES.forEach(function (attr) {
       if (!element.hasAttribute(attr)) {
         return;
       }
       var value = element.getAttribute(attr).trim();
       if (value && isTranslatableText(value)) {
-        autoDetectString(element, value, attr);
+        var attrKey = generateKey(element, value, attr);
+        if (attrKey) {
+          setKeyAttribute(element, attr, attrKey); // Step 1: TAG
+          if (!tagOnly) {
+            if (isCapture) {
+              saveToDatabase(element, value, attr, attrKey); // Step 2: SAVE
+            } else if (map) {
+              translateElement(element, attr, map); // Step 3: TRANSLATE
+            }
+          }
+        }
       }
     });
   }
 
+  // ============================================================================
+  // DOM WALKING
+  // ============================================================================
+
   /**
-   * Walk the DOM depth-first and translate every eligible child.
-   * @param {Element} root Root element to process.
-   * @param {Object<string, string>} map Translation map.
-   * @returns {void}
+   * Walk DOM and process elements
+   * @param {Element} root - Root element to start from
+   * @param {Object} map - The translation map
+   * @param {boolean} tagOnly - When true, only tag keys without saving/translating
    */
-  function walk(root, map) {
+  function walk(root, map, tagOnly) {
     if (!root) {
       return;
     }
@@ -659,14 +475,8 @@ define(['core/ajax'], function (Ajax) {
     while (stack.length) {
       var el = stack.pop();
       if (el.nodeType === 1) {
-        if (el.hasAttribute && el.hasAttribute('data-xlate-ignore')) {
-          continue;
-        }
-
-        translateNode(el, map);
-
-        if (autoDetectEnabled) {
-          autoDetectElement(el);
+        if (el.hasAttribute && !el.hasAttribute('data-xlate-ignore')) {
+          processElement(el, map, tagOnly);
         }
 
         var children = el.children || [];
@@ -678,9 +488,8 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Entry point: translates current DOM and observes future updates.
-   * @param {Object<string, string>} map Translation map.
-   * @returns {void}
+   * Run translator
+   * @param {Object} map - The translation map
    */
   function run(map) {
     try {
@@ -690,10 +499,6 @@ define(['core/ajax'], function (Ajax) {
         setTimeout(function () {
           walk(document.body, map || {});
         }, 1000);
-
-        setTimeout(function () {
-          walk(document.body, map || {});
-        }, 3000);
       }
 
       var mo = new MutationObserver(function (muts) {
@@ -701,11 +506,6 @@ define(['core/ajax'], function (Ajax) {
           Array.prototype.slice.call(mutation.addedNodes || []).forEach(function (node) {
             if (node.nodeType === 1) {
               walk(node, map || {});
-              if (node.querySelectorAll) {
-                Array.prototype.forEach.call(node.querySelectorAll('*'), function (child) {
-                  walk(child, map || {});
-                });
-              }
             }
           });
         });
@@ -713,12 +513,6 @@ define(['core/ajax'], function (Ajax) {
       mo.observe(document.body, { childList: true, subtree: true });
 
       if (typeof window.addEventListener === 'function') {
-        document.addEventListener('DOMContentLoaded', function () {
-          setTimeout(function () {
-            walk(document.body, map || {});
-          }, 2000);
-        });
-
         ['focus', 'click', 'scroll'].forEach(function (eventType) {
           document.addEventListener(eventType, function () {
             var now = Date.now();
@@ -737,18 +531,15 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Initialize the translator with config from Moodle.
-   * @param {Object} config Configuration object with lang, version, bundleurl.
-   * @returns {void}
+   * Initialize translator
+   * @param {Object} config - Configuration object
    */
   function init(config) {
     document.documentElement.classList.add('xlate-loading');
 
     if (typeof config.autodetect !== 'undefined') {
-      setAutoDetect(!(config.autodetect === false || config.autodetect === 'false'));
+      autoDetectEnabled = !(config.autodetect === false || config.autodetect === 'false');
     }
-
-    var k = 'xlate:' + config.lang + ':' + config.version;
 
     window.__XLATE__ = {
       lang: config.lang,
@@ -758,74 +549,132 @@ define(['core/ajax'], function (Ajax) {
     };
 
     /**
-     * Apply bundle data (cached or fresh) to the runtime, then translate if needed.
-     * @param {Object} bundleData Translation payload from the server/cache.
-     * @param {boolean} cached Indicates whether the payload came from localStorage.
-     * @returns {void}
+     * Process bundle data
+     * @param {Object} bundleData - The bundle data
      */
-    function processBundle(bundleData, cached) {
-      if (!bundleData) {
+    var currentLang = config.lang;
+    var siteLang = config.siteLang;
+    var isCapture = (currentLang === siteLang) && autoDetectEnabled;
+
+    // In capture mode: tag + save immediately, but optionally fetch bundle for spot checking
+    if (isCapture) {
+      processedElements = new WeakSet();
+      // Normal run will tag and save
+      walk(document.body, {}, false);
+      run({});
+
+      if (config.loadBundleOnSiteLang) {
+        try {
+          // Collect tagged keys from DOM
+          var keySetCap = {};
+          var allCap = document.querySelectorAll('*');
+          for (var ci = 0; ci < allCap.length; ci++) {
+            collectKeysFromElement(allCap[ci], keySetCap);
+          }
+          var keysCap = Object.keys(keySetCap);
+          if (keysCap.length) {
+            fetch(config.bundleurl, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keys: keysCap })
+            })
+              .then(function (response) {
+                return response.json();
+              })
+              .then(function (map) {
+                var translations = (map && map.translations) ? map.translations : map;
+                if (!translations || typeof translations !== 'object') {
+                  translations = {};
+                }
+                window.__XLATE__.map = translations; // For console spot-checking
+                return true;
+              })
+              .catch(function () { /* Ignore */ });
+          }
+        } catch (spotErr) {
+          // Ignore
+        }
+      }
+      return;
+    }
+
+    // Translation mode: pre-tag, collect keys, request filtered bundle, then translate
+    try {
+      // Pre-tag only
+      processedElements = new WeakSet();
+      walk(document.body, {}, true);
+
+      // Collect tagged keys from DOM
+      var keySet = {};
+      var all = document.querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) {
+        collectKeysFromElement(all[i], keySet);
+      }
+      var keys = Object.keys(keySet);
+
+      // Short-circuit if no keys
+      if (keys.length === 0) {
+        run({});
         return;
       }
 
-      if (bundleData.translations) {
-        window.__XLATE__.map = bundleData.translations;
-        window.__XLATE__.sourceMap = bundleData.sourceMap || {};
-        if (!cached) {
-          run(bundleData.translations);
-        }
-      } else {
-        window.__XLATE__.map = bundleData;
-        window.__XLATE__.sourceMap = bundleData.sourceMap || {};
-        if (!cached) {
-          run(bundleData);
-        }
+      var k = 'xlate:' + config.lang + ':' + config.version + ':keys:' + keys.length;
+      var cached = null;
+      try {
+        cached = localStorage.getItem(k);
+      } catch (e) {
+        // Ignore
       }
-    }
-
-    try {
-      var cached = localStorage.getItem(k);
       if (cached) {
-        processBundle(JSON.parse(cached), true);
+        try {
+          var cachedMap = JSON.parse(cached);
+          if (cachedMap && typeof cachedMap === 'object') {
+            window.__XLATE__.map = cachedMap;
+            processedElements = new WeakSet();
+            run(cachedMap);
+          }
+        } catch (e) {
+          // Ignore
+        }
       }
 
-      fetch(config.bundleurl, { credentials: 'same-origin' })
+      fetch(config.bundleurl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keys })
+      })
         .then(function (response) {
           return response.json();
         })
-        .then(function (bundleData) {
+        .then(function (map) {
+          // Accept either flat map or legacy wrapper
+          var translations = (map && map.translations) ? map.translations : map;
+          if (!translations || typeof translations !== 'object') {
+            translations = {};
+          }
           try {
-            localStorage.setItem(k, JSON.stringify(bundleData));
-          } catch (err) {
-            // Ignore storage errors (quota, etc.)
+            localStorage.setItem(k, JSON.stringify(translations));
+          } catch (e) {
+            // Ignore
           }
-
-          processBundle(bundleData, false);
-          return true;
-        })
-        .catch(function () {
-          if (!cached) {
-            run({});
-          }
-        });
-    } catch (err) {
-      fetch(config.bundleurl)
-        .then(function (response) {
-          return response.json();
-        })
-        .then(function (bundle) {
-          processBundle(bundle, false);
+          window.__XLATE__.map = translations;
+          processedElements = new WeakSet();
+          run(translations);
           return true;
         })
         .catch(function () {
           run({});
         });
+    } catch (err) {
+      run({});
     }
   }
 
   /**
-   * Enable or disable automatic string detection
-   * @param {boolean} enabled - Whether to enable auto-detection
+   * Enable or disable auto-detect
+   * @param {boolean} enabled - Whether to enable auto-detect
    */
   function setAutoDetect(enabled) {
     autoDetectEnabled = !!enabled;

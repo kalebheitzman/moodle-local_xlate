@@ -33,6 +33,21 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, max-age=3600');
 
 try {
+    // If POST with JSON body of keys is provided, return a flat map of only those keys
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if ($method === 'POST') {
+        $raw = file_get_contents('php://input');
+        $data = json_decode($raw, true);
+        if (is_array($data) && !empty($data['keys']) && is_array($data['keys'])) {
+            $map = \local_xlate\local\api::get_keys_bundle($lang, $data['keys']);
+            // Shorter cache for key-specific bundles
+            header('Cache-Control: private, max-age=120');
+            echo json_encode($map, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+    }
+
+    // Fallback: page bundle (legacy/full)
     $bundle = \local_xlate\local\api::get_page_bundle($lang, $pagetype, $context, $USER, $courseid);
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {

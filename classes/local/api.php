@@ -4,6 +4,56 @@ namespace local_xlate\local;
 defined('MOODLE_INTERNAL') || die();
 
 class api {
+    /**
+     * Get translations for a specific set of keys only.
+     * Returns a flat associative array: { xkey => translation }
+     *
+     * @param string $lang Language code
+     * @param array $keys List of xkeys to fetch
+     * @return array Map of xkey => text
+     */
+    public static function get_keys_bundle(string $lang, array $keys): array {
+        global $DB;
+
+        if (empty($keys)) {
+            return [];
+        }
+
+        // Sanitize keys: allow only base36-ish keys up to 64 chars to be safe
+        $clean = [];
+        foreach ($keys as $k) {
+            $k = (string)$k;
+            if ($k === '') { continue; }
+            if (preg_match('/^[a-z0-9\-_:]{3,64}$/i', $k)) {
+                $clean[] = $k;
+            }
+        }
+
+        // Hard cap to prevent abuse
+        $clean = array_slice(array_values(array_unique($clean)), 0, 2000);
+
+        if (empty($clean)) {
+            return [];
+        }
+
+        // Build IN clause safely
+        list($insql, $inparams) = $DB->get_in_or_equal($clean, SQL_PARAMS_NAMED, 'k');
+        $params = array_merge(['lang' => $lang], $inparams);
+
+        $sql = "SELECT k.xkey, t.text
+                  FROM {local_xlate_key} k
+                  JOIN {local_xlate_tr} t ON t.keyid = k.id
+                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql";
+
+        $recs = $DB->get_records_sql($sql, $params);
+
+        $map = [];
+        foreach ($recs as $r) {
+            $map[$r->xkey] = $r->text;
+        }
+
+        return $map;
+    }
     public static function get_bundle(string $lang): array {
         $cache = \cache::make('local_xlate', 'bundle');
         if ($hit = $cache->get($lang)) {

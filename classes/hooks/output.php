@@ -68,6 +68,7 @@ class output {
           siteLang: %s,
           version: %s,
           autodetect: %s,
+                    loadBundleOnSiteLang: true,
           bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
         });
       });
