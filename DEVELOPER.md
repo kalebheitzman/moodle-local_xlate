@@ -5,7 +5,7 @@
 plugin injects a bootloader, serves immutable JSON bundles, and runs an AMD
 module that translates DOM nodes (and can capture new strings) without touching
 core or theme code. Each translated element receives a stable `data-xlate-key`
-attribute so minor source edits do not invalidate translations.
+attribute so minor source edits do not invalidate translations. Keys are 12-character hashes based on element structure, class, region, and text (see `KEY_GENERATION.md`).
 
 ```
 DB (local_xlate_key + local_xlate_tr)
@@ -14,35 +14,37 @@ DB (local_xlate_key + local_xlate_tr)
   → browser localStorage (xlate:<lang>:<version>)
   → AMD translator (translation + optional capture)
   → local_xlate_save_key web service (capture only)
+  (If page is in edit mode, capture is always disabled)
 ```
 
 ## 2. Architecture Overview
 - **Hooks** (`classes/hooks/output.php`) inject anti-FOUT CSS and a bootloader
-  via Moodle’s hook system (`db/hooks.php`). Hooks are skipped on admin pages to
-  preserve core behaviour.
+  via Moodle’s hook system (`db/hooks.php`). Hooks are skipped on admin pages and in edit mode to preserve core behaviour and prevent unwanted capture.
 - **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
   language bundles (`{translations, sourceMap}`) with `Cache-Control: public,
-  max-age=31536000, immutable`.
+  max-age=31536000, immutable`. Supports POST with `{keys: [...]}` to return only translations for keys found on the page (used for efficient capture and translation).
 - **Client runtime** (`amd/src/translator.js`) applies translations, stores state
   on `window.__XLATE__`, observes DOM mutations, and can capture untranslated
-  text when enabled.
+  text when enabled. If the page is in edit mode (`isEditing` flag from PHP), all capture and tagging logic is skipped and a console message is logged.
 - **Server APIs** (`classes/local/api.php`, `classes/external.php`) provide CRUD,
   cache invalidation, and web services consumed by the AMD module and admin UI.
 
 ## 3. Automatic Capture (AMD Module)
 - Guard rails:
   - `currentLang === siteLang` (prevents recording already-translated strings).
+  - **Edit mode disables capture**: If the page is in edit mode, capture/tagging is always skipped (see `isEditing` flag in JS config).
   - Capability check happens via `local_xlate_save_key`
     (`local/xlate:manage`).
   - Runtime flag (`translator.setAutoDetect()`) lets us toggle capture; TODO to
     wire this to the `autodetect` config.
-- Captured text includes text nodes plus `placeholder`, `title`, and `alt`
+- Captured text includes text nodes plus `placeholder`, `title`, `alt`, and `aria-label`
   attributes. Stable keys combine detected component, element type, normalized
-  text, and a short hash.
+  text, and a short hash. See `KEY_GENERATION.md` for full details.
 - Successful capture updates Moodle DB, bumps the bundle version, and invalidates
   caches so subsequent requests fetch fresh bundles.
 
 ## 4. Bundle & Cache Layer (`classes/local/api.php`)
+* Bundle endpoint supports both GET (full bundle) and POST (filtered by keys array) for efficient translation and capture.
 | Method | Purpose |
 | ------ | ------- |
 | `get_bundle($lang)` | Returns `{translations, sourceMap}`. Cached in Moodle application cache (1-hour TTL). |
@@ -53,10 +55,7 @@ DB (local_xlate_key + local_xlate_tr)
 | `save_key_with_translation(...)` | Transactional helper for capture/admin UI. |
 | `get_keys_paginated(...)` | Supports `manage.php` search and pagination. |
 
-`bundle.php` still serves the full bundle even though `get_page_bundle()` can
-filter by component; that behaviour is disabled until requirements are
-finalised. Bundles include a `sourceMap` keyed by normalised source strings to
-support fuzzy matching during translation.
+`bundle.php` serves the full bundle by default, but POST requests with a `keys` array return only those translations. Bundles include a `sourceMap` keyed by normalised source strings to support fuzzy matching during translation.
 
 ## 5. Database Structure (`db/install.xml`)
 - `local_xlate_key`: canonical keys (`component`, `xkey`, `source`, `mtime`),
@@ -96,6 +95,7 @@ The AMD module uses `local_xlate_save_key`; the others enable admin tooling and
 external integrations.
 
 ## 9. Development Workflow
+* **Edit mode/capture debugging**: To verify that capture is disabled in edit mode, enable editing on a Moodle page and check the browser console for the `[XLATE] Edit mode detected (isEditing=true): skipping translation/capture logic.` message. No keys will be tagged or saved in this mode.
 1. **Install/upgrade**: place under `local/xlate` then visit *Site administration →
    Notifications* or run `php admin/cli/upgrade.php`.
 2. **Build AMD assets** after editing `amd/src/*.js`:
@@ -153,9 +153,10 @@ local/xlate/
 ## 12. TODOs & Future Enhancements
 - Wire `autodetect` setting into `translator.setAutoDetect()` for runtime
   control without editing JS.
-- Revisit component filtering in `api::get_page_bundle()` once page-level
-  bundles are needed.
+- Enable page-level bundle filtering in `api::get_page_bundle()` for further optimization.
 - Extend translation records with workflow metadata (reviewer, confidence, etc.)
   if the requirements evolve.
+- Add collision detection/resolution for structural keys if needed.
+- Expose composite string for each key in admin UI/debug mode.
 
 Happy hacking!

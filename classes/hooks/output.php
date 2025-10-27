@@ -37,7 +37,7 @@ class output {
         $contextid = $PAGE->context->id;
         $pagetype = $PAGE->pagetype;
         $courseid = 0;
-        
+
         // Extract course ID based on context
         if ($PAGE->context->contextlevel == CONTEXT_COURSE) {
             $courseid = $PAGE->context->instanceid;
@@ -51,42 +51,52 @@ class output {
             // Fallback to $PAGE->course if available and not site course
             $courseid = $PAGE->course->id;
         }
-        
+
         $lang = current_language();
         $site_lang = get_config('core', 'lang') ?: 'en'; // Site's default language
         $version = \local_xlate\local\api::get_version($lang);
         $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
-        
-        $script = sprintf("
-<script>
+        $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) ? 'true' : 'false';
+        $script = sprintf(
+            "<script>
 (function(){
-  function initTranslator() {
-    if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
-      require(['local_xlate/translator'], function(translator){
-        translator.init({
-          lang: %s,
-          siteLang: %s,
-          version: %s,
-          autodetect: %s,
+    function initTranslator() {
+        if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
+            require(['local_xlate/translator'], function(translator){
+                translator.init({
+                    lang: %s,
+                    siteLang: %s,
+                    version: %s,
+                    autodetect: %s,
                     loadBundleOnSiteLang: true,
-          bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
-        });
-      });
-    } else {
-      // RequireJS not ready yet, wait a bit
-      setTimeout(initTranslator, 100);
+                    isEditing: %s,
+                    bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
+                });
+            });
+        } else {
+            // RequireJS not ready yet, wait a bit
+            setTimeout(initTranslator, 100);
+        }
     }
-  }
-  
-  // Wait for DOM to be ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initTranslator);
-  } else {
-    initTranslator();
-  }
+
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTranslator);
+    } else {
+        initTranslator();
+    }
 })();
-</script>
-", json_encode($lang), json_encode($site_lang), json_encode($version), $autodetect, json_encode($lang), json_encode($contextid), json_encode($pagetype), json_encode($courseid));
+</script>",
+            json_encode($lang),
+            json_encode($site_lang),
+            json_encode($version),
+            $autodetect,
+            $isediting,
+            json_encode($lang),
+            json_encode($contextid),
+            json_encode($pagetype),
+            json_encode($courseid)
+        );
         $hook->add_html($script);
         // Debug marker
         $hook->add_html('<!-- XLATE BODY HOOK FIRED -->');

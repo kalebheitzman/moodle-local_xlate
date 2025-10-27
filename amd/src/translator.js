@@ -548,6 +548,14 @@ define(['core/ajax'], function (Ajax) {
   function init(config) {
     document.documentElement.classList.add('xlate-loading');
 
+    // If editing mode is enabled, skip all capture/tagging logic
+    if (config.isEditing) {
+      // eslint-disable-next-line no-console
+      console.log('[XLATE] Edit mode detected (isEditing=true): skipping translation/capture logic.');
+      document.documentElement.classList.remove('xlate-loading');
+      return;
+    }
+
     if (typeof config.autodetect !== 'undefined') {
       autoDetectEnabled = !(config.autodetect === false || config.autodetect === 'false');
     }
@@ -607,37 +615,37 @@ define(['core/ajax'], function (Ajax) {
       fetch(config.bundleurl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: keysCap})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keysCap })
       })
-      .then(function(response) {
-        return response.json();
-      })
-      .then(function(map) {
-        var translations = (map && map.translations) ? map.translations : map;
-        if (!translations || typeof translations !== 'object') {
-          translations = {};
-        }
-        window.__XLATE__.map = translations;
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (map) {
+          var translations = (map && map.translations) ? map.translations : map;
+          if (!translations || typeof translations !== 'object') {
+            translations = {};
+          }
+          window.__XLATE__.map = translations;
 
-        var existingCount = Object.keys(translations).length;
-        // eslint-disable-next-line no-console
-        console.log('[XLATE] Bundle returned', existingCount, 'existing translations');
+          var existingCount = Object.keys(translations).length;
+          // eslint-disable-next-line no-console
+          console.log('[XLATE] Bundle returned', existingCount, 'existing translations');
 
-        // Now walk again to save only keys NOT in the bundle
-        processedElements = new WeakSet();
-        walk(document.body, translations, false);
-        run(translations);
-        return true;
-      })
-      .catch(function(err) {
-        // eslint-disable-next-line no-console
-        console.error('[XLATE] Bundle fetch failed:', err);
-        // If bundle fetch fails, save everything
-        processedElements = new WeakSet();
-        walk(document.body, {}, false);
-        run({});
-      });
+          // Now walk again to save only keys NOT in the bundle
+          processedElements = new WeakSet();
+          walk(document.body, translations, false);
+          run(translations);
+          return true;
+        })
+        .catch(function (err) {
+          // eslint-disable-next-line no-console
+          console.error('[XLATE] Bundle fetch failed:', err);
+          // If bundle fetch fails, save everything
+          processedElements = new WeakSet();
+          walk(document.body, {}, false);
+          run({});
+        });
       return;
     }
 
