@@ -32,6 +32,27 @@ define(['core/ajax'], function (Ajax) {
   Translator.dom = {};
   Translator.api = {};
 
+  /**
+   * Wrapper for debug logging which only emits when server-side debug is enabled.
+   * The hook in PHP will expose `window.XLATE_DEBUG` as true when Moodle debugging
+   * is set to DEVELOPER. This keeps noisy logs out of production.
+   */
+  /* eslint-disable no-console */
+  /**
+   * Debug logging helper. Emits messages only when `window.XLATE_DEBUG` is truthy.
+   * @returns {void}
+   */
+  function xlateDebug() {
+    if (typeof window !== 'undefined' && window.XLATE_DEBUG) {
+      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+        console.debug.apply(console, arguments);
+      } else if (typeof console !== 'undefined' && typeof console.log === 'function') {
+        console.log.apply(console, arguments);
+      }
+    }
+  }
+  /* eslint-enable no-console */
+
   // ============================================================================
   // KEY GENERATION - Create structural 12-character hash keys
   // ============================================================================
@@ -336,8 +357,7 @@ define(['core/ajax'], function (Ajax) {
   function saveToDatabase(element, text, type, key, existingMap) {
     // If key already exists in the bundle, skip saving
     if (existingMap && existingMap[key]) {
-      // eslint-disable-next-line no-console
-      console.log('[XLATE] Skipping save - key exists:', key);
+      xlateDebug('[XLATE] Skipping save - key exists:', key);
       return;
     }
 
@@ -349,8 +369,15 @@ define(['core/ajax'], function (Ajax) {
     }
     detectedStrings.add(dedupeKey);
 
-    // eslint-disable-next-line no-console
-    console.log('[XLATE] Saving new key:', key, 'component:', component, 'text:', text.substring(0, 50));
+    xlateDebug('[XLATE] Saving new key:', key, 'component:', component, 'text:', text.substring(0, 50));
+
+    // Determine page-level course id (prefer server-injected XLATE_COURSEID when present)
+    var pageCourseId = 0;
+    if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+      pageCourseId = window.XLATE_COURSEID;
+    } else if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
+      pageCourseId = M.cfg.courseid;
+    }
 
     Ajax.call([{
       methodname: 'local_xlate_save_key',
@@ -361,7 +388,7 @@ define(['core/ajax'], function (Ajax) {
         lang: (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en',
         translation: text
         ,
-        courseid: (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') ? window.XLATE_COURSEID : (typeof M !== 'undefined' && M.cfg && M.cfg.courseid ? M.cfg.courseid : 0),
+        courseid: pageCourseId,
         context: component
       }
     }])[0].then(function () {
@@ -412,8 +439,7 @@ define(['core/ajax'], function (Ajax) {
             return true;
           }
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.log('[XLATE][DEBUG] Invalid selector:', sel, e);
+          xlateDebug('[XLATE][DEBUG] Invalid selector:', sel, e);
         }
       }
     }
@@ -648,8 +674,7 @@ define(['core/ajax'], function (Ajax) {
 
     // If editing mode is enabled, skip all capture/tagging logic
     if (config.isEditing) {
-      // eslint-disable-next-line no-console
-      console.log('[XLATE] Edit mode detected (isEditing=true): skipping translation/capture logic.');
+      xlateDebug('[XLATE] Edit mode detected (isEditing=true): skipping translation/capture logic.');
       document.documentElement.classList.remove('xlate-loading');
       return;
     }
@@ -679,8 +704,7 @@ define(['core/ajax'], function (Ajax) {
       courseId = M.cfg.courseid;
     }
 
-    // eslint-disable-next-line no-console
-    console.log('[XLATE] Initializing:', {
+    xlateDebug('[XLATE] Initializing:', {
       currentLang: currentLang,
       siteLang: siteLang,
       isCapture: isCapture,
@@ -690,8 +714,7 @@ define(['core/ajax'], function (Ajax) {
 
     // In capture mode: fetch bundle first to check existing keys, then tag + save only new ones
     if (isCapture) {
-      // eslint-disable-next-line no-console
-      console.log('[XLATE] Capture mode - starting tag-only pass');
+      xlateDebug('[XLATE] Capture mode - starting tag-only pass');
       processedElements = new WeakSet();
       // Tag-only first pass to generate keys
       walk(document.body, {}, true);
@@ -704,18 +727,15 @@ define(['core/ajax'], function (Ajax) {
       }
       var keysCap = Object.keys(keySetCap);
 
-      // eslint-disable-next-line no-console
-      console.log('[XLATE] Collected', keysCap.length, 'keys from DOM');
+      xlateDebug('[XLATE] Collected', keysCap.length, 'keys from DOM');
 
       if (keysCap.length === 0) {
-        // eslint-disable-next-line no-console
-        console.log('[XLATE] No keys found, skipping bundle fetch');
+        xlateDebug('[XLATE] No keys found, skipping bundle fetch');
         run({});
         return;
       }
 
-      // eslint-disable-next-line no-console
-      console.log('[XLATE] Fetching bundle to check existing keys...');
+      xlateDebug('[XLATE] Fetching bundle to check existing keys...');
       // Fetch existing translations for these keys
       fetch(config.bundleurl, {
         method: 'POST',
@@ -734,8 +754,7 @@ define(['core/ajax'], function (Ajax) {
           window.__XLATE__.map = translations;
 
           var existingCount = Object.keys(translations).length;
-          // eslint-disable-next-line no-console
-          console.log('[XLATE] Bundle returned', existingCount, 'existing translations');
+          xlateDebug('[XLATE] Bundle returned', existingCount, 'existing translations');
 
           // Now walk again to save only keys NOT in the bundle
           processedElements = new WeakSet();
@@ -744,8 +763,7 @@ define(['core/ajax'], function (Ajax) {
           return true;
         })
         .catch(function (err) {
-          // eslint-disable-next-line no-console
-          console.error('[XLATE] Bundle fetch failed:', err);
+          xlateDebug('[XLATE] Bundle fetch failed:', err);
           // If bundle fetch fails, save everything
           processedElements = new WeakSet();
           walk(document.body, {}, false);
@@ -754,8 +772,7 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
-    // eslint-disable-next-line no-console
-    console.log('[XLATE] Translation mode - starting tag-only pass');
+    xlateDebug('[XLATE] Translation mode - starting tag-only pass');
     // Translation mode: pre-tag, collect keys, request filtered bundle, then translate
     try {
       // Pre-tag only
