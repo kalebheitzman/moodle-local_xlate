@@ -61,14 +61,20 @@ if ($canmanage) {
         'xlate-manage-section mb-4'
     );
     
+    // Output capture/exclude selectors to JS
+    $capture_selectors = get_config('local_xlate', 'capture_selectors');
+    $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
+    echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n" .
+        'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
+
     echo html_writer::script("
         require(['jquery', 'local_xlate/translator', 'core/ajax', 'core/notification'], function($, Translator, Ajax, Notification) {
-            
+            // ...existing code...
             // Check current auto-detect status
             function updateStatus() {
                 $('#xlate-status-text').text('Auto-detection is currently active on this page.');
             }
-            
+            // ...existing code...
             $('#xlate-autodetect-enable').on('click', function() {
                 Translator.setAutoDetect(true);
                 Notification.addNotification({
@@ -77,7 +83,7 @@ if ($canmanage) {
                 });
                 updateStatus();
             });
-            
+            // ...existing code...
             $('#xlate-autodetect-disable').on('click', function() {
                 Translator.setAutoDetect(false);
                 Notification.addNotification({
@@ -86,11 +92,10 @@ if ($canmanage) {
                 });
                 $('#xlate-status-text').text('Auto-detection is currently disabled.');
             });
-            
+            // ...existing code...
             $('#xlate-rebuild-bundles').on('click', function() {
                 var button = $(this);
                 button.prop('disabled', true).text('Rebuilding...');
-                
                 Ajax.call([{
                     methodname: 'local_xlate_rebuild_bundles',
                     args: {}
@@ -109,8 +114,7 @@ if ($canmanage) {
                     button.prop('disabled', false).text('" . get_string('rebuild_bundles', 'local_xlate') . "');
                 });
             });
-            
-            // Initialize status
+            // ...existing code...
             updateStatus();
         });
     ");

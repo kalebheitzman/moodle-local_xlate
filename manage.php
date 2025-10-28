@@ -470,4 +470,10 @@ if (!empty($keys)) {
     );
 }
 
+// Output capture/exclude selectors to JS for admin UI as well
+$capture_selectors = get_config('local_xlate', 'capture_selectors');
+$exclude_selectors = get_config('local_xlate', 'exclude_selectors');
+echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n" .
+    'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
+
 echo $OUTPUT->footer();

@@ -326,12 +326,22 @@ define(['core/ajax'], function (Ajax) {
       return true;
     }
 
-    // Ignore .accesshide and descendants
-    if (element.classList && element.classList.contains('accesshide')) {
-      return true;
-    }
-    if (element.closest && element.closest('.accesshide')) {
-      return true;
+    // Exclude selectors from settings (window.XLATE_EXCLUDE_SELECTORS)
+    if (window.XLATE_EXCLUDE_SELECTORS && Array.isArray(window.XLATE_EXCLUDE_SELECTORS)) {
+      for (var i = 0; i < window.XLATE_EXCLUDE_SELECTORS.length; i++) {
+        var sel = window.XLATE_EXCLUDE_SELECTORS[i];
+        if (!sel) {
+          continue;
+        }
+        try {
+          if (element.matches(sel) || (element.closest && element.closest(sel))) {
+            return true;
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log('[XLATE][DEBUG] Invalid selector:', sel, e);
+        }
+      }
     }
 
     if (element.hasAttribute('data-xlate-ignore') || element.closest('[data-xlate-ignore]')) {
@@ -483,20 +493,46 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
-    var stack = [root];
-    while (stack.length) {
-      var el = stack.pop();
-      if (el.nodeType === 1) {
-        if (el.hasAttribute && !el.hasAttribute('data-xlate-ignore')) {
-          processElement(el, map, tagOnly);
-        }
+    // If capture selectors are set, only walk those areas
+    var captureSelectors = (window.XLATE_CAPTURE_SELECTORS &&
+      Array.isArray(window.XLATE_CAPTURE_SELECTORS) &&
+      window.XLATE_CAPTURE_SELECTORS.length)
+      ? window.XLATE_CAPTURE_SELECTORS : null;
 
-        var children = el.children || [];
-        for (var i = 0; i < children.length; i++) {
-          stack.push(children[i]);
+    var roots = [];
+    if (captureSelectors) {
+      captureSelectors.forEach(function (sel) {
+        try {
+          var found = document.querySelectorAll(sel);
+          for (var i = 0; i < found.length; i++) {
+            roots.push(found[i]);
+          }
+        } catch (e) { /* ignore invalid selectors */ }
+      });
+      if (!roots.length) {
+        roots = [root]; // fallback to body
+      }
+    } else {
+      roots = [root];
+    }
+
+    roots.forEach(function (scanRoot) {
+      var stack = [scanRoot];
+      while (stack.length) {
+        var el = stack.pop();
+        if (el.nodeType === 1) {
+          // If this element should be ignored (exclusion zone), skip its subtree
+          if (shouldIgnoreElement(el)) {
+            continue;
+          }
+          processElement(el, map, tagOnly);
+          var children = el.children || [];
+          for (var i = 0; i < children.length; i++) {
+            stack.push(children[i]);
+          }
         }
       }
-    }
+    });
   }
 
   /**

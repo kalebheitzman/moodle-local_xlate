@@ -57,6 +57,16 @@ class output {
         $version = \local_xlate\local\api::get_version($lang);
         $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
         $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) ? 'true' : 'false';
+
+        // Output capture/exclude selectors as global JS variables
+        $capture_selectors = get_config('local_xlate', 'capture_selectors');
+        $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
+        $selectors_script = '<script>'
+            . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
+            . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
+            . '</script>';
+        $hook->add_html($selectors_script);
+
         $script = sprintf(
             "<script>
 (function(){

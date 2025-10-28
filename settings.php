@@ -29,10 +29,18 @@ if ($hassiteconfig) {
             array_fill_keys($enabledlangsarray, 1),
             $langchoices));
 
-        $settings->add(new admin_setting_configtextarea('local_xlate/component_mapping',
-            get_string('component_mapping', 'local_xlate'),
-            get_string('component_mapping_desc', 'local_xlate'),
-            "path-admin=admin\nblock_=block_\nmod_=mod_\nregion_=region_", PARAM_TEXT));
+
+        // Capture area selectors (include patterns)
+        $settings->add(new admin_setting_configtextarea('local_xlate/capture_selectors',
+            'Capture area selectors',
+            'Only text within elements matching these CSS selectors will be captured for translation. One selector per line. Leave blank to capture everything.',
+            "#region-main\n#page-content\n.main-content\n#page-wrapper\n.format-topics", PARAM_TEXT));
+
+        // Exclude selectors (exclude patterns)
+        $settings->add(new admin_setting_configtextarea('local_xlate/exclude_selectors',
+            'Exclude selectors',
+            'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.',
+            ".accesshide\n.visually-hidden\n.hidden\n.sr-only", PARAM_TEXT));
 
         // Add link to translation management
         $manage_url = new moodle_url('/local/xlate/manage.php');
