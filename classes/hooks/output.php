@@ -64,6 +64,7 @@ class output {
         $selectors_script = '<script>'
             . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
             . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
+            . 'window.XLATE_COURSEID = ' . json_encode($courseid) . ";\n"
             . '</script>';
         $hook->add_html($selectors_script);
 
@@ -71,6 +72,11 @@ class output {
             "<script>
 (function(){
     function initTranslator() {
+        // Debug: log initialization details so we can verify course id is available to the client.
+        if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+            console.debug('XLATE Initializing', { lang: %s, siteLang: %s, version: %s, autodetect: %s, isEditing: %s, courseid: %s });
+        }
+
         if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
             require(['local_xlate/translator'], function(translator){
                 translator.init({
@@ -102,6 +108,16 @@ class output {
             json_encode($version),
             $autodetect,
             $isediting,
+            json_encode($courseid),
+
+            /* init() params */
+            json_encode($lang),
+            json_encode($site_lang),
+            json_encode($version),
+            $autodetect,
+            $isediting,
+
+            /* bundleurl params */
             json_encode($lang),
             json_encode($contextid),
             json_encode($pagetype),

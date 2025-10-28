@@ -267,7 +267,7 @@ class api {
      * @param string $translation
      * @return int Key ID
      */
-    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation): int {
+    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $courseid = 0, string $context = ''): int {
         global $DB;
         
         $transaction = $DB->start_delegated_transaction();
@@ -278,6 +278,29 @@ class api {
             
             // Save the translation
             self::save_translation($keyid, $lang, $translation);
+
+            // If a course association was provided, record it (deduped by source hash).
+            if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
+                global $USER;
+                $sourcehash = sha1($source ?? '');
+                $existing = $DB->get_record('local_xlate_key_course', [
+                    'keyid' => $keyid,
+                    'courseid' => $courseid,
+                    'source_hash' => $sourcehash
+                ]);
+
+                if (!$existing) {
+                    $rec = (object)[
+                        'keyid' => $keyid,
+                        'courseid' => $courseid,
+                        'source_hash' => $sourcehash,
+                        'userid' => isset($USER->id) ? $USER->id : 0,
+                        'context' => $context,
+                        'mtime' => time()
+                    ];
+                    $DB->insert_record('local_xlate_key_course', $rec);
+                }
+            }
             
             // Invalidate cache for this language
             self::invalidate_bundle_cache($lang);

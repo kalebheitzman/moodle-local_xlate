@@ -16,7 +16,9 @@ class local_xlate_external extends external_api {
             'key' => new external_value(PARAM_TEXT, 'Translation key'),
             'source' => new external_value(PARAM_TEXT, 'Source text', VALUE_DEFAULT, ''),
             'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
-            'translation' => new external_value(PARAM_TEXT, 'Translation text')
+            'translation' => new external_value(PARAM_TEXT, 'Translation text'),
+            'courseid' => new external_value(PARAM_INT, 'Course id', VALUE_DEFAULT, 0),
+            'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, '')
         ]);
     }
 
@@ -37,7 +39,9 @@ class local_xlate_external extends external_api {
             'key' => $key,
             'source' => $source,
             'lang' => $lang,
-            'translation' => $translation
+            'translation' => $translation,
+            'courseid' => 0,
+            'context' => ''
         ]);
 
         $context = context_system::instance();
@@ -49,7 +53,9 @@ class local_xlate_external extends external_api {
             $params['key'],
             $params['source'],
             $params['lang'],
-            $params['translation']
+            $params['translation'],
+            (int)$params['courseid'],
+            $params['context']
         );
 
         return [

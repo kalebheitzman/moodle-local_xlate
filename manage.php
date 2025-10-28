@@ -5,7 +5,7 @@ require_once($CFG->libdir . '/tablelib.php');
 /**
  * Render pagination controls
  */
-function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $component, $status_filter) {
+function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $courseid = 0) {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
     
@@ -17,7 +17,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         if ($page > 0) {
             $prevurl = new moodle_url($baseurl, [
                 'page' => $page - 1, 'perpage' => $perpage, 
-                'search' => $search, 'component_filter' => $component, 'status_filter' => $status_filter
+                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
             ]);
             $pagination .= html_writer::tag('li', 
                 html_writer::link($prevurl, '‹ ' . get_string('previous'), ['class' => 'page-link']), 
@@ -34,7 +34,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         if ($page > 2) {
             $firsturl = new moodle_url($baseurl, [
                 'page' => 0, 'perpage' => $perpage,
-                'search' => $search, 'component_filter' => $component, 'status_filter' => $status_filter
+                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
             ]);
             $pagination .= html_writer::tag('li',
                 html_writer::link($firsturl, '1', ['class' => 'page-link']),
@@ -56,7 +56,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         for ($i = $start_page; $i <= $end_page; $i++) {
             $pageurl = new moodle_url($baseurl, [
                 'page' => $i, 'perpage' => $perpage,
-                'search' => $search, 'component_filter' => $component, 'status_filter' => $status_filter
+                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
             ]);
             
             if ($i == $page) {
@@ -83,7 +83,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
             
             $lasturl = new moodle_url($baseurl, [
                 'page' => $total_pages - 1, 'perpage' => $perpage,
-                'search' => $search, 'component_filter' => $component, 'status_filter' => $status_filter
+                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
             ]);
             $pagination .= html_writer::tag('li',
                 html_writer::link($lasturl, $total_pages, ['class' => 'page-link']),
@@ -95,7 +95,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         if ($page < $total_pages - 1) {
             $nexturl = new moodle_url($baseurl, [
                 'page' => $page + 1, 'perpage' => $perpage,
-                'search' => $search, 'component_filter' => $component, 'status_filter' => $status_filter
+                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
             ]);
             $pagination .= html_writer::tag('li',
                 html_writer::link($nexturl, get_string('next') . ' ›', ['class' => 'page-link']),
@@ -125,15 +125,15 @@ $lang = optional_param('lang', '', PARAM_ALPHA);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
-$component = optional_param('component_filter', '', PARAM_ALPHANUMEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
+$filter_courseid = optional_param('courseid', 0, PARAM_INT);
 
 $PAGE->set_url(new moodle_url('/local/xlate/manage.php', [
     'page' => $page,
     'perpage' => $perpage,
     'search' => $search,
-    'component_filter' => $component,
-    'status_filter' => $status_filter
+    'status_filter' => $status_filter,
+    'courseid' => $filter_courseid
 ]));
 $PAGE->set_context($context);
 $PAGE->set_pagelayout('admin');
@@ -185,14 +185,7 @@ $enabledlangs = get_config('local_xlate', 'enabled_languages');
 $enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
 $installedlangs = get_string_manager()->get_list_of_translations();
 
-// Information card describing automatic key capture
-echo html_writer::start_div('card mb-4');
-echo html_writer::div(get_string('automatic_keys_heading', 'local_xlate'), 'card-header');
-echo html_writer::start_div('card-body');
-echo html_writer::tag('p', get_string('automatic_keys_description', 'local_xlate'));
-echo html_writer::tag('p', get_string('automatic_keys_hint', 'local_xlate'), ['class' => 'mb-0 text-muted']);
-echo html_writer::end_div();
-echo html_writer::end_div();
+// Automatic key capture info removed to save vertical space.
 
 // Search and filter form
 echo html_writer::start_div('card mb-4');
@@ -215,16 +208,7 @@ echo html_writer::empty_tag('input', [
 ]);
 echo html_writer::end_div();
 
-// Component filter
-echo html_writer::start_div('col-md-2');
-echo html_writer::tag('label', get_string('component', 'local_xlate'), ['for' => 'component_filter']);
-$components = $DB->get_records_sql("SELECT DISTINCT component FROM {local_xlate_key} ORDER BY component");
-$component_options = ['' => get_string('all_components', 'local_xlate')];
-foreach ($components as $comp) {
-    $component_options[$comp->component] = $comp->component;
-}
-echo html_writer::select($component_options, 'component_filter', $component, false, ['class' => 'form-control']);
-echo html_writer::end_div();
+// (component filter removed)
 
 // Status filter
 echo html_writer::start_div('col-md-2');
@@ -243,6 +227,19 @@ echo html_writer::start_div('col-md-2');
 echo html_writer::tag('label', get_string('per_page', 'local_xlate'), ['for' => 'perpage']);
 $perpage_options = [5 => '5', 10 => '10', 25 => '25', 50 => '50', 100 => '100'];
 echo html_writer::select($perpage_options, 'perpage', $perpage, false, ['class' => 'form-control']);
+echo html_writer::end_div();
+
+// Course filter
+echo html_writer::start_div('col-md-2');
+echo html_writer::tag('label', get_string('courseid', 'local_xlate'), ['for' => 'courseid']);
+echo html_writer::empty_tag('input', [
+    'type' => 'number',
+    'id' => 'courseid',
+    'name' => 'courseid',
+    'value' => $filter_courseid,
+    'class' => 'form-control',
+    'placeholder' => 'Course ID'
+]);
 echo html_writer::end_div();
 
 // Search button
@@ -273,15 +270,17 @@ if (!empty($search)) {
     $params[] = $search_param;
 }
 
-// Component filter
-if (!empty($component)) {
-    $where_conditions[] = "k.component = ?";
-    $params[] = $component;
-}
+// (component filter removed)
 
 $where_clause = '';
 if (!empty($where_conditions)) {
     $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
+}
+
+// If course filter is present, add EXISTS condition to where clause
+if (!empty($filter_courseid)) {
+    $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id AND kc.courseid = ?)";
+    $params[] = $filter_courseid;
 }
 
 // Count total records for pagination
@@ -346,7 +345,7 @@ if (!empty($keys)) {
     // Pagination controls (top)
     if ($total_count > $perpage) {
         echo html_writer::start_div('card-body pb-2 border-bottom');
-        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $component, $status_filter), 'd-flex justify-content-center');
+        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $status_filter, $filter_courseid), 'd-flex justify-content-center');
         echo html_writer::end_div();
     }
     
@@ -451,14 +450,14 @@ if (!empty($keys)) {
     // Pagination controls (bottom)
     if ($total_count > $perpage) {
         echo html_writer::start_div('card-body pt-2 border-top');
-        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $component, $status_filter), 'd-flex justify-content-center');
+        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $status_filter, $filter_courseid), 'd-flex justify-content-center');
         echo html_writer::end_div();
     }
     
     echo html_writer::end_div();
 } else {
     $message = 'No translation keys found.';
-    if (!empty($search) || !empty($component) || !empty($status_filter)) {
+    if (!empty($search) || !empty($status_filter) || !empty($filter_courseid)) {
         $message = get_string('no_results_found', 'local_xlate');
     } else {
         $message = get_string('no_keys_found', 'local_xlate');

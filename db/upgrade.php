@@ -21,5 +21,40 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025102403, 'local', 'xlate');
     }
 
+    // Add local_xlate_key_course table for course associations
+    if ($oldversion < 2025102700) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+
+        // Define table local_xlate_key_course to be added.
+        $table = new xmldb_table('local_xlate_key_course');
+
+        // Add fields to table local_xlate_key_course.
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('keyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('source_hash', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('context', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('mtime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        // Add keys
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('fk_keyid', XMLDB_KEY_FOREIGN, ['keyid'], 'local_xlate_key', ['id']);
+
+        // Add indexes
+    $table->add_index('ix_courseid', XMLDB_INDEX_NOTUNIQUE, ['courseid']);
+        $table->add_index('uq_key_course_source', XMLDB_INDEX_UNIQUE, ['keyid', 'courseid', 'source_hash']);
+
+        // Conditionally launch create table
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Savepoint reached.
+        upgrade_plugin_savepoint(true, 2025102700, 'local', 'xlate');
+    }
+
     return true;
 }

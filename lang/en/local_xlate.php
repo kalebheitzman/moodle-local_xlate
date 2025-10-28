@@ -30,9 +30,7 @@ $string['status'] = 'Status';
 $string['active'] = 'Active';
 $string['inactive'] = 'Inactive';
 $string['save_translation'] = 'Save Translation';
-$string['automatic_keys_heading'] = 'Automatic Key Capture';
-$string['automatic_keys_description'] = 'Translation keys are created by the auto-detection engine while you browse the site in its default language. Manual key creation is disabled.';
-$string['automatic_keys_hint'] = 'Browse pages in the default language with the manage capability to capture new strings, then enter translations below.';
+// Automatic key capture strings removed because the info card was removed from the UI.
 
 // Success/error messages for management
 $string['translation_saved'] = 'Translation saved successfully';
@@ -54,3 +52,5 @@ $string['no_results_found'] = 'No translation keys match your search criteria. T
 $string['no_keys_found'] = 'No translation keys found yet. Browse the site in the default language to trigger automatic capture.';
 
 // Success/error messages
+
+$string['courseid'] = 'Course ID';

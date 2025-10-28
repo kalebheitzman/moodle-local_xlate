@@ -360,6 +360,9 @@ define(['core/ajax'], function (Ajax) {
         source: text,
         lang: (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en',
         translation: text
+        ,
+        courseid: (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') ? window.XLATE_COURSEID : (typeof M !== 'undefined' && M.cfg && M.cfg.courseid ? M.cfg.courseid : 0),
+        context: component
       }
     }])[0].then(function () {
       if (window.__XLATE__) {
@@ -668,11 +671,20 @@ define(['core/ajax'], function (Ajax) {
     var siteLang = config.siteLang;
     var isCapture = (currentLang === siteLang);
 
+    // Detect course id exposed by server-side hook or fallback to M.cfg
+    var courseId = null;
+    if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+      courseId = window.XLATE_COURSEID;
+    } else if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
+      courseId = M.cfg.courseid;
+    }
+
     // eslint-disable-next-line no-console
     console.log('[XLATE] Initializing:', {
       currentLang: currentLang,
       siteLang: siteLang,
       isCapture: isCapture,
+      courseId: courseId
     });
     // Auto-detect enabled by default (autoDetectEnabled removed)
 
