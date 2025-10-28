@@ -31,7 +31,18 @@ class local_xlate_external extends external_api {
      * @param string $translation
      * @return array
      */
-    public static function save_key($component, $key, $source, $lang, $translation) {
+    /**
+     * Save a translation key
+     * @param string $component
+     * @param string $key
+     * @param string $source
+     * @param string $lang
+     * @param string $translation
+     * @param int $courseid
+     * @param string $context
+     * @return array
+     */
+    public static function save_key($component, $key, $source, $lang, $translation, $courseid = 0, $context = '') {
         global $USER;
 
         $params = self::validate_parameters(self::save_key_parameters(), [
@@ -40,8 +51,8 @@ class local_xlate_external extends external_api {
             'source' => $source,
             'lang' => $lang,
             'translation' => $translation,
-            'courseid' => 0,
-            'context' => ''
+            'courseid' => $courseid,
+            'context' => $context
         ]);
 
         $context = context_system::instance();

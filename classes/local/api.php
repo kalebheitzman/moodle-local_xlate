@@ -298,7 +298,24 @@ class api {
                         'context' => $context,
                         'mtime' => time()
                     ];
-                    $DB->insert_record('local_xlate_key_course', $rec);
+                    try {
+                        $DB->insert_record('local_xlate_key_course', $rec);
+                    } catch (\Exception $e) {
+                        // Possible race: another request inserted the same unique row concurrently.
+                        // Re-check for existing row; if found, treat as benign, otherwise rethrow.
+                        $existing2 = $DB->get_record('local_xlate_key_course', [
+                            'keyid' => $keyid,
+                            'courseid' => $courseid,
+                            'source_hash' => $sourcehash
+                        ]);
+                        if ($existing2) {
+                            // benign race; ignore
+                            debugging('[local_xlate] Ignored duplicate insert into local_xlate_key_course (race condition)', DEBUG_DEVELOPER);
+                        } else {
+                            // Unexpected DB error - rethrow to surface the issue and rollback transaction
+                            throw $e;
+                        }
+                    }
                 }
             }
             
