@@ -34,9 +34,8 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
         $table->add_field('keyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
         $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('source_hash', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_field('context', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+    $table->add_field('source_hash', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+    $table->add_field('context', XMLDB_TYPE_CHAR, '255', null, null, null, null);
         $table->add_field('mtime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
 
         // Add keys
@@ -60,6 +59,21 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
     if ($oldversion < 2025102800) {
         // No DB schema changes required for capabilities; bump savepoint.
         upgrade_plugin_savepoint(true, 2025102800, 'local', 'xlate');
+    }
+
+    // Remove userid column from local_xlate_key_course - no longer needed
+    if ($oldversion < 2025102900) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_key_course');
+        $field = new xmldb_field('userid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->drop_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2025102900, 'local', 'xlate');
     }
 
     return true;

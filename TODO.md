@@ -18,7 +18,7 @@ expanded into concrete implementation steps.
 ## Database & schema
 
 - [x] Design & create DB table for course associations (`local_xlate_key_course`)
-  - [x] Columns: `id`, `keyid`, `courseid`, `source_hash`, `userid`, `context`, `mtime`.
+  - [x] Columns: `id`, `keyid`, `courseid`, `source_hash`, `context`, `mtime`.
   - [x] UNIQUE(`keyid`, `courseid`, `source_hash`) and necessary indexes.
   - [x] Table added to `db/install.xml` and migration added to `db/upgrade.php`.
 

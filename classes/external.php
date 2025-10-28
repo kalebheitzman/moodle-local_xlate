@@ -179,4 +179,60 @@ class local_xlate_external extends external_api {
             )
         ]);
     }
+
+    /**
+     * Associate keys parameters
+     * @return external_function_parameters
+     */
+    public static function associate_keys_parameters() {
+        return new external_function_parameters([
+            'keys' => new external_multiple_structure(
+                new external_single_structure([
+                    'component' => new external_value(PARAM_TEXT, 'Component identifier'),
+                    'key' => new external_value(PARAM_TEXT, 'Translation key'),
+                    'source' => new external_value(PARAM_TEXT, 'Source text', VALUE_DEFAULT, '')
+                ]), 'Keys to associate'
+            ),
+            'courseid' => new external_value(PARAM_INT, 'Course id'),
+            'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, '')
+        ]);
+    }
+
+    /**
+     * Associate multiple keys with a course (create keys if missing)
+     * @param array $keys
+     * @param int $courseid
+     * @param string $context
+     * @return array
+     */
+    public static function associate_keys($keys, $courseid, $context = '') {
+        global $USER;
+
+        $params = self::validate_parameters(self::associate_keys_parameters(), [
+            'keys' => $keys,
+            'courseid' => $courseid,
+            'context' => $context
+        ]);
+
+        // Require login but allow any authenticated user to trigger associations
+        require_login();
+
+    $details = \local_xlate\local\api::associate_keys_with_course($params['keys'], (int)$params['courseid'], $params['context']);
+
+        return [
+            'success' => true,
+            'details' => $details
+        ];
+    }
+
+    /**
+     * Associate keys returns
+     * @return external_single_structure
+     */
+    public static function associate_keys_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'details' => new external_single_structure([], 'Details', VALUE_OPTIONAL)
+        ]);
+    }
 }

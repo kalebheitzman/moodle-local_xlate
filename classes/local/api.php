@@ -51,6 +51,76 @@ class api {
 
         return $map;
     }
+
+    /**
+     * Get translations for a specific set of keys and optionally include
+     * association information for a given course.
+     * Returns an array with keys: translations (map xkey=>text), sourceMap, associations (optional map xkey=>bool)
+     *
+     * @param string $lang
+     * @param array $keys
+     * @param int $courseid
+     * @return array
+     */
+    public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
+        global $DB;
+
+        $translations = self::get_keys_bundle($lang, $keys);
+
+        // Build sourceMap for the returned keys
+        $sourceMap = [];
+        if (!empty($keys)) {
+            list($insql, $inparams) = $DB->get_in_or_equal($keys, SQL_PARAMS_NAMED, 'k');
+            $sql = "SELECT k.xkey, k.source FROM {local_xlate_key} k WHERE k.xkey $insql";
+            $recs = $DB->get_records_sql($sql, $inparams);
+            foreach ($recs as $r) {
+                $normalized = self::normalise_source($r->source ?? '');
+                if ($normalized !== '' && !isset($sourceMap[$normalized])) {
+                    $sourceMap[$normalized] = $r->xkey;
+                }
+            }
+        }
+
+        $result = ['translations' => $translations, 'sourceMap' => $sourceMap];
+
+        // If courseid present, compute associations map
+        if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
+            // Resolve keys -> keyids
+            if (!empty($keys)) {
+                list($insql, $inparams) = $DB->get_in_or_equal($keys, SQL_PARAMS_NAMED, 'k');
+                $sql = "SELECT k.id, k.xkey FROM {local_xlate_key} k WHERE k.xkey $insql";
+                $recs = $DB->get_records_sql($sql, $inparams);
+                $keyidmap = [];
+                $ids = [];
+                foreach ($recs as $r) {
+                    $keyidmap[$r->xkey] = $r->id;
+                    $ids[] = $r->id;
+                }
+
+                $associations = [];
+                if (!empty($ids)) {
+                    list($idsql, $idparams) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED, 'i');
+                    $params = array_merge(['courseid' => $courseid], $idparams);
+                    $sql = "SELECT kc.keyid FROM {local_xlate_key_course} kc WHERE kc.courseid = :courseid AND kc.keyid $idsql";
+                    $rows = $DB->get_records_sql($sql, $params);
+                    $associatedids = array_keys($rows);
+                    $associatedset = array_flip($associatedids);
+
+                    foreach ($keyidmap as $xkey => $kid) {
+                        $associations[$xkey] = isset($associatedset[$kid]);
+                    }
+                } else {
+                    // No keys present in DB; mark all false
+                    foreach ($keys as $k) { $associations[$k] = false; }
+                }
+                $result['associations'] = $associations;
+            } else {
+                $result['associations'] = [];
+            }
+        }
+
+        return $result;
+    }
     
     /**
      * Get page-specific translation bundle with context filtering
@@ -223,6 +293,104 @@ class api {
             return $DB->insert_record('local_xlate_key', $record);
         }
     }
+
+    /**
+     * Associate multiple keys with a course, creating keys if missing.
+     * @param array $keys Array of ['component'=>..., 'xkey'=>..., 'source'=>...]
+     * @param int $courseid
+     * @param string $context
+     * @return array Details per key: key => status ('created'|'associated'|'exists'|'error')
+     */
+    public static function associate_keys_with_course(array $keys, int $courseid, string $context = ''): array {
+        global $DB, $USER;
+
+        $details = [];
+        if (empty($keys) || empty($courseid) || $courseid <= 0) {
+            return $details;
+        }
+
+        // Process in chunks to avoid large IN lists
+        $chunksize = 200;
+        $chunks = array_chunk($keys, $chunksize);
+
+        foreach ($chunks as $chunk) {
+            // Resolve existing keys by component+xkey
+            $conds = [];
+            $params = [];
+            $index = 0;
+            $lookupmap = [];
+            foreach ($chunk as $k) {
+                $comp = (string)($k['component'] ?? 'core');
+                $xkey = (string)($k['xkey'] ?? '');
+                if ($xkey === '') { continue; }
+                $paramcomp = 'comp' . $index;
+                $paramxkey = 'xkey' . $index;
+                $conds[] = "(k.component = :$paramcomp AND k.xkey = :$paramxkey)";
+                $params[$paramcomp] = $comp;
+                $params[$paramxkey] = $xkey;
+                $lookupmap[$comp . '::' . $xkey] = $k;
+                $index++;
+            }
+
+            if (!empty($conds)) {
+                $sql = 'SELECT k.id, k.component, k.xkey FROM {local_xlate_key} k WHERE ' . implode(' OR ', $conds);
+                $recs = $DB->get_records_sql($sql, $params);
+                $existingmap = [];
+                foreach ($recs as $r) {
+                    $existingmap[$r->component . '::' . $r->xkey] = $r->id;
+                }
+
+                // For each key in chunk, ensure key exists (create if missing), then associate
+                foreach ($chunk as $k) {
+                    $comp = (string)($k['component'] ?? 'core');
+                    $xkey = (string)($k['xkey'] ?? '');
+                    $source = (string)($k['source'] ?? '');
+                    if ($xkey === '') { continue; }
+                    $lookup = $comp . '::' . $xkey;
+                    try {
+                        if (isset($existingmap[$lookup])) {
+                            $keyid = $existingmap[$lookup];
+                        } else {
+                            // Create key
+                            $keyid = self::create_or_update_key($comp, $xkey, $source);
+                            $existingmap[$lookup] = $keyid;
+                            $details[$xkey] = 'created_key';
+                        }
+
+                        // Now associate
+                        $sourcehash = sha1($source ?? '');
+                        $rec = (object)[
+                            'keyid' => $keyid,
+                            'courseid' => $courseid,
+                            'source_hash' => $sourcehash,
+                            'context' => $context,
+                            'mtime' => time()
+                        ];
+                        try {
+                            $DB->insert_record('local_xlate_key_course', $rec);
+                            $details[$xkey] = isset($details[$xkey]) && $details[$xkey] === 'created_key' ? 'created_and_associated' : 'associated';
+                        } catch (\Exception $e) {
+                            // race or duplicate - check
+                            $existing2 = $DB->get_record('local_xlate_key_course', [
+                                'keyid' => $keyid,
+                                'courseid' => $courseid,
+                                'source_hash' => $sourcehash
+                            ]);
+                            if ($existing2) {
+                                $details[$xkey] = isset($details[$xkey]) && $details[$xkey] === 'created_key' ? 'created_and_associated_exists' : 'exists';
+                            } else {
+                                $details[$xkey] = 'error';
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        $details[$xkey] = 'error';
+                    }
+                }
+            }
+        }
+
+        return $details;
+    }
     
     /**
      * Save translation for a key
@@ -280,8 +448,7 @@ class api {
             self::save_translation($keyid, $lang, $translation);
 
             // If a course association was provided, record it (deduped by source hash).
-            if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
-                global $USER;
+                if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
                 $sourcehash = sha1($source ?? '');
                 $existing = $DB->get_record('local_xlate_key_course', [
                     'keyid' => $keyid,
@@ -294,7 +461,6 @@ class api {
                         'keyid' => $keyid,
                         'courseid' => $courseid,
                         'source_hash' => $sourcehash,
-                        'userid' => isset($USER->id) ? $USER->id : 0,
                         'context' => $context,
                         'mtime' => time()
                     ];

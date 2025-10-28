@@ -12,7 +12,7 @@
  * - init(config): initialize translator with config (lang, siteLang, bundleurl, version, isEditing)
  * - run(map): run translation pass using provided map
  */
-define(['core/ajax'], function(Ajax) {
+define(['core/ajax'], function (Ajax) {
   var ATTR_KEY_PREFIX = 'data-xlate-key-';
   var ATTRIBUTE_TYPES = [
     'placeholder', 'title', 'alt', 'aria-label'
@@ -73,7 +73,7 @@ define(['core/ajax'], function(Ajax) {
     ];
 
     var classes = [];
-  Array.prototype.forEach.call(element.classList, function(cls) {
+    Array.prototype.forEach.call(element.classList, function (cls) {
       if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
         !/^[0-9]/.test(cls) && !/^[mp][tblr]?-[0-5]$/.test(cls)) {
         classes.push(cls);
@@ -390,7 +390,7 @@ define(['core/ajax'], function(Ajax) {
         courseid: pageCourseId,
         context: component
       }
-    }])[0].then(function() {
+    }])[0].then(function () {
       if (window.__XLATE__) {
         if (!window.__XLATE__.map) {
           window.__XLATE__.map = {};
@@ -398,7 +398,7 @@ define(['core/ajax'], function(Ajax) {
         window.__XLATE__.map[key] = text;
       }
       return true;
-    }).catch(function() {
+    }).catch(function () {
       detectedStrings.delete(dedupeKey);
     });
   }
@@ -533,7 +533,7 @@ define(['core/ajax'], function(Ajax) {
     }
 
     // Process attributes
-  ATTRIBUTE_TYPES.forEach(function(attr) {
+    ATTRIBUTE_TYPES.forEach(function (attr) {
       if (!element.hasAttribute(attr)) {
         return;
       }
@@ -579,13 +579,13 @@ define(['core/ajax'], function(Ajax) {
 
     var roots = [];
     if (captureSelectors) {
-  captureSelectors.forEach(function(sel) {
+      captureSelectors.forEach(function (sel) {
         try {
           var found = document.querySelectorAll(sel);
           for (var i = 0; i < found.length; i++) {
             roots.push(found[i]);
           }
-  } catch (e) { /* Ignore invalid selectors */ }
+        } catch (e) { /* Ignore invalid selectors */ }
       });
       if (!roots.length) {
         roots = [root]; // Fallback to body
@@ -594,7 +594,7 @@ define(['core/ajax'], function(Ajax) {
       roots = [root];
     }
 
-  roots.forEach(function(scanRoot) {
+    roots.forEach(function (scanRoot) {
       var stack = [scanRoot];
       while (stack.length) {
         var el = stack.pop();
@@ -624,34 +624,34 @@ define(['core/ajax'], function(Ajax) {
       walk(document.body, map || {});
 
       // Fallback: periodic refreshes to catch late-injected content
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 1000);
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 3000);
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 6000);
 
-      var mo = new MutationObserver(function(muts) {
-        muts.forEach(function(mutation) {
-          Array.prototype.slice.call(mutation.addedNodes || []).forEach(function(node) {
+      var mo = new MutationObserver(function (muts) {
+        muts.forEach(function (mutation) {
+          Array.prototype.slice.call(mutation.addedNodes || []).forEach(function (node) {
             if (node.nodeType === 1) {
               walk(node, map || {});
             }
           });
         });
       });
-    mo.observe(document.body, {childList: true, subtree: true});
+      mo.observe(document.body, { childList: true, subtree: true });
 
       if (typeof window.addEventListener === 'function') {
-        ['focus', 'click', 'scroll'].forEach(function(eventType) {
-          document.addEventListener(eventType, function() {
+        ['focus', 'click', 'scroll'].forEach(function (eventType) {
+          document.addEventListener(eventType, function () {
             var now = Date.now();
             if (now - lastProcessTime > processThrottle) {
               lastProcessTime = now;
-              setTimeout(function() {
+              setTimeout(function () {
                 walk(document.body, map || {});
               }, 100);
             }
@@ -663,6 +663,72 @@ define(['core/ajax'], function(Ajax) {
     }
   }
   Translator.api.run = run;
+
+  /**
+   * Get source value for an element based on the key attribute type.
+   * @param {Element} el - Element to inspect
+   * @param {string} typename - Attribute type (content for text)
+   * @returns {string} Source value or empty string
+   */
+  function getSourceForElementAttr(el, typename) {
+    if (!el) {
+      return '';
+    }
+    if (typename === 'content') {
+      var dt = '';
+      for (var dn = 0; dn < el.childNodes.length; dn++) {
+        var node = el.childNodes[dn];
+        if (node.nodeType === 3) {
+          dt += node.textContent;
+        }
+      }
+      return dt.trim();
+    }
+    try {
+      return el.getAttribute(typename) || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /**
+   * Collect key set and first-seen details (component + source) for keys under root.
+   * @param {Element} root - Root to scan
+   * @returns {Object} {keySet: {}, keyDetails: {}}
+   */
+  function collectKeySetAndDetails(root) {
+    var keySet = {};
+    var keyDetails = {};
+    var all = (root && root.querySelectorAll) ? root.querySelectorAll('*') : [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      collectKeysFromElement(el, keySet);
+      var attrs = el && el.attributes;
+      if (!attrs) {
+        continue;
+      }
+      for (var j = 0; j < attrs.length; j++) {
+        var attrname = attrs[j] && attrs[j].name;
+        if (!attrname || attrname.indexOf(ATTR_KEY_PREFIX) !== 0) {
+          continue;
+        }
+        var aval = attrs[j].value;
+        if (!aval) {
+          continue;
+        }
+        if (keyDetails[aval]) {
+          continue;
+        }
+        var typename = attrname.substring(ATTR_KEY_PREFIX.length);
+        var src = getSourceForElementAttr(el, typename);
+        keyDetails[aval] = {
+          component: detectComponent(el),
+          source: src
+        };
+      }
+    }
+    return { keySet: keySet, keyDetails: keyDetails };
+  }
 
   /**
    * Initialize translator
@@ -718,12 +784,10 @@ define(['core/ajax'], function(Ajax) {
       // Tag-only first pass to generate keys
       walk(document.body, {}, true);
 
-      // Collect all tagged keys
-      var keySetCap = {};
-      var allCap = document.querySelectorAll('*');
-      for (var ci = 0; ci < allCap.length; ci++) {
-        collectKeysFromElement(allCap[ci], keySetCap);
-      }
+      // Collect all tagged keys and record a first-seen component+source for each key
+      var collected = collectKeySetAndDetails(document);
+      var keySetCap = collected.keySet;
+      var keyDetails = collected.keyDetails;
       var keysCap = Object.keys(keySetCap);
 
       xlateDebug('[XLATE] Collected', keysCap.length, 'keys from DOM');
@@ -739,21 +803,60 @@ define(['core/ajax'], function(Ajax) {
       fetch(config.bundleurl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: keysCap})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keysCap })
       })
-        .then(function(response) {
+        .then(function (response) {
           return response.json();
         })
-        .then(function(map) {
+        .then(function (map) {
           var translations = (map && map.translations) ? map.translations : map;
+          var sourceMap = (map && map.sourceMap) ? map.sourceMap : {};
+          var associations = (map && map.associations) ? map.associations : {};
           if (!translations || typeof translations !== 'object') {
             translations = {};
           }
           window.__XLATE__.map = translations;
+          window.__XLATE__.sourceMap = sourceMap;
 
           var existingCount = Object.keys(translations).length;
           xlateDebug('[XLATE] Bundle returned', existingCount, 'existing translations');
+
+          // If the server returned per-key association information and we have a page-level
+          // course id, bulk-associate any keys that are not yet associated for this course.
+          // The server may only return associations to authorized users.
+          if (courseId && associations && typeof associations === 'object') {
+            var toAssociate = [];
+            for (var ti = 0; ti < keysCap.length; ti++) {
+              var k = keysCap[ti];
+              if (!associations[k]) {
+                var detail = keyDetails[k] || null;
+                if (detail) {
+                  toAssociate.push({
+                    component: detail.component,
+                    key: k,
+                    source: detail.source || ''
+                  });
+                }
+              }
+            }
+            if (toAssociate.length) {
+              xlateDebug('[XLATE] Associating', toAssociate.length, 'keys with course', courseId);
+              try {
+                // Fire-and-forget: we don't need to block the UI on association results.
+                Ajax.call([{
+                  methodname: 'local_xlate_associate_keys',
+                  args: {
+                    keys: toAssociate,
+                    courseid: courseId,
+                    context: ''
+                  }
+                }]);
+              } catch (e) {
+                xlateDebug('[XLATE] Bulk-associate exception', e);
+              }
+            }
+          }
 
           // Now walk again to save only keys NOT in the bundle
           processedElements = new WeakSet();
@@ -761,7 +864,7 @@ define(['core/ajax'], function(Ajax) {
           run(translations);
           return true;
         })
-        .catch(function(err) {
+        .catch(function (err) {
           xlateDebug('[XLATE] Bundle fetch failed:', err);
           // If bundle fetch fails, save everything
           processedElements = new WeakSet();
@@ -796,7 +899,7 @@ define(['core/ajax'], function(Ajax) {
       var cached = null;
       try {
         cached = localStorage.getItem(k);
-  } catch (e) {
+      } catch (e) {
         // Ignore
       }
       if (cached) {
@@ -807,7 +910,7 @@ define(['core/ajax'], function(Ajax) {
             processedElements = new WeakSet();
             run(cachedMap);
           }
-  } catch (e) {
+        } catch (e) {
           // Ignore
         }
       }
@@ -815,13 +918,13 @@ define(['core/ajax'], function(Ajax) {
       fetch(config.bundleurl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: keys})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keys })
       })
-        .then(function(response) {
+        .then(function (response) {
           return response.json();
         })
-        .then(function(map) {
+        .then(function (map) {
           // Accept either flat map or legacy wrapper
           var translations = (map && map.translations) ? map.translations : map;
           if (!translations || typeof translations !== 'object') {
@@ -837,10 +940,10 @@ define(['core/ajax'], function(Ajax) {
           run(translations);
           return true;
         })
-        .catch(function() {
+        .catch(function () {
           run({});
         });
-  } catch (err) {
+    } catch (err) {
       run({});
     }
   }

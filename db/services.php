@@ -32,4 +32,15 @@ $functions = [
         'capabilities' => 'local/xlate:manage',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ]
+    ,
+    'local_xlate_associate_keys' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'associate_keys',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Associate multiple keys with a course (create keys if missing)',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => '',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ]
 ];
