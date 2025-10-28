@@ -1,0 +1,6 @@
+# Automatically generated for local/xlate build
+node_modules
+dist
+build
+*.min.js
+*.map
