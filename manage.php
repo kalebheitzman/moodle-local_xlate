@@ -273,14 +273,16 @@ if (!empty($search)) {
 // (component filter removed)
 
 $where_clause = '';
-if (!empty($where_conditions)) {
-    $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
-}
 
-// If course filter is present, add EXISTS condition to where clause
-if (!empty($filter_courseid)) {
+// If course filter is present and > 0, add EXISTS condition to where conditions so
+// it is included in both the count and main queries. A courseid of 0 means "all".
+if (!empty($filter_courseid) && $filter_courseid > 0) {
     $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id AND kc.courseid = ?)";
     $params[] = $filter_courseid;
+}
+
+if (!empty($where_conditions)) {
+    $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
 }
 
 // Count total records for pagination
