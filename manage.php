@@ -293,12 +293,13 @@ $count_sql = "SELECT COUNT(DISTINCT k.id)
 $total_count = $DB->count_records_sql($count_sql, $params);
 
 // Main query with pagination
+
 $sql = "SELECT k.*, COUNT(DISTINCT t.lang) as translation_count
-        FROM {local_xlate_key} k
-        LEFT JOIN {local_xlate_tr} t ON k.id = t.keyid AND t.status = 1
-        $where_clause
-        GROUP BY k.id, k.component, k.xkey, k.source, k.mtime
-        ORDER BY k.component, k.xkey";
+    FROM {local_xlate_key} k
+    LEFT JOIN {local_xlate_tr} t ON k.id = t.keyid AND t.status = 1
+    $where_clause
+    GROUP BY k.id, k.component, k.xkey, k.source, k.mtime
+    ORDER BY k.mtime DESC";
 
 $keys = $DB->get_records_sql($sql, $params, $page * $perpage, $perpage);
 
