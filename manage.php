@@ -116,8 +116,12 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
 }
 
 require_login();
-$context = context_system::instance();
-require_capability('local/xlate:manage', $context);
+$systemcontext = context_system::instance();
+
+// Capability check: if a course filter is requested, allow either site-level
+// `local/xlate:manage` or course-level `local/xlate:managecourse` for that
+// specific course. If no course is requested, require the site-level manage
+// capability.
 
 $action = optional_param('action', '', PARAM_ALPHANUMEXT);
 $keyid = optional_param('keyid', 0, PARAM_INT);
@@ -128,6 +132,27 @@ $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
 
+// Determine the page context based on optional course filter so the page
+// context and capability checks are correct for course-level managers.
+$pagecontext = $systemcontext;
+if (!empty($filter_courseid) && $filter_courseid > 0) {
+    try {
+        $course = get_course($filter_courseid);
+        $pagecontext = context_course::instance($course->id);
+        // Allow if system manager or course manager
+        if (!has_capability('local/xlate:manage', $systemcontext) && !has_capability('local/xlate:managecourse', $pagecontext)) {
+            // Neither capability present — deny access.
+            require_capability('local/xlate:manage', $systemcontext);
+        }
+    } catch (dml_missing_record_exception $e) {
+        // Invalid course id — treat as no access
+        require_capability('local/xlate:manage', $systemcontext);
+    }
+} else {
+    // No course filter: require site-level manage capability.
+    require_capability('local/xlate:manage', $systemcontext);
+}
+
 $PAGE->set_url(new moodle_url('/local/xlate/manage.php', [
     'page' => $page,
     'perpage' => $perpage,
@@ -135,7 +160,7 @@ $PAGE->set_url(new moodle_url('/local/xlate/manage.php', [
     'status_filter' => $status_filter,
     'courseid' => $filter_courseid
 ]));
-$PAGE->set_context($context);
+$PAGE->set_context($pagecontext);
 $PAGE->set_pagelayout('admin');
 $PAGE->set_title(get_string('manage_translations', 'local_xlate'));
 $PAGE->set_heading(get_string('manage_translations', 'local_xlate'));

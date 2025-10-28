@@ -45,6 +45,16 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - With auto-detect enabled the translator captures user-facing strings,
 	generates stable, structure-based 12-character keys, and stores them
 	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
+
+Role and capabilities
+---------------------
+
+There are two relevant capabilities:
+
+- `local/xlate:manage` — site-level management (typically assigned to site managers). Grants full access to the Manage Translations UI and capture-related webservices.
+- `local/xlate:managecourse` — course-level management (assignable per-course, typically to editing teachers). Grants access to the Manage Translations UI for a specific course (the UI can be opened at `/local/xlate/manage.php?courseid=<id>`).
+
+The plugin adds a "Manage Translations" link to a course's More menu for users who have `local/xlate:managecourse` (or site managers who have `local/xlate:manage`).
 - Dynamic content (drawer menus, modals, lazy-loaded blocks, etc.) is processed
 	automatically; the MutationObserver re-runs detection as nodes are added.
 - Mark markup you never want translated with `data-xlate-ignore`.

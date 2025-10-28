@@ -56,5 +56,11 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025102700, 'local', 'xlate');
     }
 
+    // Savepoint for adding course-level capability and nav hook
+    if ($oldversion < 2025102800) {
+        // No DB schema changes required for capabilities; bump savepoint.
+        upgrade_plugin_savepoint(true, 2025102800, 'local', 'xlate');
+    }
+
     return true;
 }

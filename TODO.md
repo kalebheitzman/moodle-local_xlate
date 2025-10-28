@@ -41,8 +41,8 @@ expanded into concrete implementation steps.
 - [x] Manage page: course filter implemented
   - [x] `manage.php` accepts `courseid` and filters results when `courseid > 0` (use `0` to show all).
   - [x] Count and list queries both respect the course filter.
-- [ ] Add "Manage Translations" link under course "More" menu
-  - [ ] UI hook to append course-scoped link (not implemented yet).
+- [x] Add "Manage Translations" link under course "More" menu
+  - [x] UI hook to append course-scoped link (implemented in `lib.php`).
 
 ## Migrations & versioning
 
@@ -69,7 +69,6 @@ expanded into concrete implementation steps.
 - Secure `.eslintignore` file permissions (owner `www-data`, mode `644`).
 - Implement PHPUnit tests for API persistence and dedupe behavior.
 - Add Behat/integration test for manage page course filtering.
-- Add course "Manage Translations" more-menu link (UI hook).
 - Add CI workflow to lint and build AMD on PRs.
 - Update `README.md` / `DEVELOPER.md` and changelog with these changes and build instructions.
 

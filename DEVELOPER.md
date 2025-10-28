@@ -86,7 +86,19 @@ DB (local_xlate_key + local_xlate_tr)
 - `component_mapping`: newline-delimited hints that nudge component detection for
   captured strings.
 - “Manage Translations” button links to `/local/xlate/manage.php` (requires
-  `local/xlate:manage`).
+ - “Manage Translations” button links to `/local/xlate/manage.php` (requires `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course).
+
+Capabilities and course-level management
+---------------------------------------
+
+Two capabilities control access to the management UI and capture-related APIs:
+
+- `local/xlate:manage` (system-level): grants full management rights across the site.
+- `local/xlate:managecourse` (course-level): grants management rights for a specific course when assigned via role overrides. When a course-level manager visits a course they are granted the "Manage Translations" link in the More menu which opens `/local/xlate/manage.php?courseid=<id>`.
+
+Code notes:
+- The navigation hook is implemented in `lib.php` and checks for either capability before showing the link.
+- `manage.php` now respects `courseid` and allows access when the viewer has `local/xlate:managecourse` in that course context (site managers with `local/xlate:manage` still have full access).
 
 ## 7. Admin Interface (`manage.php`)
 - Displays automatically captured keys with search, filters, pagination, and
