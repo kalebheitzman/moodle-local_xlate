@@ -5,32 +5,15 @@
 // 1. Tag element with data-xlate-key-{type} FIRST (always)
 // 2. If currentLang === siteLang: Save to DB (capture mode)
 // 3. If currentLang !== siteLang: Translate using bundle
-/**
- * Translator AMD module for local_xlate.
- *
- * Exports:
- * - init(config): initialize translator with config (lang, siteLang, bundleurl, version, isEditing)
- * - run(map): run translation pass using provided map
- */
-define(['core/ajax'], function(Ajax) {
+define(['core/ajax'], function (Ajax) {
   var ATTR_KEY_PREFIX = 'data-xlate-key-';
-  var ATTRIBUTE_TYPES = [
-    'placeholder', 'title', 'alt', 'aria-label'
-  ];
+  var ATTRIBUTE_TYPES = ['placeholder', 'title', 'alt', 'aria-label'];
 
   // Auto-detection is always enabled; keys are always auto-assigned.
   var detectedStrings = new Set();
   var processedElements = new WeakSet();
   var lastProcessTime = 0;
   var processThrottle = 250;
-  /* Translator namespace to expose public API while keeping internal helpers private. */
-  var Translator = {};
-  Translator.utils = {};
-  Translator.keys = {};
-  Translator.attrs = {};
-  Translator.capture = {};
-  Translator.dom = {};
-  Translator.api = {};
 
   // ============================================================================
   // KEY GENERATION - Create structural 12-character hash keys
@@ -46,13 +29,11 @@ define(['core/ajax'], function(Ajax) {
       return '';
     }
 
-    var blacklist = [
-      'active', 'show', 'hide', 'hidden', 'collapsed', 'expanded',
-      'd-flex', 'd-none', 'd-block', 'sr-only', 'visually-hidden'
-    ];
+    var blacklist = ['active', 'show', 'hide', 'hidden', 'collapsed', 'expanded',
+      'd-flex', 'd-none', 'd-block', 'sr-only', 'visually-hidden'];
 
     var classes = [];
-  Array.prototype.forEach.call(element.classList, function(cls) {
+    Array.prototype.forEach.call(element.classList, function (cls) {
       if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
         !/^[0-9]/.test(cls) && !/^[mp][tblr]?-[0-5]$/.test(cls)) {
         classes.push(cls);
@@ -61,7 +42,6 @@ define(['core/ajax'], function(Ajax) {
 
     return classes.join(',');
   }
-  Translator.utils.collectContextClasses = collectContextClasses;
 
   /**
    * Collect all data-* attributes from element
@@ -82,7 +62,6 @@ define(['core/ajax'], function(Ajax) {
     }
     return dataAttrs.join(',');
   }
-  Translator.utils.collectDataAttributes = collectDataAttributes;
 
   /**
    * Simple deterministic 12-char hash using two 32-bit accumulators (FNV-1a style + mix)
@@ -125,7 +104,6 @@ define(['core/ajax'], function(Ajax) {
     }
     return s;
   }
-  Translator.utils.simpleHash = simpleHash;
 
   /**
    * Generate translation key from element structure + direct text (ignoring children)
@@ -185,7 +163,6 @@ define(['core/ajax'], function(Ajax) {
 
     return simpleHash(parts.join('.'));
   }
-  Translator.keys.generateKey = generateKey;
 
   // ============================================================================
   // KEY ATTRIBUTE MANAGEMENT
@@ -204,7 +181,6 @@ define(['core/ajax'], function(Ajax) {
     var attrType = type === 'text' ? 'content' : type;
     element.setAttribute(ATTR_KEY_PREFIX + attrType, key);
   }
-  Translator.attrs.setKeyAttribute = setKeyAttribute;
 
   /**
    * Get data-xlate-key-{type} attribute
@@ -219,7 +195,6 @@ define(['core/ajax'], function(Ajax) {
     var attrType = type === 'text' ? 'content' : type;
     return element.getAttribute(ATTR_KEY_PREFIX + attrType);
   }
-  Translator.attrs.getKeyFromAttributes = getKeyFromAttributes;
 
   // ============================================================================
   // TRANSLATION (Step 3: currentLang !== siteLang)
@@ -243,7 +218,6 @@ define(['core/ajax'], function(Ajax) {
       element.setAttribute(type, map[key]);
     }
   }
-  Translator.capture.translateElement = translateElement;
 
   // ============================================================================
   // CAPTURE (Step 2: currentLang === siteLang)
@@ -281,7 +255,6 @@ define(['core/ajax'], function(Ajax) {
 
     return 'core';
   }
-  Translator.capture.detectComponent = detectComponent;
 
   /**
    * Save translatable string to database
@@ -319,7 +292,7 @@ define(['core/ajax'], function(Ajax) {
         lang: (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en',
         translation: text
       }
-  }])[0].then(function() {
+    }])[0].then(function () {
       if (window.__XLATE__) {
         if (!window.__XLATE__.map) {
           window.__XLATE__.map = {};
@@ -327,11 +300,10 @@ define(['core/ajax'], function(Ajax) {
         window.__XLATE__.map[key] = text;
       }
       return true;
-  }).catch(function() {
+    }).catch(function () {
       detectedStrings.delete(dedupeKey);
     });
   }
-  Translator.capture.saveToDatabase = saveToDatabase;
 
   // ============================================================================
   // ELEMENT PROCESSING (Step 1: Tag FIRST)
@@ -398,7 +370,6 @@ define(['core/ajax'], function(Ajax) {
 
     return false;
   }
-  Translator.dom.shouldIgnoreElement = shouldIgnoreElement;
 
   /**
    * Check if text is translatable
@@ -422,7 +393,6 @@ define(['core/ajax'], function(Ajax) {
 
     return true;
   }
-  Translator.utils.isTranslatableText = isTranslatableText;
 
 
   /**
@@ -446,7 +416,6 @@ define(['core/ajax'], function(Ajax) {
       }
     }
   }
-  Translator.dom.collectKeysFromElement = collectKeysFromElement;
 
   /**
    * Process single element - TAG, then SAVE or TRANSLATE
@@ -488,7 +457,7 @@ define(['core/ajax'], function(Ajax) {
     }
 
     // Process attributes
-  ATTRIBUTE_TYPES.forEach(function(attr) {
+    ATTRIBUTE_TYPES.forEach(function (attr) {
       if (!element.hasAttribute(attr)) {
         return;
       }
@@ -508,7 +477,6 @@ define(['core/ajax'], function(Ajax) {
       }
     });
   }
-  Translator.dom.processElement = processElement;
 
   // ============================================================================
   // DOM WALKING
@@ -533,22 +501,22 @@ define(['core/ajax'], function(Ajax) {
 
     var roots = [];
     if (captureSelectors) {
-  captureSelectors.forEach(function(sel) {
+      captureSelectors.forEach(function (sel) {
         try {
           var found = document.querySelectorAll(sel);
           for (var i = 0; i < found.length; i++) {
             roots.push(found[i]);
           }
-  } catch (e) { /* Ignore invalid selectors */ }
+        } catch (e) { /* ignore invalid selectors */ }
       });
       if (!roots.length) {
-  roots = [root]; // Fallback to body
+        roots = [root]; // fallback to body
       }
     } else {
       roots = [root];
     }
 
-  roots.forEach(function(scanRoot) {
+    roots.forEach(function (scanRoot) {
       var stack = [scanRoot];
       while (stack.length) {
         var el = stack.pop();
@@ -566,7 +534,6 @@ define(['core/ajax'], function(Ajax) {
       }
     });
   }
-  Translator.dom.walk = walk;
 
   /**
    * Run translator
@@ -577,34 +544,34 @@ define(['core/ajax'], function(Ajax) {
       walk(document.body, map || {});
 
       // Fallback: periodic refreshes to catch late-injected content
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 1000);
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 3000);
-  setTimeout(function() {
+      setTimeout(function () {
         walk(document.body, map || {});
       }, 6000);
 
-      var mo = new MutationObserver(function(muts) {
-        muts.forEach(function(mutation) {
-          Array.prototype.slice.call(mutation.addedNodes || []).forEach(function(node) {
+      var mo = new MutationObserver(function (muts) {
+        muts.forEach(function (mutation) {
+          Array.prototype.slice.call(mutation.addedNodes || []).forEach(function (node) {
             if (node.nodeType === 1) {
               walk(node, map || {});
             }
           });
         });
       });
-  mo.observe(document.body, {childList: true, subtree: true});
+      mo.observe(document.body, { childList: true, subtree: true });
 
       if (typeof window.addEventListener === 'function') {
-        ['focus', 'click', 'scroll'].forEach(function(eventType) {
-          document.addEventListener(eventType, function() {
+        ['focus', 'click', 'scroll'].forEach(function (eventType) {
+          document.addEventListener(eventType, function () {
             var now = Date.now();
             if (now - lastProcessTime > processThrottle) {
               lastProcessTime = now;
-              setTimeout(function() {
+              setTimeout(function () {
                 walk(document.body, map || {});
               }, 100);
             }
@@ -654,7 +621,7 @@ define(['core/ajax'], function(Ajax) {
       siteLang: siteLang,
       isCapture: isCapture,
     });
-  // Auto-detect enabled by default (autoDetectEnabled removed)
+    // autoDetectEnabled removed: always true
 
     // In capture mode: fetch bundle first to check existing keys, then tag + save only new ones
     if (isCapture) {
@@ -688,13 +655,13 @@ define(['core/ajax'], function(Ajax) {
       fetch(config.bundleurl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: keysCap})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keysCap })
       })
-        .then(function(response) {
-            return response.json();
-          })
-          .then(function(map) {
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (map) {
           var translations = (map && map.translations) ? map.translations : map;
           if (!translations || typeof translations !== 'object') {
             translations = {};
@@ -711,7 +678,7 @@ define(['core/ajax'], function(Ajax) {
           run(translations);
           return true;
         })
-  .catch(function(err) {
+        .catch(function (err) {
           // eslint-disable-next-line no-console
           console.error('[XLATE] Bundle fetch failed:', err);
           // If bundle fetch fails, save everything
@@ -767,13 +734,13 @@ define(['core/ajax'], function(Ajax) {
       fetch(config.bundleurl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: keys})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keys })
       })
-        .then(function(response) {
-            return response.json();
-          })
-          .then(function(map) {
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (map) {
           // Accept either flat map or legacy wrapper
           var translations = (map && map.translations) ? map.translations : map;
           if (!translations || typeof translations !== 'object') {
@@ -789,7 +756,7 @@ define(['core/ajax'], function(Ajax) {
           run(translations);
           return true;
         })
-  .catch(function() {
+        .catch(function () {
           run({});
         });
     } catch (err) {
@@ -803,8 +770,8 @@ define(['core/ajax'], function(Ajax) {
    */
 
 
-  Translator.run = run;
-  Translator.init = init;
-
-  return Translator;
+  return {
+    run: run,
+    init: init
+  };
 });
