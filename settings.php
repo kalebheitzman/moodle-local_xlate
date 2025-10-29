@@ -7,11 +7,48 @@ if ($hassiteconfig) {
     $settings = new admin_settingpage('local_xlate', get_string('pluginname', 'local_xlate'));
 
     if ($ADMIN->fulltree) {
+        // --- General settings ------------------------------------------------
+        $settings->add(new admin_setting_heading('local_xlate/generalheading', '', get_string('settings_intro', 'local_xlate')));
+
         $settings->add(new admin_setting_configcheckbox('local_xlate/enable',
             get_string('enable', 'local_xlate'),
             get_string('enable_desc', 'local_xlate'), 1));
 
-        // Autodetect config removed: always enabled
+        // --- OpenAI / Autotranslation ---------------------------------------
+        $settings->add(new admin_setting_heading('local_xlate/autotranslateheading', '', get_string('autotranslate_heading', 'local_xlate')));
+
+        // Checkbox to enable/disable automatic translations via AI
+        $settings->add(new admin_setting_configcheckbox('local_xlate/autotranslate_enabled',
+            get_string('autotranslate_enable', 'local_xlate'),
+            get_string('autotranslate_enable_desc', 'local_xlate'), 0));
+
+        // OpenAI endpoint (allows self-hosted or proxied endpoints)
+        $settings->add(new admin_setting_configtext('local_xlate/openai_endpoint',
+            get_string('openai_endpoint', 'local_xlate'),
+            get_string('openai_endpoint_desc', 'local_xlate'),
+            'https://api.openai.com/v1/chat/completions', PARAM_URL));
+
+        // API key (masked)
+        $settings->add(new admin_setting_configpasswordunmask('local_xlate/openai_api_key',
+            get_string('openai_api_key', 'local_xlate'),
+            get_string('openai_api_key_desc', 'local_xlate'), ''));
+
+        // Model selection
+        $settings->add(new admin_setting_configtext('local_xlate/openai_model',
+            get_string('openai_model', 'local_xlate'),
+            get_string('openai_model_desc', 'local_xlate'), 'gpt-5', PARAM_RAW));
+
+        // System prompt / translation instructions
+    // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
+    $defaultprompt = "You are a professional translation assistant.\nTranslate the provided input from the source language to the target language. Preserve HTML tags, attributes, and entities; keep placeholders and variables (for example {\$a} or {username}) unchanged; do not modify code blocks, URLs, or identifiers. Maintain tone appropriate for UI text: concise, clear, and neutral. Return only the translated text without commentary or metadata.";
+
+        $settings->add(new admin_setting_configtextarea('local_xlate/openai_prompt',
+            get_string('openai_prompt', 'local_xlate'),
+            get_string('openai_prompt_desc', 'local_xlate'),
+            $defaultprompt, PARAM_TEXT));
+
+        // --- Language and capture settings ----------------------------------
+        $settings->add(new admin_setting_heading('local_xlate/langheading', '', get_string('language_heading', 'local_xlate')));
 
         // Get installed languages and create checkboxes for each
         $installedlangs = get_string_manager()->get_list_of_translations();
@@ -32,15 +69,15 @@ if ($hassiteconfig) {
 
         // Capture area selectors (include patterns)
         $settings->add(new admin_setting_configtextarea('local_xlate/capture_selectors',
-            'Capture area selectors',
-            'Only text within elements matching these CSS selectors will be captured for translation. One selector per line. Leave blank to capture everything.',
+            get_string('capture_selectors', 'local_xlate'),
+            get_string('capture_selectors_desc', 'local_xlate'),
             "#region-main\n#page-content\n.main-content\n#page-wrapper\n.format-topics", PARAM_TEXT));
 
         // Exclude selectors (exclude patterns)
         $settings->add(new admin_setting_configtextarea('local_xlate/exclude_selectors',
-            'Exclude selectors',
-            'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.',
-            ".accesshide\n.visually-hidden\n.hidden\n.sr-only", PARAM_TEXT));
+            get_string('exclude_selectors', 'local_xlate'),
+            get_string('exclude_selectors_desc', 'local_xlate'),
+            ".accesshide\n.visually-hidden\n.hidden\n.sr-only\n.activity-dates *", PARAM_TEXT));
     }
 
     $ADMIN->add('localplugins', $settings);
