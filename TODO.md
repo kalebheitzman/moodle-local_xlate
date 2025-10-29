@@ -58,6 +58,8 @@ expanded into concrete implementation steps.
 
 - [x] Capabilities defined and enforced: `local/xlate:manage` (site) and `local/xlate:managecourse` (course-scoped). `manage.php` respects `courseid` and course-level capability checks.
 
+- [ ] Add a "Human Reviewed/Translated" checkbox to the Manage page translation rows (UI control, per-translation flag in DB, filtering and bulk-mark actions).
+
 ## Configuration & settings
 
 - [x] Core settings present in `settings.php`: `enable`, `autodetect`, `enabled_languages`, `component_mapping` (documented and wired into runtime where applicable).
