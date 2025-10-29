@@ -72,7 +72,6 @@ expanded into concrete implementation steps.
   - [x] `version.php` bump applied as part of the upgrade.
 
   - [x] MLang migrations & cleanup executed: site discovery/dry-run, targeted executes for `course_sections.name` (20 rows), `forum.name`/`forum.intro` (40 rows), and `label.intro` (40 rows); provenance recorded in `local_xlate_mlang_migration`, temporary helper scripts removed, docs updated and caches purged. Reports were written to `/tmp` during runs.
- 
 
 ## Language Glossary (source -> target)
 
@@ -80,27 +79,29 @@ Purpose: maintain a curated mapping of source-language phrases to preferred
 target-language translations so automated/manual translation respects
 project-specific terminology, acronyms, product names and style choices.
 
-Subtasks:
-- [ ] Schema: create a `local_xlate_glossary` table with: `id`, `source_lang`,
-  `target_lang`, `source_text` (normalized), `target_text`, `mtime`, `created_by`, `ctime`.
-- [ ] Admin UI: Glossary management page reachable from Manage Translations: list,
-  filter, add, edit, delete entries.
-- [ ] Glossary UI endpoint: add `glossary.php` which accepts `?targetlang=[targetlang]`
-  and shows the glossary for that target language with filtering and quick edits.
-- [ ] API: webservice endpoints (CRUD) protected by `local/xlate:manage`.
-- [ ] Matching engine: `lookup_glossary(source, source_lang, target_lang)` with
-- [ ] Matching engine: `lookup_glossary(source, source_lang, target_lang)` with
-  normalized exact and fuzzy matching.
-- [ ] Integration: prefer glossary matches in `mlang_migrate` and auto-translate
-  flows; record provenance `applied_via='glossary'` when applied automatically.
-- [ ] Cache & invalidation: cache lookups per lang-pair; invalidate on edits.
-- [ ] Permissions & audit: record `created_by`/`mtime`; only managers may edit.
-- [ ] Tests & docs: unit tests for matching, UI tests, docs for import format.
+Completed work (scaffolding):
 
-Acceptance criteria:
-- [ ] Glossary CRUD UI exists and is capability-protected.
+- [x] Schema & install: `local_xlate_glossary` table added to `db/install.xml` (fields: `id`, `source_lang`, `target_lang`, `source_text`, `target_text`, `mtime`, `created_by`, `ctime`).
+- [x] Upgrade step: guarded upgrade savepoint added in `db/upgrade.php` (2025103002) to create the glossary table for existing installs.
+- [x] Helper: `classes/glossary.php` added with `get_by_target()`, `add_entry()` and `lookup_glossary()` stubs.
+- [x] UI: `glossary.php` listing/filtering page added (`?targetlang=`) for managers.
+- [x] Language strings: glossary-related strings added to `lang/en/local_xlate.php`.
+- [x] Naming cleanup: `created_at` renamed to `ctime` across install/upgrade and code.
+
+Remaining work (high priority):
+
+- [ ] CRUD UI: add capability-protected add/edit/delete forms with CSRF and validation.
+- [ ] Import/Export: CSV/JSON import with preview/validation and export endpoint.
+- [ ] API: webservice CRUD endpoints protected by `local/xlate:manage`.
+- [ ] Matching & integration: improve `lookup_glossary()` with fuzzy/token matching and integrate it into migration/auto-translate flows (record provenance when applied).
+- [ ] Caching: add lookup caching per lang-pair with proper invalidation on edits.
+- [ ] Tests & docs: PHPUnit/Behat tests for matching and UI, and documentation for import format and usage.
+
+Acceptance criteria (updated):
+
+- [ ] CRUD UI exists and is capability-protected.
 - [ ] Import validates rows and reports errors clearly.
-- [ ] `lookup_glossary()` is used by migration/auto-translate flows.
+- [ ] `lookup_glossary()` is used by migration/auto-translate flows and recorded in provenance when applied.
 
 ## Automatic translation (OpenAI endpoint) usable from Manage page
 
