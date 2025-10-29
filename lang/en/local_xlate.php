@@ -54,3 +54,13 @@ $string['no_keys_found'] = 'No translation keys found yet. Browse the site in th
 // Success/error messages
 
 $string['courseid'] = 'Course ID';
+
+// Glossary strings
+$string['glossary'] = 'Glossary';
+$string['glossary_targetlang_label'] = 'Target language';
+$string['glossary_filter'] = 'Filter';
+$string['glossary_specify_target'] = 'Specify ?targetlang=xx to view glossary entries.';
+$string['glossary_no_entries'] = 'No glossary entries for {$a}';
+$string['glossary_source'] = 'Source';
+$string['glossary_target'] = 'Target';
+$string['glossary_created'] = 'Created';

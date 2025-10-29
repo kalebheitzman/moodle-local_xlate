@@ -82,16 +82,15 @@ project-specific terminology, acronyms, product names and style choices.
 
 Subtasks:
 - [ ] Schema: create a `local_xlate_glossary` table with: `id`, `source_lang`,
-  `target_lang`, `source_text` (normalized), `target_text`, `context` (opt),
-  `priority` (int), `mtime`, `created_by`, `created_at`.
+  `target_lang`, `source_text` (normalized), `target_text`, `mtime`, `created_by`, `ctime`.
 - [ ] Admin UI: Glossary management page reachable from Manage Translations: list,
   filter, add, edit, delete entries.
 - [ ] Glossary UI endpoint: add `glossary.php` which accepts `?targetlang=[targetlang]`
   and shows the glossary for that target language with filtering and quick edits.
-- [ ] Import/Export: CSV/TSV/JSON import + export with preview and validation; example templates.
 - [ ] API: webservice endpoints (CRUD) protected by `local/xlate:manage`.
 - [ ] Matching engine: `lookup_glossary(source, source_lang, target_lang)` with
-  normalized exact and fuzzy matching, ordered by `priority`.
+- [ ] Matching engine: `lookup_glossary(source, source_lang, target_lang)` with
+  normalized exact and fuzzy matching.
 - [ ] Integration: prefer glossary matches in `mlang_migrate` and auto-translate
   flows; record provenance `applied_via='glossary'` when applied automatically.
 - [ ] Cache & invalidation: cache lookups per lang-pair; invalidate on edits.

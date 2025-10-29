@@ -183,5 +183,33 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025103001, 'local', 'xlate');
     }
 
+    // Create glossary table for existing installs (added in install.xml)
+    if ($oldversion < 2025103002) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+
+        $table = new xmldb_table('local_xlate_glossary');
+
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('source_lang', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('target_lang', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('source_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('target_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('mtime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('created_by', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('ctime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        $table->add_index('idx_langpair', XMLDB_INDEX_NOTUNIQUE, ['source_lang', 'target_lang']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2025103002, 'local', 'xlate');
+    }
+
     return true;
 }
