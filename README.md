@@ -14,8 +14,9 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
 - **Caching stack**: Moodle application cache → browser `localStorage` → long-lived HTTP responses for efficient repeat visits. The bundle endpoint supports POST requests with a list of keys for efficient, page-specific translation.
 - **Translation management UI**: Admins can review automatically captured keys,
+- **Translation management UI**: Admins can review automatically captured keys,
   enter translations, and rebuild bundles from `Site administration → Plugins →
-  Local plugins → Xlate → Manage Translations`.
+  Local plugins → Xlate`. Use the **Xlate: Manage Translations** page to manage captured keys and the **Xlate: Manage Glossary** page to maintain the language glossary.
 
 ## Installation
 1. Copy this folder to `moodle/local/xlate` (or extract the release archive
@@ -75,6 +76,7 @@ Notes and safety:
 	 for captured keys.
 6. Use the **Manage Translations** button to review captured keys and provide
 	translations.
+6b. Use the **Xlate: Manage Glossary** button (under the same Local plugins → Xlate area) to add or edit glossary entries that influence automated and manual translations.
 
 ## Capturing Strings
 - Browse the site in the site’s default language (e.g. English) while logged in

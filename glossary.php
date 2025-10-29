@@ -98,11 +98,11 @@ if ($action === 'bulk_add' && confirm_sesskey()) {
     $source_lang = required_param('source_lang', PARAM_ALPHANUMEXT);
     $source_text = required_param('source_text', PARAM_RAW_TRIMMED);
 
-    $enabledlangs = get_config('local_xlate', 'enabled_languages');
-    $enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
+    // iterate all installed languages so the form matches processing
+    $installedlangs = get_string_manager()->get_list_of_translations();
 
     $added = 0;
-    foreach ($enabledlangsarray as $langcode) {
+    foreach ($installedlangs as $langcode => $name) {
         // Skip if same as source_lang
         if ($langcode === $source_lang) {
             continue;
@@ -175,32 +175,30 @@ echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url]
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'bulk_add']);
 
-// Source language select
-echo html_writer::start_div('row mb-2');
-echo html_writer::start_div('col-md-3');
-echo html_writer::tag('label', get_string('glossary_source_lang_label', 'local_xlate'));
+// Source language is fixed to site language (hidden) and displayed read-only
 $installedlangs = get_string_manager()->get_list_of_translations();
-$langoptions = [];
-foreach ($installedlangs as $code => $name) {
-    $langoptions[$code] = $name . ' (' . $code . ')';
-}
-echo html_writer::select($langoptions, 'source_lang', $CFG->lang, false, ['class' => 'form-control']);
-echo html_writer::end_div();
-
-// Source text
-echo html_writer::start_div('col-md-9');
-echo html_writer::tag('label', get_string('glossary_source_text_label', 'local_xlate'));
-echo html_writer::tag('textarea', '', ['name' => 'source_text', 'class' => 'form-control', 'rows' => 3, 'placeholder' => get_string('glossary_source_text_placeholder', 'local_xlate')]);
-echo html_writer::end_div();
-echo html_writer::end_div();
-
-// Target language inputs
 echo html_writer::start_div('row mb-2');
-$enabledlangs = get_config('local_xlate', 'enabled_languages');
-$enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
-foreach ($enabledlangsarray as $langcode) {
-    echo html_writer::start_div('col-md-3 mb-2');
-    echo html_writer::tag('label', (isset($installedlangs[$langcode]) ? $installedlangs[$langcode] : $langcode) . ' (' . $langcode . ')');
+echo html_writer::start_div('col-md-12');
+echo html_writer::tag('label', get_string('glossary_source_lang_label', 'local_xlate'));
+echo html_writer::div((isset($installedlangs[$CFG->lang]) ? $installedlangs[$CFG->lang] : $CFG->lang) . ' (' . $CFG->lang . ')', 'form-control-plaintext mb-2');
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'source_lang', 'value' => $CFG->lang]);
+echo html_writer::end_div();
+
+// Source text full-width (single-line input)
+echo html_writer::start_div('col-md-12');
+echo html_writer::tag('label', get_string('glossary_source_text_label', 'local_xlate'));
+echo html_writer::empty_tag('input', ['type' => 'text', 'name' => 'source_text', 'class' => 'form-control', 'value' => '', 'placeholder' => get_string('glossary_source_text_placeholder', 'local_xlate')]);
+echo html_writer::end_div();
+echo html_writer::end_div();
+
+// Target language inputs: one full-width input per installed language (skip site language)
+echo html_writer::start_div('row mb-2');
+foreach ($installedlangs as $langcode => $langname) {
+    if ($langcode === $CFG->lang) {
+        continue;
+    }
+    echo html_writer::start_div('col-md-12 mb-2');
+    echo html_writer::tag('label', $langname . ' (' . $langcode . ')');
     echo html_writer::empty_tag('input', ['type' => 'text', 'name' => 'target_' . $langcode, 'class' => 'form-control', 'placeholder' => get_string('glossary_translation_placeholder', 'local_xlate')]);
     echo html_writer::end_div();
 }

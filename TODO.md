@@ -87,6 +87,7 @@ Completed work (scaffolding):
 - [x] UI: `glossary.php` listing/filtering page added (`?targetlang=`) for managers.
 - [x] Language strings: glossary-related strings added to `lang/en/local_xlate.php`.
 - [x] Naming cleanup: `created_at` renamed to `ctime` across install/upgrade and code.
+- [x] Bulk add & pagination: single-row multi-language add form and full page-number pagination (top & bottom) implemented in `glossary.php`.
 
 Remaining work (high priority):
 

@@ -86,7 +86,7 @@ DB (local_xlate_key + local_xlate_tr)
 - `component_mapping`: newline-delimited hints that nudge component detection for
   captured strings.
 - “Manage Translations” button links to `/local/xlate/manage.php` (requires
- - “Manage Translations” button links to `/local/xlate/manage.php` (requires `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course).
+ - “Manage Translations” button links to `/local/xlate/manage.php` (requires `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course). The admin area also exposes `/local/xlate/glossary.php` (labelled "Xlate: Manage Glossary") for managing glossary entries; it is protected by `local/xlate:manage` by default.
 
 Capabilities and course-level management
 ---------------------------------------

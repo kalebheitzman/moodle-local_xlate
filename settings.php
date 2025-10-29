@@ -41,26 +41,23 @@ if ($hassiteconfig) {
             'Exclude selectors',
             'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.',
             ".accesshide\n.visually-hidden\n.hidden\n.sr-only", PARAM_TEXT));
-
-        // Add link to translation management
-        $manage_url = new moodle_url('/local/xlate/manage.php');
-        $settings->add(new admin_setting_heading('local_xlate_manage_heading',
-            get_string('manage_translations', 'local_xlate'),
-            html_writer::tag('p', get_string('manage_translations_desc', 'local_xlate')) .
-            html_writer::link($manage_url, get_string('view_manage_translations', 'local_xlate'), [
-                'class' => 'btn btn-primary'
-            ])
-        ));
     }
 
     $ADMIN->add('localplugins', $settings);
 
-    // Add the translation management page to the admin navigation
+    // Add the translation management and glossary pages to the admin navigation
     if ($hassiteconfig) {
         $ADMIN->add('localplugins', new admin_externalpage(
             'local_xlate_manage',
-            get_string('manage_translations', 'local_xlate'),
+            get_string('admin_manage_translations', 'local_xlate'),
             new moodle_url('/local/xlate/manage.php'),
+            'local/xlate:manage'
+        ));
+
+        $ADMIN->add('localplugins', new admin_externalpage(
+            'local_xlate_glossary',
+            get_string('admin_manage_glossary', 'local_xlate'),
+            new moodle_url('/local/xlate/glossary.php'),
             'local/xlate:manage'
         ));
     }

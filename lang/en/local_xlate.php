@@ -72,3 +72,5 @@ $string['glossary_source_text_label'] = 'Source text';
 $string['glossary_source_text_placeholder'] = 'Enter source text here...';
 $string['glossary_add_button'] = 'Add Translations';
 $string['glossary_bulk_saved'] = '{$a} glossary translations added';
+$string['admin_manage_translations'] = 'Xlate: Manage Translations';
+$string['admin_manage_glossary'] = 'Xlate: Manage Glossary';
