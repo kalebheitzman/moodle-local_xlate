@@ -50,32 +50,6 @@ expanded into concrete implementation steps.
   - [x] `local_xlate_key_course` added to `db/install.xml` and `db/upgrade.php` updated.
   - [x] `version.php` bump applied as part of the upgrade.
 
-## Tests, build & validation
-
-- [ ] Tests and CI coverage (pending)
-  - [ ] Add PHPUnit tests for `save_key_with_translation()` persistence, dedupe and race protection.
-  - [ ] Add Behat or integration tests for `manage.php?courseid=<id>` filter and UI behaviour.
-  - [x] AMD assets built; ESLint cleaned and `grunt amd` ran successfully under `www-data`.
-  - [x] Moodle caches purged after rebuild for dev verification.
-
-## Developer suggestions (from DEVELOPER.md)
-
-- [ ] Enable page-level bundle filtering in `api::get_page_bundle()` for further optimization.
-- [ ] Add collision detection/resolution for structural keys if needed.
-- [ ] Expose composite/source string for each key in admin UI / debug mode.
-
-## Remaining action items (short list)
-
-- Decide final approach for `source_hash` (keep vs remove) and implement safe DB upgrade if removing.
-- Consider/implement index change for `local_xlate_key_course` if `source_hash` is removed (dedupe + unique index change to `(keyid,courseid)`).
-- Migrate remaining translation sources (targeted): `local_xlate_tr.text`, `local_xlate_key.source`, `assign.activity` — each: dry-run, review samples, staged execute, then full execute.
-- Verify provenance table (`mdl_local_xlate_mlang_migration`) contains expected rows for recent runs (labels, forums, course_sections, etc.) and sample audit.
-- Implement PHPUnit tests for API persistence, dedupe and race protection.
-- Add Behat/integration test for `manage.php?courseid=<id>` filter and UI behaviour.
-- Add CI workflow to lint and build AMD on PRs.
-- Optional: move important JSON reports from `/tmp` into `build/reports/` and archive reports used for auditing.
-- Commit & push docs + small cleanup (README/DEVELOPER edits and removal of temporary CLI helpers).
-
 ## Language Glossary (source -> target)
 
 Purpose: maintain a curated mapping of source-language phrases to preferred
@@ -144,6 +118,33 @@ Acceptance criteria:
 - [ ] AI translations are previewable, auditable, reversible, and respect glossary
   where possible.
 - [ ] Large batches run in background with retries/rate limiting.
+
+## Tests, build & validation
+
+- [ ] Tests and CI coverage (pending)
+  - [ ] Add PHPUnit tests for `save_key_with_translation()` persistence, dedupe and race protection.
+  - [ ] Add Behat or integration tests for `manage.php?courseid=<id>` filter and UI behaviour.
+  - [x] AMD assets built; ESLint cleaned and `grunt amd` ran successfully under `www-data`.
+  - [x] Moodle caches purged after rebuild for dev verification.
+
+## Developer suggestions & remaining action items
+
+This section combines implementation suggestions from `DEVELOPER.md` with
+the remaining actionable work items. Suggestions are short-term notes for
+developers; the checklist below contains prioritized, trackable tasks.
+
+- [ ] Enable page-level bundle filtering in `api::get_page_bundle()` for further optimization.
+- [ ] Add collision detection/resolution for structural keys if needed.
+- [ ] Expose composite/source string for each key in admin UI / debug mode.
+- [ ] Decide final approach for `source_hash` (keep vs remove) and implement safe DB upgrade if removing.
+- [ ] Consider/implement index change for `local_xlate_key_course` if `source_hash` is removed (dedupe + unique index change to `(keyid,courseid)`).
+- [ ] Migrate remaining translation sources (targeted): `local_xlate_tr.text`, `local_xlate_key.source`, `assign.activity` — each: dry-run, review samples, staged execute, then full execute.
+- [ ] Verify provenance table (`mdl_local_xlate_mlang_migration`) contains expected rows for recent runs (labels, forums, course_sections, etc.) and sample audit.
+- [ ] Implement PHPUnit tests for API persistence, dedupe and race protection.
+- [ ] Add Behat/integration test for `manage.php?courseid=<id>` filter and UI behaviour.
+- [ ] Add CI workflow to lint and build AMD on PRs.
+- [ ] Optional: move important JSON reports from `/tmp` into `build/reports/` and archive reports used for auditing.
+- [ ] Commit & push docs + small cleanup (README/DEVELOPER edits and removal of temporary CLI helpers).
 
 ## Notes & references
 
