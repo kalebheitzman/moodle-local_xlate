@@ -76,7 +76,6 @@
         <FIELD NAME="columnname" TYPE="char" LENGTH="255" NOTNULL="true"/>
         <FIELD NAME="old_value" TYPE="text" NOTNULL="false"/>
         <FIELD NAME="new_value" TYPE="text" NOTNULL="false"/>
-  <!-- source_hash removed: provenance stores old/new values which are sufficient -->
         <FIELD NAME="migrated_at" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="migrated_by" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
