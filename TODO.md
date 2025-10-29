@@ -66,11 +66,84 @@ expanded into concrete implementation steps.
 
 ## Remaining action items (short list)
 
-- Secure `.eslintignore` file permissions (owner `www-data`, mode `644`).
-- Implement PHPUnit tests for API persistence and dedupe behavior.
-- Add Behat/integration test for manage page course filtering.
+- Decide final approach for `source_hash` (keep vs remove) and implement safe DB upgrade if removing.
+- Consider/implement index change for `local_xlate_key_course` if `source_hash` is removed (dedupe + unique index change to `(keyid,courseid)`).
+- Migrate remaining translation sources (targeted): `local_xlate_tr.text`, `local_xlate_key.source`, `assign.activity` — each: dry-run, review samples, staged execute, then full execute.
+- Verify provenance table (`mdl_local_xlate_mlang_migration`) contains expected rows for recent runs (labels, forums, course_sections, etc.) and sample audit.
+- Implement PHPUnit tests for API persistence, dedupe and race protection.
+- Add Behat/integration test for `manage.php?courseid=<id>` filter and UI behaviour.
 - Add CI workflow to lint and build AMD on PRs.
-- Update `README.md` / `DEVELOPER.md` and changelog with these changes and build instructions.
+- Optional: move important JSON reports from `/tmp` into `build/reports/` and archive reports used for auditing.
+- Commit & push docs + small cleanup (README/DEVELOPER edits and removal of temporary CLI helpers).
+
+## Language Glossary (source -> target)
+
+Purpose: maintain a curated mapping of source-language phrases to preferred
+target-language translations so automated/manual translation respects
+project-specific terminology, acronyms, product names and style choices.
+
+Subtasks:
+- [ ] Schema: create a `local_xlate_glossary` table with: `id`, `source_lang`,
+  `target_lang`, `source_text` (normalized), `target_text`, `context` (opt),
+  `priority` (int), `mtime`, `created_by`, `created_at`.
+- [ ] Admin UI: Glossary management page reachable from Manage Translations: list,
+  filter, add, edit, delete entries.
+- [ ] Glossary UI endpoint: add `glossary.php` which accepts `?targetlang=[targetlang]`
+  and shows the glossary for that target language with filtering and quick edits.
+- [ ] Import/Export: CSV/TSV/JSON import + export with preview and validation; example templates.
+- [ ] API: webservice endpoints (CRUD) protected by `local/xlate:manage`.
+- [ ] Matching engine: `lookup_glossary(source, source_lang, target_lang)` with
+  normalized exact and fuzzy matching, ordered by `priority`.
+- [ ] Integration: prefer glossary matches in `mlang_migrate` and auto-translate
+  flows; record provenance `applied_via='glossary'` when applied automatically.
+- [ ] Cache & invalidation: cache lookups per lang-pair; invalidate on edits.
+- [ ] Permissions & audit: record `created_by`/`mtime`; only managers may edit.
+- [ ] Tests & docs: unit tests for matching, UI tests, docs for import format.
+
+Acceptance criteria:
+- [ ] Glossary CRUD UI exists and is capability-protected.
+- [ ] Import validates rows and reports errors clearly.
+- [ ] `lookup_glossary()` is used by migration/auto-translate flows.
+
+## Automatic translation (OpenAI endpoint) usable from Manage page
+
+Purpose: provide a controlled, auditable AI translation feature that produces
+candidate translations for keys or DB content using an OpenAI-compatible
+endpoint. Integrates with glossary; allows preview, accept/reject, and bulk
+apply.
+
+Subtasks:
+- [ ] Add `settings.php` section: provide a dedicated admin settings section to
+  enable/disable autotranslate and to store provider credentials (explicit
+  settings for `baseurl`, `model`, `api_key`). Also include `enabled`,
+  `provider`, `temperature`, `max_tokens`, `system_prompt_template`,
+  `use_glossary`, `batch_size_limit`, `rate_limit_opts`, `log_level`. Restrict
+  settings to admins; store API key per Moodle config practices.
+- [ ] Security & privacy: make explicit that sending content externally may expose
+  data; provide opt-in toggles and defaults to exclude sensitive content.
+- [ ] Service layer: implement `local_xlate\translation\backend` wrapper for
+  HTTP calls with retries, backoff, error mapping and structured responses.
+- [ ] Glossary integration: inject glossary into system prompt or post-process
+  responses to enforce preferred terms.
+- [ ] Manage UI: add "Auto-translate" control in `manage.php` with preview modal
+  (original, glossary suggestion, AI candidate), per-key accept/reject and
+  bulk-apply.
+- [ ] Background processing: use adhoc tasks or scheduled tasks for large batches
+  with rate limiting and retry support; provide queue progress reporting.
+- [ ] Provenance & audit: record AI-applied translations with `applied_via='ai'`,
+  `model`, `system_prompt_hash`, `response_summary`, `applied_by`, `migrated_at`;
+  make applied changes reversible via provenance data.
+- [ ] Error handling & fallbacks: on provider failure fall back to glossary (when
+  enabled) or leave original unchanged and record reason.
+- [ ] Cost controls: enforce per-run/global caps, provide usage metrics.
+- [ ] Tests & docs: example system prompts, unit/integration tests, and ADR for
+  privacy/cost tradeoffs.
+
+Acceptance criteria:
+- [ ] Admins can configure AI backend and request translations from Manage UI.
+- [ ] AI translations are previewable, auditable, reversible, and respect glossary
+  where possible.
+- [ ] Large batches run in background with retries/rate limiting.
 
 ## Notes & references
 
@@ -86,3 +159,4 @@ expanded into concrete implementation steps.
   - Not all pages have a course id — omit `courseid` when absent.
   - Respect edit mode and capability checks; do not record in edit mode.
   - Use transactions and unique constraints to avoid duplicate rows.
+
