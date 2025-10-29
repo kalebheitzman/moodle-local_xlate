@@ -50,6 +50,23 @@ expanded into concrete implementation steps.
   - [x] `local_xlate_key_course` added to `db/install.xml` and `db/upgrade.php` updated.
   - [x] `version.php` bump applied as part of the upgrade.
 
+  ## MLang migrations & cleanup (completed)
+
+  Purpose: remove legacy `{mlang ...}` blocks from the database content, record
+  provenance for each change, and tidy up migration tooling and documentation.
+
+  Completed subtasks:
+  - [x] Site-wide discovery/dry-run to identify candidate columns and rows containing `{mlang`.
+  - [x] Targeted execute: cleaned `course_sections.name` entries (20 rows changed).
+  - [x] Targeted execute: cleaned `forum.name` and `forum.intro` entries (40 rows changed).
+  - [x] Targeted execute: cleaned `label.intro` entries (40 rows changed).
+  - [x] Recorded provenance rows in `local_xlate_mlang_migration` for executed changes.
+  - [x] Removed temporary helper CLI scripts (`find_mlang_*`, `mlang_dryrun`) used during discovery.
+  - [x] Updated `README.md` and `DEVELOPER.md` to point to canonical `cli/mlang_migrate.php` and document `--tables` usage.
+  - [x] Purged Moodle caches after execute runs so UI reflects cleaned content.
+  - [x] Archived JSON reports to `/tmp` during runs (consider moving to `build/reports/` if desired).
+
+
 ## Language Glossary (source -> target)
 
 Purpose: maintain a curated mapping of source-language phrases to preferred
