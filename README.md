@@ -30,6 +30,8 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 
 This plugin includes tooling to detect and (optionally) remove legacy `{mlang ...}` and `<span lang="xx" class="multilang">...</span>` blocks from DB content. Use these tools carefully — always run a dry-run first and back up your DB before executing.
 
+Note: temporary one-off scanner helpers that were used during development (for example `cli/find_mlang_all.php` and `cli/find_mlang_sections.php`) have been removed from the repository. The canonical, supported CLI runner is `cli/mlang_migrate.php` (documented below).
+
 Quick workflow:
 
 1. Run a dry-run scan to discover candidate columns and produce a JSON report:

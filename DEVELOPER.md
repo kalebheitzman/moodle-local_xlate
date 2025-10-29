@@ -146,6 +146,12 @@ apply destructive cleanup of legacy MLang blocks (`{mlang ...}` and
 always run a dry-run and inspect samples before applying changes, and take a
 DB backup prior to running any destructive migration.
 
+Note: some temporary scanner scripts that were used during early development
+(for example `cli/find_mlang_all.php`, `cli/find_mlang_sections.php`, and the
+separate `cli/mlang_dryrun.php`) have been removed from the repository. The
+supported and maintained CLI entrypoint is `cli/mlang_migrate.php` described
+below.
+
 Key files and APIs:
 - `classes/mlang_migration.php`
   - `discover_candidate_columns($DB, $opts)` — enumerate text-like columns.
