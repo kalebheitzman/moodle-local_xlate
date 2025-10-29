@@ -45,7 +45,8 @@ class glossary {
         global $DB;
         // Normalize input for now by trimming.
         $norm = trim($source);
-        $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND target_lang = :t AND source_text = :st ORDER BY id ASC";
+        $sourcecmp = $DB->sql_compare_text('source_text');
+        $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND target_lang = :t AND $sourcecmp = :st ORDER BY id ASC";
         $records = $DB->get_records_sql($sql, ['s' => $source_lang, 't' => $target_lang, 'st' => $norm], 0, 10);
         return $records ?: [];
     }
@@ -67,7 +68,8 @@ class glossary {
 
     /**
      * Get distinct source groups with pagination.
-     * Returns array of objects with fields: source_lang, source_text, translations_count, id (min id)
+     * Returns array of objects keyed by the returned first column (id). Each object contains
+     * fields: id (min id), source_lang, source_text, translations_count, mtime, ctime
      */
     public static function get_sources($search = '', $offset = 0, $limit = 20) {
         global $DB;
@@ -77,11 +79,14 @@ class glossary {
             $where = 'WHERE source_text LIKE ?';
             $params[] = '%' . $search . '%';
         }
-        $sql = "SELECT source_lang, source_text, MIN(id) as id, COUNT(*) as translations_count, MAX(mtime) as mtime, MAX(ctime) as ctime
-                  FROM {local_xlate_glossary}
-                  $where
-                  GROUP BY source_lang, source_text
-                  ORDER BY ctime DESC";
+        // Ensure the first selected column is a unique key (use MIN(id)) so get_records_sql
+        // returns an array keyed by a unique value and does not throw duplicate-key errors.
+    $sql = "SELECT MIN(id) as id, source_lang, source_text, COUNT(*) as translations_count, MAX(mtime) as mtime, MAX(ctime) as ctime
+          FROM {local_xlate_glossary}
+          $where
+          GROUP BY source_lang, source_text
+          ORDER BY LOWER(source_text) ASC";
+
         return $DB->get_records_sql($sql, $params, $offset, $limit);
     }
 
@@ -90,7 +95,8 @@ class glossary {
      */
     public static function get_translations_for_source($source_text, $source_lang) {
         global $DB;
-        $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND source_text = :st ORDER BY target_lang ASC";
+        $sourcecmp = $DB->sql_compare_text('source_text');
+        $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND $sourcecmp = :st ORDER BY target_lang ASC";
         return $DB->get_records_sql($sql, ['s' => $source_lang, 'st' => $source_text]);
     }
 
@@ -108,11 +114,9 @@ class glossary {
             throw new \invalid_argument_exception('source_text and target_lang required');
         }
 
-        $existing = $DB->get_record('local_xlate_glossary', [
-            'source_lang' => $source_lang,
-            'source_text' => $source_text,
-            'target_lang' => $target_lang
-        ]);
+        $sourcecmp = $DB->sql_compare_text('source_text');
+        $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND target_lang = :t AND $sourcecmp = :st";
+        $existing = $DB->get_record_sql($sql, ['s' => $source_lang, 't' => $target_lang, 'st' => $source_text]);
 
         if ($existing) {
             $existing->target_text = $target_text;
