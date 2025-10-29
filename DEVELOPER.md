@@ -85,8 +85,32 @@ DB (local_xlate_key + local_xlate_tr)
 - `enabled_languages`: list used for coverage reporting within `manage.php`.
 - `component_mapping`: newline-delimited hints that nudge component detection for
   captured strings.
-- “Manage Translations” button links to `/local/xlate/manage.php` (requires
- - “Manage Translations” button links to `/local/xlate/manage.php` (requires `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course). The admin area also exposes `/local/xlate/glossary.php` (labelled "Xlate: Manage Glossary") for managing glossary entries; it is protected by `local/xlate:manage` by default.
+ - “Manage Translations” button links to `/local/xlate/manage.php` (requires
+   `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course). The admin area also exposes `/local/xlate/glossary.php` (labelled "Xlate: Manage Glossary") for managing glossary entries; it is protected by `local/xlate:manage` by default.
+
+### Glossary implementation notes
+
+- `local_xlate_glossary` stores mappings with `ctime` (creation time) and `mtime` (last modified). The column was renamed from `created_at` to `ctime` during recent updates to align with other timestamp columns.
+- `classes/glossary.php` provides helpers such as `get_sources()`, `get_translations_for_source()` and `save_translation()`.
+  - `get_sources()` groups by `source_lang, source_text` and returns results keyed by a unique `id` (MIN(id)) so Moodle's `$DB->get_records_sql()` does not raise duplicate-key exceptions when the first selected column would otherwise be non-unique.
+  - SQL comparisons against `source_text` use `$DB->sql_compare_text('source_text')` to ensure compatibility with DB backends (for example PostgreSQL) that disallow direct equality comparisons on TEXT columns.
+
+### OpenAI / Autotranslation (developer notes)
+
+- The plugin now exposes site settings for an OpenAI-compatible endpoint and related options. Settings stored in `config_plugins` include:
+  - `local_xlate/autotranslate_enabled` (bool)
+  - `local_xlate/openai_endpoint` (URL)
+  - `local_xlate/openai_api_key` (masked)
+  - `local_xlate/openai_model` (text, default `gpt-5`)
+  - `local_xlate/openai_prompt` (textarea, editable system prompt)
+
+- For production use implement a translation backend wrapper (suggested path `classes/translation/backend.php`) that:
+  - Reads the admin settings and constructs requests (model, temperature, timeout).
+  - Implements retries with exponential backoff and maps provider errors to friendly messages.
+  - Validates and sanitizes input (remove/exclude sensitive fields) and enforces per-request size limits.
+  - Optionally injects glossary terms into the system prompt or post-processes model output to prefer glossary mappings.
+
+Be careful with privacy and cost: sending user content externally may expose data; document and surface this to admins and provide opt-in toggles where appropriate.
 
 Capabilities and course-level management
 ---------------------------------------

@@ -112,12 +112,13 @@ endpoint. Integrates with glossary; allows preview, accept/reject, and bulk
 apply.
 
 Subtasks:
-- [ ] Add `settings.php` section: provide a dedicated admin settings section to
+Subtasks:
+- [x] Add `settings.php` section: provide a dedicated admin settings section to
   enable/disable autotranslate and to store provider credentials (explicit
   settings for `baseurl`, `model`, `api_key`). Also include `enabled`,
   `provider`, `temperature`, `max_tokens`, `system_prompt_template`,
   `use_glossary`, `batch_size_limit`, `rate_limit_opts`, `log_level`. Restrict
-  settings to admins; store API key per Moodle config practices.
+  settings to admins; store API key per Moodle config practices. (Implemented: OpenAI/autotranslation settings added to `settings.php` with editable system prompt and model default set to `gpt-5`.)
 - [ ] Security & privacy: make explicit that sending content externally may expose
   data; provide opt-in toggles and defaults to exclude sensitive content.
 - [ ] Service layer: implement `local_xlate\translation\backend` wrapper for
@@ -170,6 +171,7 @@ developers; the checklist below contains prioritized, trackable tasks.
 - [ ] Add CI workflow to lint and build AMD on PRs.
 - [ ] Optional: move important JSON reports from `/tmp` into `build/reports/` and archive reports used for auditing.
 - [ ] Commit & push docs + small cleanup (README/DEVELOPER edits and removal of temporary CLI helpers).
+ - [x] Commit & push docs + small cleanup (README/DEVELOPER edits and removal of temporary CLI helpers).
 
 ## Notes & references
 

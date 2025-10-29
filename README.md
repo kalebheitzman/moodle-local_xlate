@@ -78,6 +78,16 @@ Notes and safety:
 	translations.
 6b. Use the **Xlate: Manage Glossary** button (under the same Local plugins → Xlate area) to add or edit glossary entries that influence automated and manual translations.
 
+7. Autotranslation (OpenAI)
+	 - The plugin includes an admin area to configure an OpenAI-compatible endpoint for optional autotranslation suggestions. Settings are under **Site administration → Plugins → Local plugins → Xlate**. Options include:
+		 - Enable Autotranslation (master toggle)
+		 - API endpoint (use a proxy or self-hosted endpoint if required)
+		 - API key (stored masked)
+		 - Model (default: gpt-5)
+		 - System prompt (editable textarea) — the default prompt preserves HTML, placeholders and UI tone; you can tweak it to enforce style choices or glossary terms.
+
+	 - Autotranslation is opt-in: enable the feature in settings before using AI suggestions from the Manage UI. See DEVELOPER.md for details about the system prompt and integration points.
+
 ## Capturing Strings
 - Browse the site in the site’s default language (e.g. English) while logged in
 	with the `local/xlate:manage` capability.
@@ -110,6 +120,11 @@ The plugin adds a "Manage Translations" link to a course's More menu for users w
 	in sync for backward compatibility.
 - When a translation bundle contains a matching key, the translator replaces
 	text content or attributes immediately.
+
+Notes about glossary and ordering
+---------------------------------
+- The Glossary (`/local/xlate/glossary.php`) is now available for site managers and provides bulk-add and paginated listing. Sources are grouped and listed alphabetically (case-insensitive) to make browsing easier.
+- Database compatibility: glossary lookups and comparisons use Moodle's `$DB->sql_compare_text()` helper to avoid TEXT-comparison errors on some DB backends (for example PostgreSQL).
 
 ## Verifying the Plugin
 - View page source: you should see the `html.xlate-loading` CSS in `<head>` and
