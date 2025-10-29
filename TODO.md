@@ -22,6 +22,8 @@ expanded into concrete implementation steps.
   - [x] UNIQUE(`keyid`, `courseid`) and necessary indexes.
   - [x] Table added to `db/install.xml` and migration added to `db/upgrade.php`.
 
+  - [x] Core tables created: `local_xlate_key`, `local_xlate_tr`, `local_xlate_bundle` (with appropriate unique indexes for `(component,xkey)` and `(keyid,lang)`).
+
 ## Client (AMD) wiring
 
 - [x] Client sends `courseid` and `context` in captured-key payloads
@@ -29,12 +31,22 @@ expanded into concrete implementation steps.
   - [x] Payload includes `courseid` and `context` when calling `local_xlate_save_key`.
   - [x] Edit-mode guard respected (no capture in editing mode).
 
+- [x] AMD runtime applies translations, observes DOM mutations, and captures untranslated strings when allowed (capture disabled in edit mode). See `amd/src/translator.js` and `build/translator.min.js`.
+
 ## Server-side save & storage
 
 - [x] Server accepts and persists course associations
   - [x] `classes/external.php` / webservice updated to accept `courseid` and `context`.
   - [x] `classes/local/api.php` updated to insert into `local_xlate_key_course` using `keyid+courseid` dedupe and a try/catch re-check to handle races.
   - [x] Existing behaviour maintained (bundle version bump, cache invalidation).
+
+- [x] Server APIs provide CRUD, cache invalidation, bundle generation, and capture handling (`classes/local/api.php`, `classes/external.php`).
+
+## Bundle & cache layer
+
+- [x] Bundle endpoint (`bundle.php`) implemented, returns `{translations, sourceMap}`, supports POST `{keys: [...]}` for filtered responses and uses immutable caching headers.
+- [x] Bundle helpers implemented: `get_bundle`, `get_version`, `generate_version_hash`, `update_bundle_version`, `invalidate_bundle_cache` and `save_key_with_translation`.
+
 
 ## Manage UI & workflow
 
@@ -44,27 +56,21 @@ expanded into concrete implementation steps.
 - [x] Add "Manage Translations" link under course "More" menu
   - [x] UI hook to append course-scoped link (implemented in `lib.php`).
 
+- [x] Capabilities defined and enforced: `local/xlate:manage` (site) and `local/xlate:managecourse` (course-scoped). `manage.php` respects `courseid` and course-level capability checks.
+
+## Configuration & settings
+
+- [x] Core settings present in `settings.php`: `enable`, `autodetect`, `enabled_languages`, `component_mapping` (documented and wired into runtime where applicable).
+
+
 ## Migrations & versioning
 
 - [x] Migrations & version bump
   - [x] `local_xlate_key_course` added to `db/install.xml` and `db/upgrade.php` updated.
   - [x] `version.php` bump applied as part of the upgrade.
 
-## MLang migrations & cleanup (completed)
-
-Purpose: remove legacy `{mlang ...}` blocks from the database content, record
-provenance for each change, and tidy up migration tooling and documentation.
-
-Completed subtasks:
-- [x] Site-wide discovery/dry-run to identify candidate columns and rows containing `{mlang`.
-- [x] Targeted execute: cleaned `course_sections.name` entries (20 rows changed).
-- [x] Targeted execute: cleaned `forum.name` and `forum.intro` entries (40 rows changed).
-- [x] Targeted execute: cleaned `label.intro` entries (40 rows changed).
-- [x] Recorded provenance rows in `local_xlate_mlang_migration` for executed changes.
-- [x] Removed temporary helper CLI scripts (`find_mlang_*`, `mlang_dryrun`) used during discovery.
-- [x] Updated `README.md` and `DEVELOPER.md` to point to canonical `cli/mlang_migrate.php` and document `--tables` usage.
-- [x] Purged Moodle caches after execute runs so UI reflects cleaned content.
-- [x] Archived JSON reports to `/tmp` during runs (consider moving to `build/reports/` if desired).
+  - [x] MLang migrations & cleanup executed: site discovery/dry-run, targeted executes for `course_sections.name` (20 rows), `forum.name`/`forum.intro` (40 rows), and `label.intro` (40 rows); provenance recorded in `local_xlate_mlang_migration`, temporary helper scripts removed, docs updated and caches purged. Reports were written to `/tmp` during runs.
+ 
 
 ## Language Glossary (source -> target)
 
