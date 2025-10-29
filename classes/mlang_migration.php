@@ -54,7 +54,7 @@ class mlang_migration {
                             }
                             $parsed = self::process_mlang_tags($text);
                             $normalized = self::normalise_source($parsed['source_text'] ?? '');
-                            $sourcehash = $normalized === '' ? '' : sha1($normalized);
+                            //$sourcehash = $normalized === '' ? '' : sha1($normalized);
 
                             $entry = [
                                 'table' => $table,
@@ -64,7 +64,6 @@ class mlang_migration {
                                 'source' => $parsed['source_text'] ?? '',
                                 'languages' => array_values($parsed['translations'] ?? []),
                                 'detected_lang_codes' => array_keys($parsed['translations'] ?? []),
-                                'source_hash' => $sourcehash,
                             ];
 
                             $report['tables'][$table]['matches']++;
@@ -183,22 +182,235 @@ class mlang_migration {
     }
 
     /**
+     * Strip MLang blocks from text and produce a replacement string using the preferred source.
+     * Preferred may be 'other' or a sitelang code. Falls back to the first content found.
+     * @param string $text
+     * @param string $preferred
+     * @return string
+     */
+    public static function strip_mlang_tags(string $text, string $preferred = 'other'): string {
+        $sitelang = get_config('core', 'lang') ?: 'en';
+
+        // Replace <span lang="xx" class="multilang">...</span>
+        $result = '';
+        $offset = 0;
+
+        // We'll iterate over both span and {mlang ...} constructs; simple approach: replace spans first.
+        $patternspan = '/<span\s+lang=["\']([a-zA-Z-]+)["\']\s+class=["\']multilang["\']>(.*?)<\/span>/is';
+        if (preg_match_all($patternspan, $text, $matches, PREG_SET_ORDER)) {
+            // Build replacement by extracting matching-language pieces in order.
+            $built = '';
+            foreach ($matches as $m) {
+                $lang = strtolower($m[1]);
+                $content = trim($m[2]);
+                if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
+                    // prefer preferred, but accept sitelang/other as fallback
+                    $built .= $content . ' ';
+                }
+            }
+            if (trim($built) !== '') {
+                // Remove all processed spans and replace them with built text.
+                $text = preg_replace($patternspan, '', $text);
+                $text = trim($built) . ' ' . $text;
+            }
+        }
+
+        // Now handle {mlang xx}...{mlang} pairs.
+        $pattern = '/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is';
+        if (preg_match_all($pattern, $text, $matches, PREG_SET_ORDER)) {
+            // We will replace each occurrence with the chosen language content.
+            foreach ($matches as $m) {
+                $lang = strtolower(trim($m[1]));
+                $content = trim($m[2]);
+                $replacement = '';
+                if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
+                    $replacement = $content;
+                }
+                // Replace this specific instance with the replacement (may be empty).
+                $text = preg_replace('/\{mlang\s+' . preg_quote($m[1], '/') . '\}' . preg_quote($m[2], '/') . '\{mlang\}/is', $replacement, $text, 1);
+            }
+        }
+
+        // Finally collapse whitespace.
+        $text = preg_replace('/\s+/u', ' ', trim($text));
+        return $text;
+    }
+
+    /**
+     * Perform destructive migration to replace MLang with chosen source across candidate columns.
+     * By default runs in dry-run mode (no writes). Set 'execute' => true to actually modify rows.
+     * Options:
+     *  - tables => map table => [cols]
+     *  - chunk => rows per loop
+     *  - preferred => 'other' | 'sitelang' | language code
+     *  - execute => bool (default false)
+     *  - sample => int (max samples to include in returned report)
+     * @param \moodle_database $DB
+     * @param array $options
+     * @return array report including changed count and sample entries
+     */
+    public static function migrate(\moodle_database $DB, array $options = []): array {
+        $tables = $options['tables'] ?? self::default_tables();
+        $chunk = $options['chunk'] ?? self::DEFAULT_CHUNK;
+        $preferred = $options['preferred'] ?? 'other';
+        $execute = !empty($options['execute']);
+        $sample = $options['sample'] ?? self::DEFAULT_SAMPLE;
+        $maxchanges = isset($options['max_changes']) ? (int)$options['max_changes'] : 0;
+
+        $report = ['run' => date('c'), 'changed' => 0, 'samples' => []];
+
+        foreach ($tables as $table => $cols) {
+            $colslist = implode(', ', array_map(function($c) { return $c; }, $cols));
+            $sql = "SELECT id, " . $colslist . " FROM {" . $table . "}";
+            $offset = 0;
+            try {
+                while ($rows = $DB->get_records_sql($sql, [], $offset, $chunk)) {
+                    foreach ($rows as $row) {
+                        foreach ($cols as $col) {
+                            if (!isset($row->{$col}) || $row->{$col} === null) { continue; }
+                            $orig = (string)$row->{$col};
+                            if (!self::contains_mlang($orig)) { continue; }
+
+                            $parsed = self::process_mlang_tags($orig);
+                            $normalized = self::normalise_source($parsed['source_text'] ?? '');
+                            // source_hash removed: provenance/reporting no longer requires a separate hash value.
+
+                            // Build replacement text based on preference.
+                            $new = self::strip_mlang_tags($orig, $preferred);
+
+                            // If strip produced empty string but parsed has source_text, prefer that.
+                            if ($new === '' && !empty($parsed['source_text'])) { $new = $parsed['source_text']; }
+
+                            if ($new !== $orig) {
+                                // Record sample regardless of execute to allow review.
+                                if (count($report['samples']) < $sample) {
+                                    $report['samples'][] = [
+                                        'table' => $table,
+                                        'id' => $row->id,
+                                        'column' => $col,
+                                        'old' => mb_substr($orig, 0, 2000),
+                                        'new' => mb_substr($new, 0, 2000),
+                                    ];
+                                }
+
+                                if ($execute) {
+                                    // Do a safe transactional update and record provenance.
+                                    // Use delegated transaction if available; otherwise do best-effort updates without explicit transaction.
+                                    if (method_exists($DB, 'start_delegated_transaction')) {
+                                        $transaction = $DB->start_delegated_transaction();
+                                        try {
+                                            $DB->set_field($table, $col, $new, ['id' => $row->id]);
+
+                                            $prov = new \stdClass();
+                                            $prov->tablename = $table;
+                                            $prov->recordid = $row->id;
+                                            $prov->columnname = $col;
+                                            $prov->old_value = $orig;
+                                            $prov->new_value = $new;
+                                            // source_hash removed from provenance recording.
+                                            $prov->migrated_at = time();
+                                            $prov->migrated_by = (isloggedin() && !empty($GLOBALS['USER']->id)) ? $GLOBALS['USER']->id : 0;
+
+                                            try {
+                                                if ($DB->get_manager()->table_exists(new \xmldb_table('local_xlate_mlang_migration'))) {
+                                                    $DB->insert_record('local_xlate_mlang_migration', $prov);
+                                                }
+                                            } catch (\Exception $e) {
+                                                debugging('[local_xlate] provenance insert failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                                            }
+
+                                            // Commit by allowing transaction to complete.
+                                            $transaction->allow_commit();
+                                        } catch (\Exception $e) {
+                                            try {
+                                                $transaction->rollback($e);
+                                            } catch (\Exception $e2) {
+                                                // ignore rollback failures
+                                            }
+                                            debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
+                                            continue;
+                                        }
+                                    } else {
+                                        // Best-effort fallback for older DB implementations: update and try to insert provenance.
+                                        try {
+                                            $DB->set_field($table, $col, $new, ['id' => $row->id]);
+                                        } catch (\Exception $e) {
+                                            debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
+                                            continue;
+                                        }
+
+                                        $prov = new \stdClass();
+                                        $prov->tablename = $table;
+                                        $prov->recordid = $row->id;
+                                        $prov->columnname = $col;
+                                        $prov->old_value = $orig;
+                                        $prov->new_value = $new;
+                                        // source_hash removed from provenance recording.
+                                        $prov->migrated_at = time();
+                                        $prov->migrated_by = (isloggedin() && !empty($GLOBALS['USER']->id)) ? $GLOBALS['USER']->id : 0;
+
+                                        try {
+                                            if ($DB->get_manager()->table_exists(new \xmldb_table('local_xlate_mlang_migration'))) {
+                                                $DB->insert_record('local_xlate_mlang_migration', $prov);
+                                            }
+                                        } catch (\Exception $e) {
+                                            debugging('[local_xlate] provenance insert failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                                        }
+                                    }
+                                }
+
+                                $report['changed']++;
+                                // If a max_changes cap is provided, stop early when reached.
+                                if ($maxchanges > 0 && $report['changed'] >= $maxchanges) {
+                                    // Return immediately with current report and samples.
+                                    return $report;
+                                }
+                            }
+                        }
+                    }
+                    $offset += $chunk;
+                }
+            } catch (\Exception $e) {
+                debugging('[local_xlate] Skipping table ' . $table . ' during migrate: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                continue;
+            }
+        }
+
+        return $report;
+    }
+
+    /**
      * Default table/column map to scan. Extend as needed via options.
      * Keys are table names (without prefix), values are arrays of column names.
      * @return array
      */
     public static function default_tables(): array {
+        // Expanded default table/column mapping includes common title/name fields
+        // so the migration is portable and thorough without requiring external JSON.
         return [
-            'course' => ['summary'],
-            'course_sections' => ['summary'],
-            'page' => ['content'],
-            'label' => ['intro'],
-            'forum_posts' => ['message'],
-            'resource' => ['intro'],
-            'book_chapters' => ['content'],
-            'assign' => ['intro'],
-            'quiz' => ['intro'],
+            'course' => ['fullname', 'summary'],
+            'course_sections' => ['name', 'summary'],
+            'course_categories' => ['name', 'description'],
+            'page' => ['name', 'content'],
+            'label' => ['name', 'intro'],
+            'resource' => ['name', 'intro'],
+            'book_chapters' => ['title', 'content'],
+            'assign' => ['name', 'intro'],
+            'quiz' => ['name', 'intro'],
             'question' => ['questiontext'],
+            'forum' => ['name', 'intro'],
+            'forum_posts' => ['subject', 'message'],
+            'glossary' => ['name', 'intro'],
+            'glossary_entries' => ['concept', 'definition'],
+            'workshop' => ['name', 'intro'],
+            'lesson' => ['name', 'content'],
+            'url' => ['name', 'intro'],
+            'scorm' => ['name', 'intro'],
+            'choice' => ['name', 'intro'],
+            'data' => ['name', 'intro'],
+            'wiki' => ['name'],
+            // Local plugin table for translations (if present) so text rows can be cleaned.
+            'local_xlate_tr' => ['text'],
         ];
     }
 

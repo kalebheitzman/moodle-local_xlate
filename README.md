@@ -26,6 +26,41 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 4. Verify the plugin appears under **Site administration → Plugins → Local
 	 plugins → Xlate**.
 
+## MLang cleanup (legacy multi-language blocks)
+
+This plugin includes tooling to detect and (optionally) remove legacy `{mlang ...}` and `<span lang="xx" class="multilang">...</span>` blocks from DB content. Use these tools carefully — always run a dry-run first and back up your DB before executing.
+
+Quick workflow:
+
+1. Run a dry-run scan to discover candidate columns and produce a JSON report:
+
+```bash
+# discover and dry-run (safe)
+sudo -u www-data php local/xlate/cli/mlang_migrate.php
+```
+
+The dry-run produces a report in your system temp directory (e.g. `/tmp/local_xlate_mlang_migrate_<ts>.json`) listing matches and sample replacements.
+
+2. Review the report and samples. Tweak `preferred` selection (`other`, `sitelang`, or language code) if necessary.
+
+3. When ready, run a staged migration (limit changes) to test behaviour on a few rows:
+
+```bash
+sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute --max=5
+```
+
+4. If the staged run looks correct, run a full migration (no max limit):
+
+```bash
+sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute
+```
+
+Notes and safety:
+- The migration records provenance in table `local_xlate_mlang_migration` (created during plugin upgrade). Each row includes `old_value`, `new_value`, `migrated_at`, and `migrated_by`.
+- The CLI runner accepts `--preferred` to choose which language variant to keep (default `other`). Use `--preferred=sitelang` to prefer your site's default language if available.
+- Always take a DB backup before running `--execute` and run the migration during a maintenance window.
+- The tool scans only text-like columns; it avoids binary/blob columns by default. Use `--tables` to pass a JSON file or comma-separated `table:column` pairs to target specific fields.
+
 ## Configuration
 1. Open **Site administration → Plugins → Local plugins → Xlate**.
 2. Ensure *Enable Xlate* is checked. When disabled no CSS or scripts are

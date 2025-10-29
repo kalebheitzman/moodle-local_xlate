@@ -22,8 +22,7 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="keyid" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="source_hash" TYPE="char" LENGTH="40" NOTNULL="true"/>
-  <FIELD NAME="context" TYPE="varchar" LENGTH="255" NOTNULL="false"/>
+    <FIELD NAME="context" TYPE="varchar" LENGTH="255" NOTNULL="false"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
@@ -32,7 +31,7 @@
       </KEYS>
       <INDEXES>
   <INDEX NAME="ix_courseid" UNIQUE="false" FIELDS="courseid"/>
-        <INDEX NAME="uq_key_course_source" UNIQUE="true" FIELDS="keyid,courseid,source_hash"/>
+        <INDEX NAME="uq_key_course" UNIQUE="true" FIELDS="keyid,courseid"/>
       </INDEXES>
     </TABLE>
 
@@ -66,6 +65,26 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="uniq_lang" UNIQUE="true" FIELDS="lang"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_xlate_mlang_migration" COMMENT="records provenance for mlang destructive migration">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="tablename" TYPE="char" LENGTH="255" NOTNULL="true"/>
+        <FIELD NAME="recordid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="columnname" TYPE="char" LENGTH="255" NOTNULL="true"/>
+        <FIELD NAME="old_value" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="new_value" TYPE="text" NOTNULL="false"/>
+  <!-- source_hash removed: provenance stores old/new values which are sufficient -->
+        <FIELD NAME="migrated_at" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="migrated_by" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_table_record" UNIQUE="false" FIELDS="tablename,recordid"/>
       </INDEXES>
     </TABLE>
   </TABLES>

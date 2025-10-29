@@ -18,8 +18,8 @@ expanded into concrete implementation steps.
 ## Database & schema
 
 - [x] Design & create DB table for course associations (`local_xlate_key_course`)
-  - [x] Columns: `id`, `keyid`, `courseid`, `source_hash`, `context`, `mtime`.
-  - [x] UNIQUE(`keyid`, `courseid`, `source_hash`) and necessary indexes.
+  - [x] Columns: `id`, `keyid`, `courseid`, `context`, `mtime`.
+  - [x] UNIQUE(`keyid`, `courseid`) and necessary indexes.
   - [x] Table added to `db/install.xml` and migration added to `db/upgrade.php`.
 
 ## Client (AMD) wiring
@@ -33,7 +33,7 @@ expanded into concrete implementation steps.
 
 - [x] Server accepts and persists course associations
   - [x] `classes/external.php` / webservice updated to accept `courseid` and `context`.
-  - [x] `classes/local/api.php` updated to insert into `local_xlate_key_course` using `source_hash` dedupe and a try/catch re-check to handle races.
+  - [x] `classes/local/api.php` updated to insert into `local_xlate_key_course` using `keyid+courseid` dedupe and a try/catch re-check to handle races.
   - [x] Existing behaviour maintained (bundle version bump, cache invalidation).
 
 ## Manage UI & workflow

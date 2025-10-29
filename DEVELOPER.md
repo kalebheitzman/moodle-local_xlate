@@ -138,6 +138,59 @@ external integrations.
 5. **Code style**: follow Moodle PHP guidelines; AMD modules stay ES5-compatible
    (no transpilation pipeline).
 
+## MLang migration tooling (developer guide)
+
+The plugin includes helpers and a CLI runner to discover, dry-run and (optionally)
+apply destructive cleanup of legacy MLang blocks (`{mlang ...}` and
+`<span lang="xx" class="multilang">...</span>`). Use these tools carefully —
+always run a dry-run and inspect samples before applying changes, and take a
+DB backup prior to running any destructive migration.
+
+Key files and APIs:
+- `classes/mlang_migration.php`
+  - `discover_candidate_columns($DB, $opts)` — enumerate text-like columns.
+  - `dryrun($DB, $options)` — read-only scan that writes a JSON report to
+    `sys_get_temp_dir()`.
+  - `migrate($DB, $options)` — destructive migration. By default it is a dry-run
+    unless `execute => true` is passed. Supports `max_changes` for staged runs.
+- `classes/task/mlang_migrate.php` — an adhoc task wrapper for `migrate()`.
+- `cli/mlang_migrate.php` — CLI runner. Flags:
+  - `--execute` apply changes (no flag = dry-run)
+  - `--max=N` stop after N changes (staged run)
+  - `--preferred={other|sitelang|<code>}` preferred source variant
+  - `--chunk=N`, `--sample=N` performance tuning
+  - `--tables=path.json` or `--tables=table:col,table2:col2` to target specific columns
+
+Example workflow:
+
+1. Dry-run (default):
+
+```bash
+sudo -u www-data php local/xlate/cli/mlang_migrate.php
+```
+
+2. Staged run (apply up to 5 changes):
+
+```bash
+sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute --max=5
+```
+
+3. Full run (after review and backups):
+
+```bash
+sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute
+```
+
+Provenance:
+- On execute, each change is recorded in `local_xlate_mlang_migration` with
+  `old_value`, `new_value`, `migrated_at`, and `migrated_by` for
+  auditability.
+
+Testing and CI:
+- Consider adding a small integration test that seeds test rows with
+  `{mlang}` content and runs a sample `migrate()` to verify provenance.
+
+
 ## 10. Debugging Checklist
 - View page source to confirm anti-FOUT CSS (`<head>`) and bootloader script
   (`<body>`).

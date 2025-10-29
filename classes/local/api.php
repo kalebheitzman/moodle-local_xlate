@@ -357,12 +357,10 @@ class api {
                             $details[$xkey] = 'created_key';
                         }
 
-                        // Now associate
-                        $sourcehash = sha1($source ?? '');
+                        // Now associate (dedupe by keyid + courseid only)
                         $rec = (object)[
                             'keyid' => $keyid,
                             'courseid' => $courseid,
-                            'source_hash' => $sourcehash,
                             'context' => $context,
                             'mtime' => time()
                         ];
@@ -370,11 +368,10 @@ class api {
                             $DB->insert_record('local_xlate_key_course', $rec);
                             $details[$xkey] = isset($details[$xkey]) && $details[$xkey] === 'created_key' ? 'created_and_associated' : 'associated';
                         } catch (\Exception $e) {
-                            // race or duplicate - check
+                            // race or duplicate - check by keyid+courseid
                             $existing2 = $DB->get_record('local_xlate_key_course', [
                                 'keyid' => $keyid,
                                 'courseid' => $courseid,
-                                'source_hash' => $sourcehash
                             ]);
                             if ($existing2) {
                                 $details[$xkey] = isset($details[$xkey]) && $details[$xkey] === 'created_key' ? 'created_and_associated_exists' : 'exists';
@@ -447,20 +444,18 @@ class api {
             // Save the translation
             self::save_translation($keyid, $lang, $translation);
 
-            // If a course association was provided, record it (deduped by source hash).
-                if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
-                $sourcehash = sha1($source ?? '');
+            // If a course association was provided, record it (associate by keyid+courseid).
+            if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
+                // Associate by keyid+courseid (no source_hash dedupe)
                 $existing = $DB->get_record('local_xlate_key_course', [
                     'keyid' => $keyid,
                     'courseid' => $courseid,
-                    'source_hash' => $sourcehash
                 ]);
 
                 if (!$existing) {
                     $rec = (object)[
                         'keyid' => $keyid,
                         'courseid' => $courseid,
-                        'source_hash' => $sourcehash,
                         'context' => $context,
                         'mtime' => time()
                     ];
@@ -471,8 +466,7 @@ class api {
                         // Re-check for existing row; if found, treat as benign, otherwise rethrow.
                         $existing2 = $DB->get_record('local_xlate_key_course', [
                             'keyid' => $keyid,
-                            'courseid' => $courseid,
-                            'source_hash' => $sourcehash
+                            'courseid' => $courseid
                         ]);
                         if ($existing2) {
                             // benign race; ignore
