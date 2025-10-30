@@ -235,4 +235,245 @@ class local_xlate_external extends external_api {
             'details' => new external_single_structure([], 'Details', VALUE_OPTIONAL)
         ]);
     }
+
+    /**
+     * Parameters for queuing a translation batch via AI backend.
+     * @return external_function_parameters
+     */
+    public static function autotranslate_parameters() {
+        return new external_function_parameters([
+            'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, 'en'),
+            // Accept either a single target language string or an array of target languages.
+            'targetlang' => new external_multiple_structure(
+                new external_value(PARAM_TEXT, 'Target language code'),
+                'Target languages'
+            ),
+            'items' => new external_multiple_structure(
+                new external_single_structure([
+                    'id' => new external_value(PARAM_TEXT, 'Item id'),
+                    'component' => new external_value(PARAM_TEXT, 'Optional component for persistence', VALUE_DEFAULT, ''),
+                    'key' => new external_value(PARAM_TEXT, 'Optional translation key for persistence', VALUE_DEFAULT, ''),
+                    'source_text' => new external_value(PARAM_TEXT, 'Source text'),
+                    'placeholders' => new external_multiple_structure(new external_value(PARAM_TEXT, 'placeholder'), 'Placeholders', VALUE_DEFAULT, [])
+                ]),
+                'Items to translate'
+            ),
+            'glossary' => new external_multiple_structure(
+                new external_single_structure([
+                    'term' => new external_value(PARAM_TEXT, 'Glossary term'),
+                    'replacement' => new external_value(PARAM_TEXT, 'Preferred translation')
+                ]),
+                'Glossary entries',
+                VALUE_DEFAULT,
+                []
+            ),
+            'options' => new external_single_structure([], 'Options', VALUE_DEFAULT, [])
+        ]);
+    }
+
+    /**
+     * Queue an adhoc task to translate a batch using the AI backend.
+     * @param string $sourcelang
+    * @param string|array $targetlang
+     * @param array $items
+     * @param array $glossary
+     * @param array $options
+     * @return array
+     */
+    public static function autotranslate($sourcelang, $targetlang, $items, $glossary = [], $options = []) {
+        global $USER;
+        // Log raw incoming inputs at PHP level for easier debugging (will appear in nginx/php-fpm logs).
+        try {
+            error_log('[local_xlate] autotranslate called (raw inputs): ' . json_encode([
+                'sourcelang' => $sourcelang,
+                'targetlang' => $targetlang,
+                'items_count' => is_array($items) ? count($items) : null,
+            ], JSON_PARTIAL_OUTPUT_ON_ERROR));
+        } catch (\Exception $ex) {
+            // ignore logging failures
+        }
+
+        try {
+            $params = self::validate_parameters(self::autotranslate_parameters(), [
+                'sourcelang' => $sourcelang,
+                'targetlang' => $targetlang,
+                'items' => $items,
+                'glossary' => $glossary,
+                'options' => $options,
+            ]);
+        } catch (\invalid_parameter_exception $e) {
+            // Log the raw inputs to help diagnose validation failures at developer level.
+            $dump = '';
+            try {
+                $dump = json_encode([
+                    'sourcelang' => $sourcelang,
+                    'targetlang' => $targetlang,
+                    'items' => $items,
+                    'glossary' => $glossary,
+                    'options' => $options
+                ], JSON_PARTIAL_OUTPUT_ON_ERROR);
+            } catch (\Exception $ex) {
+                $dump = 'Failed to json_encode inputs: ' . $ex->getMessage();
+            }
+            debugging('[local_xlate] autotranslate parameter validation failed: ' . $e->getMessage() . ' inputs=' . $dump, DEBUG_DEVELOPER);
+            // Also write to PHP error log so it's always captured in nginx/php-fpm logs
+            try {
+                error_log('[local_xlate] autotranslate parameter validation failed: ' . $e->getMessage() . ' inputs=' . $dump);
+            } catch (\Exception $ex) {
+                // swallow logging errors
+            }
+            // Rethrow so the external API returns the same invalid parameter error to the client.
+            throw $e;
+        }
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:manage', $context);
+
+        try {
+            // Minimal validation: ensure items is non-empty.
+            if (empty($params['items'])) {
+                throw new \invalid_parameter_exception('No items to translate');
+            }
+
+            // Debug: log invocation parameters at developer level to help diagnose failures.
+            debugging('[local_xlate] autotranslate called: sourcelang=' . $params['sourcelang'] . ', targetlang=' . json_encode($params['targetlang']) . ', items=' . count($params['items']), DEBUG_DEVELOPER);
+
+            $task = new \local_xlate\task\translate_batch_task();
+            $task->set_custom_data((object)[
+                'requestid' => uniqid('rb_'),
+                'sourcelang' => $params['sourcelang'],
+                // Pass the target languages through (string or array). The task
+                // already supports iterating multiple target languages.
+                'targetlang' => $params['targetlang'],
+                'items' => $params['items'],
+                'glossary' => $params['glossary'],
+                'options' => $params['options'] ?? []
+            ]);
+
+            $taskid = \core\task\manager::queue_adhoc_task($task);
+
+            debugging('[local_xlate] autotranslate queued task id: ' . $taskid, DEBUG_DEVELOPER);
+
+            return ['success' => true, 'taskid' => $taskid];
+        } catch (\Exception $e) {
+            // Log full exception details to developer debug log for diagnosis, then rethrow so the external API returns an error.
+            debugging('[local_xlate] autotranslate failed: ' . $e->getMessage() . '\n' . $e->getTraceAsString(), DEBUG_DEVELOPER);
+            throw $e;
+        }
+    }
+
+    /**
+     * Returns for autotranslate.
+     * @return external_single_structure
+     */
+    public static function autotranslate_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'taskid' => new external_value(PARAM_INT, 'Queued task id')
+        ]);
+    }
+
+    /**
+     * Parameters for polling autotranslate progress.
+     * @return external_function_parameters
+     */
+    public static function autotranslate_progress_parameters() {
+        return new external_function_parameters([
+            'items' => new external_multiple_structure(
+                new external_value(PARAM_TEXT, 'Item id in the form component:key'),
+                'Items to check'
+            ),
+            'targetlang' => new external_value(PARAM_TEXT, 'Target language code')
+        ]);
+    }
+
+    /**
+     * Poll for progress of autotranslate by checking persisted translations for the given items.
+     * Returns an array of {id, translated, translation} entries.
+     * @param array $items
+     * @param string $targetlang
+     * @return array
+     */
+    public static function autotranslate_progress($items, $targetlang) {
+        global $DB;
+
+        $params = self::validate_parameters(self::autotranslate_progress_parameters(), [
+            'items' => $items,
+            'targetlang' => $targetlang
+        ]);
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:viewui', $context);
+
+        $results = [];
+        foreach ($params['items'] as $idparam) {
+            // Accept either 'component:key' or just 'key' as input. We will return the
+            // plain key (hash) in the response as the caller requested.
+            $parts = explode(':', $idparam, 2);
+            if (count($parts) === 2) {
+                $component = $parts[0];
+                $xkey = $parts[1];
+            } else {
+                $component = '';
+                $xkey = $idparam;
+            }
+
+            // If we don't have a component, try to find a key record by xkey only.
+            if (!empty($component)) {
+                $keydata = $DB->get_record('local_xlate_key', ['component' => $component, 'xkey' => $xkey]);
+            } else {
+                // Note: get_record will return the first matching record; if there are
+                // multiple records with the same xkey across components, this will
+                // pick one arbitrarily. That's acceptable for the UI polling use-case
+                // where the xkey is the unique identifier in practice.
+                $keydata = $DB->get_record('local_xlate_key', ['xkey' => $xkey]);
+            }
+            if (!$keydata) {
+                $results[] = [
+                    'id' => $id,
+                    'translated' => false,
+                    'translation' => null
+                ];
+                continue;
+            }
+
+            $tr = $DB->get_record('local_xlate_tr', ['keyid' => $keydata->id, 'lang' => $params['targetlang']]);
+            if ($tr) {
+                $results[] = [
+                    // Return only the key/hash portion to the caller.
+                    'id' => $xkey,
+                    'translated' => true,
+                    'translation' => $tr->text
+                ];
+            } else {
+                $results[] = [
+                    'id' => $xkey,
+                    'translated' => false,
+                    'translation' => null
+                ];
+            }
+        }
+
+        return ['success' => true, 'results' => $results];
+    }
+
+    /**
+     * Returns for autotranslate_progress.
+     * @return external_single_structure
+     */
+    public static function autotranslate_progress_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'results' => new external_multiple_structure(
+                new external_single_structure([
+                    'id' => new external_value(PARAM_TEXT, 'Item id'),
+                    'translated' => new external_value(PARAM_BOOL, 'Whether translation exists'),
+                    'translation' => new external_value(PARAM_TEXT, 'Translation text', VALUE_OPTIONAL, null)
+                ]),
+                'Per-item progress'
+            )
+        ]);
+    }
 }

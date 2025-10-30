@@ -211,5 +211,12 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025103002, 'local', 'xlate');
     }
 
+    // Savepoint: bump version so new classes (adhoc tasks) are picked up by Moodle.
+    if ($oldversion < 2025103004) {
+        // No DB schema changes required; this savepoint ensures the plugin version
+        // increments so Moodle will detect new classes such as adhoc tasks.
+        upgrade_plugin_savepoint(true, 2025103004, 'local', 'xlate');
+    }
+
     return true;
 }

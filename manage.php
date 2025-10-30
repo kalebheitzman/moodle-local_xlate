@@ -205,6 +205,15 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('manage_translations', 'local_xlate'));
 
+// Visible Autotranslate control (will be wired to AMD module).
+echo html_writer::start_div('mb-3');
+echo html_writer::tag('button', get_string('autotranslate_enable', 'local_xlate'), [
+    'type' => 'button',
+    'id' => 'local_xlate_autotranslate',
+    'class' => 'btn btn-primary'
+]);
+echo html_writer::end_div();
+
 // Get enabled languages
 $enabledlangs = get_config('local_xlate', 'enabled_languages');
 $enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
@@ -501,5 +510,44 @@ $capture_selectors = get_config('local_xlate', 'capture_selectors');
 $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
 echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n" .
     'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
+
+// Provide a small JS config and initialize the autotranslate AMD module on the Manage page.
+// Default target: pick the first enabled language that is not the site language, if any.
+$defaulttarget = '';
+$enabledlangs = get_config('local_xlate', 'enabled_languages');
+$enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
+foreach ($enabledlangsarray as $candidate) {
+    if ($candidate !== $sitelang) {
+        $defaulttarget = $candidate;
+        break;
+    }
+}
+
+$amdconfig = [
+    'defaulttarget' => $defaulttarget,
+    'courseid' => isset($course->id) ? $course->id : 0,
+    'bundleurl' => (new moodle_url('/local/xlate/bundle.php'))->out(false),
+    'lang' => $PAGE->course ? ($PAGE->course->lang ?? $CFG->lang) : $CFG->lang,
+    'siteLang' => $CFG->lang
+];
+
+// Include a small client-side glossary payload for the default target so the
+// AMD autotranslate module can pass it through to the backend. Keep it small
+// (limited number of entries) to avoid bloating the client payload.
+try {
+    $gloss = [];
+    if (!empty($defaulttarget)) {
+        $entries = \local_xlate\glossary::get_by_target($defaulttarget, 200);
+        foreach ($entries as $e) {
+            $gloss[] = ['term' => $e->source_text, 'replacement' => $e->target_text];
+        }
+    }
+    $amdconfig['glossary'] = $gloss;
+} catch (\Exception $ex) {
+    // Non-fatal: if glossary helpers fail, leave empty glossary to preserve behaviour.
+    $amdconfig['glossary'] = [];
+}
+
+$PAGE->requires->js_call_amd('local_xlate/autotranslate', 'init', [$amdconfig]);
 
 echo $OUTPUT->footer();

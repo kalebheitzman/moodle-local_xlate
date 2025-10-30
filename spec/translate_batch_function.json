@@ -1,0 +1,42 @@
+{
+  "name": "translate_batch",
+  "description": "Translate multiple UI strings from source_lang to target_lang and return structured results for each item. Preserve HTML and placeholders, and indicate any glossary terms applied.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "translated": { "type": "string" },
+            "applied_glossary_terms": { "type": "array", "items": { "type": "object", "properties": { "term": { "type": "string" }, "replacement": { "type": "string" } } } },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "confidence": { "type": "number" },
+            "model_tokens": { "type": "object", "properties": { "prompt": { "type": "integer" }, "completion": { "type": "integer" }, "total": { "type": "integer" } } }
+          },
+          "required": ["id", "translated"]
+        }
+      },
+      "meta": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "system_prompt_hash": { "type": "string" },
+          "elapsed_ms": { "type": "integer" },
+          "usage_tokens": {
+            "type": "object",
+            "properties": {
+              "prompt": { "type": "integer" },
+              "completion": { "type": "integer" },
+              "total": { "type": "integer" }
+            }
+          },
+          "errors": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "required": ["results"]
+  }
+}

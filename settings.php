@@ -39,8 +39,8 @@ if ($hassiteconfig) {
             get_string('openai_model_desc', 'local_xlate'), 'gpt-5', PARAM_RAW));
 
         // System prompt / translation instructions
-    // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
-    $defaultprompt = "You are a professional translation assistant.\nTranslate the provided input from the source language to the target language. Preserve HTML tags, attributes, and entities; keep placeholders and variables (for example {\$a} or {username}) unchanged; do not modify code blocks, URLs, or identifiers. Maintain tone appropriate for UI text: concise, clear, and neutral. Return only the translated text without commentary or metadata.";
+        // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
+        $defaultprompt = "You are a professional translation assistant specialized in concise UI copy. Translate input from the source language to the target language. Preserve HTML tags, attributes and entities exactly. Keep placeholders and variables (e.g. {\$a}, {username}, %s) unchanged and in-place. Do NOT rewrite code, URLs, identifiers, or variable names. Prefer concise label-style phrasing appropriate for UI. When applicable, prefer glossary terms provided in the glossary list. Output only valid JSON that matches the required schema; do not include extra text.";
 
         $settings->add(new admin_setting_configtextarea('local_xlate/openai_prompt',
             get_string('openai_prompt', 'local_xlate'),
