@@ -169,15 +169,36 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                     return;
                 }
 
-                // Use configured default target language if provided. Support either
-                // a single language string or an array of languages. When multiple
-                // languages are configured, queue one autotranslate task per language
-                // (keeps the server-side webservice contract simple and backwards
-                // compatible).
-                var targetcfg = (config && config.defaulttarget) ? config.defaulttarget : '';
-                var targets = Array.isArray(targetcfg) ? targetcfg : [targetcfg];
+                // Determine target languages. Prefer a user-selected value from the
+                // Manage page select (`#local_xlate_target`) when present; otherwise
+                // fall back to the AMD `config.defaulttarget` value which may be a
+                // string or array.
+                var targets = [];
+                var targetEl = document.getElementById('local_xlate_target');
+                if (targetEl) {
+                    // Support both single-select and multi-select. Collect selected values.
+                    if (targetEl.multiple) {
+                        for (var si = 0; si < targetEl.options.length; si++) {
+                            if (targetEl.options[si].selected) {
+                                targets.push((targetEl.options[si].value || '').toString().trim());
+                            }
+                        }
+                    } else {
+                        var v = targetEl.value || '';
+                        if (v) {
+                            targets.push(v.toString().trim());
+                        }
+                    }
+                } else {
+                    var targetcfg = (config && config.defaulttarget) ? config.defaulttarget : '';
+                    targets = Array.isArray(targetcfg) ? targetcfg : [targetcfg];
+                }
                 // Trim/normalize and filter empty values
-                targets = targets.map(function (t) { return (t || '').toString().trim(); }).filter(function (t) { return t !== ''; });
+                targets = targets.map(function (t) {
+                    return (t || '').toString().trim();
+                }).filter(function (t) {
+                    return t !== '';
+                });
 
                 if (!targets.length) {
                     notification.alert('No default target language configured. Please specify a target language in the Manage UI.');
@@ -228,7 +249,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                         }
                     }
 
-                    call.then(function(res) {
+                    call.then(function (res) {
                         if (!(res && res.success)) {
                             var reason = (res && (res.error || res.message)) ? (res.error || res.message) : null;
                             var msg = 'Failed to queue autotranslate task for ' + target + (reason ? (': ' + reason) : '.');
@@ -241,7 +262,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                         startPolling(target, items);
 
                         return null;
-                    }).catch(function(err) {
+                    }).catch(function (err) {
                         var detail = extractError(err);
                         notification.alert('Error queuing autotranslate task for ' + target + ': ' + detail);
                         return null;

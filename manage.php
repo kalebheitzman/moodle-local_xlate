@@ -219,6 +219,41 @@ $enabledlangs = get_config('local_xlate', 'enabled_languages');
 $enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
 $installedlangs = get_string_manager()->get_list_of_translations();
 
+// Site language info (used for labels and to exclude from target options).
+$sitelang = $CFG->lang;
+$sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
+
+// Default target: pick the first enabled language that is not the site language, if any.
+$defaulttarget = '';
+foreach ($enabledlangsarray as $candidate) {
+    if ($candidate !== $sitelang) {
+        $defaulttarget = $candidate;
+        break;
+    }
+}
+
+// Target language selector for Autotranslate (user-selectable).
+echo html_writer::start_div('mb-3');
+echo html_writer::start_div('d-flex align-items-center');
+echo html_writer::tag('label', get_string('autotranslate_target', 'local_xlate'), ['for' => 'local_xlate_target', 'class' => 'me-2 mb-0']);
+$options = [];
+foreach ($enabledlangsarray as $langcode) {
+    if ($langcode === $sitelang) {
+        continue;
+    }
+    $options[$langcode] = isset($installedlangs[$langcode]) ? $installedlangs[$langcode] . ' (' . $langcode . ')' : $langcode;
+}
+if (empty($options)) {
+    // If no non-site enabled languages, include site language as fallback.
+    $options[$sitelang] = $sitelangname . ' (' . $sitelang . ')';
+}
+// Pre-select default target(s). Support either a single string or an array.
+$selectedtargets = is_array($defaulttarget) ? $defaulttarget : [$defaulttarget];
+$size = min(6, max(3, count($options)));
+echo html_writer::select($options, 'local_xlate_target[]', $selectedtargets, false, ['id' => 'local_xlate_target', 'class' => 'form-select w-auto', 'multiple' => 'multiple', 'size' => $size]);
+echo html_writer::end_div();
+echo html_writer::end_div();
+
 // Automatic key capture info removed to save vertical space.
 
 // Search and filter form
@@ -512,16 +547,7 @@ echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capt
     'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
 
 // Provide a small JS config and initialize the autotranslate AMD module on the Manage page.
-// Default target: pick the first enabled language that is not the site language, if any.
-$defaulttarget = '';
-$enabledlangs = get_config('local_xlate', 'enabled_languages');
-$enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
-foreach ($enabledlangsarray as $candidate) {
-    if ($candidate !== $sitelang) {
-        $defaulttarget = $candidate;
-        break;
-    }
-}
+// (default target already computed earlier)
 
 $amdconfig = [
     'defaulttarget' => $defaulttarget,
