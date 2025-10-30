@@ -205,14 +205,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('manage_translations', 'local_xlate'));
 
-// Visible Autotranslate control (will be wired to AMD module).
-echo html_writer::start_div('mb-3');
-echo html_writer::tag('button', get_string('autotranslate_enable', 'local_xlate'), [
-    'type' => 'button',
-    'id' => 'local_xlate_autotranslate',
-    'class' => 'btn btn-primary'
-]);
-echo html_writer::end_div();
+// (Autotranslate controls are rendered below inside a styled card.)
 
 // Get enabled languages
 $enabledlangs = get_config('local_xlate', 'enabled_languages');
@@ -232,10 +225,17 @@ foreach ($enabledlangsarray as $candidate) {
     }
 }
 
-// Target language selector for Autotranslate (user-selectable).
-echo html_writer::start_div('mb-3');
-echo html_writer::start_div('d-flex align-items-center');
-echo html_writer::tag('label', get_string('autotranslate_target', 'local_xlate'), ['for' => 'local_xlate_target', 'class' => 'me-2 mb-0']);
+// Target language selector for Autotranslate (user-selectable). Render as
+// a set of inline checkboxes instead of a multi-select for better UX.
+// Wrap the autotranslate controls in a card similar to the Search & Filter
+// box. Place the action button on the right.
+echo html_writer::start_div('card mb-4');
+echo html_writer::div(get_string('autotranslate_heading', 'local_xlate'), 'card-header');
+echo html_writer::start_div('card-body');
+echo html_writer::start_div('row align-items-center');
+
+echo html_writer::start_div('col-md-9');
+echo html_writer::tag('label', get_string('autotranslate_target', 'local_xlate'), ['class' => 'me-3 mb-2 d-block']);
 $options = [];
 foreach ($enabledlangsarray as $langcode) {
     if ($langcode === $sitelang) {
@@ -247,12 +247,45 @@ if (empty($options)) {
     // If no non-site enabled languages, include site language as fallback.
     $options[$sitelang] = $sitelangname . ' (' . $sitelang . ')';
 }
+
 // Pre-select default target(s). Support either a single string or an array.
-$selectedtargets = is_array($defaulttarget) ? $defaulttarget : [$defaulttarget];
-$size = min(6, max(3, count($options)));
-echo html_writer::select($options, 'local_xlate_target[]', $selectedtargets, false, ['id' => 'local_xlate_target', 'class' => 'form-select w-auto', 'multiple' => 'multiple', 'size' => $size]);
+$selectedtargets = is_array($defaulttarget) ? $defaulttarget : ($defaulttarget ? [$defaulttarget] : []);
+
+// Render inline checkboxes
+echo html_writer::start_div('d-flex flex-wrap gap-2', ['id' => 'local_xlate_target_container']);
+foreach ($options as $langcode => $label) {
+    $id = 'local_xlate_target_' . $langcode;
+    $checked = in_array($langcode, $selectedtargets) ? 'checked' : null;
+    // form-check form-check-inline for compact horizontal layout
+    echo html_writer::start_div('form-check form-check-inline');
+    echo html_writer::empty_tag('input', [
+        'type' => 'checkbox',
+        'name' => 'local_xlate_target[]',
+        'id' => $id,
+        'value' => $langcode,
+        'class' => 'form-check-input',
+        'checked' => $checked
+    ]);
+    echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
+    echo html_writer::end_div();
+}
 echo html_writer::end_div();
+
+echo html_writer::end_div(); // col-md-9
+
+// Button column
+echo html_writer::start_div('col-md-3 text-end');
+echo html_writer::tag('label', '&nbsp;');
+echo html_writer::tag('button', get_string('autotranslate', 'local_xlate'), [
+    'type' => 'button',
+    'id' => 'local_xlate_autotranslate',
+    'class' => 'btn btn-primary'
+]);
 echo html_writer::end_div();
+
+echo html_writer::end_div(); // row
+echo html_writer::end_div(); // card-body
+echo html_writer::end_div(); // card
 
 // Automatic key capture info removed to save vertical space.
 
@@ -549,8 +582,11 @@ echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capt
 // Provide a small JS config and initialize the autotranslate AMD module on the Manage page.
 // (default target already computed earlier)
 
+// Pass the selected targets (array) to the AMD module so it can queue one
+// request per selected language. The frontend accepts either string or
+// array; prefer array here since checkboxes allow multiple values.
 $amdconfig = [
-    'defaulttarget' => $defaulttarget,
+    'defaulttarget' => $selectedtargets,
     'courseid' => isset($course->id) ? $course->id : 0,
     'bundleurl' => (new moodle_url('/local/xlate/bundle.php'))->out(false),
     'lang' => $PAGE->course ? ($PAGE->course->lang ?? $CFG->lang) : $CFG->lang,
