@@ -140,11 +140,17 @@ class translate_course_task extends adhoc_task {
 
                 if (!empty($orig['component']) && !empty($orig['key'])) {
                     try {
+                        // Debug logging: record what we are about to persist for diagnosis.
+                        try {
+                            error_log('[local_xlate] Persisting translation for ' . $orig['component'] . ':' . $orig['key'] . ' lang=' . (isset($r['lang']) ? $r['lang'] : (is_array($targetlangs) ? $targetlangs[0] : '')));
+                        } catch (\Exception $e) {
+                            // ignore logging failures
+                        }
                         \local_xlate\local\api::save_key_with_translation(
                             (string)$orig['component'],
                             (string)$orig['key'],
                             (string)($orig['source_text'] ?? ''),
-                            (string)$r['lang'] ?? (is_array($targetlangs) ? (string)$targetlangs[0] : ''),
+                            isset($r['lang']) ? (string)$r['lang'] : (is_array($targetlangs) ? (string)$targetlangs[0] : ''),
                             (string)$r['translated'],
                             0,
                             (int)$orig['courseid'],

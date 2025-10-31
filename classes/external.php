@@ -407,7 +407,15 @@ class local_xlate_external extends external_api {
     public static function autotranslate_course_enqueue_parameters() {
         return new external_function_parameters([
             'courseid' => new external_value(PARAM_INT, 'Course id'),
-            'options' => new external_single_structure([], 'Options', VALUE_DEFAULT, [])
+            // Options may include batchsize, targetlang (string or array) and sourcelang.
+            'options' => new external_single_structure([
+                'batchsize' => new external_value(PARAM_INT, 'Batch size', VALUE_DEFAULT, 50),
+                'targetlang' => new external_multiple_structure(
+                    new external_value(PARAM_TEXT, 'Target language code'),
+                    'Target languages', VALUE_OPTIONAL
+                ),
+                'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, 'en')
+            ], 'Options', VALUE_DEFAULT, [])
         ]);
     }
 

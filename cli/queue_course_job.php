@@ -3,7 +3,8 @@
 // Usage: sudo -u www-data php local/xlate/cli/queue_course_job.php --courseid=2 [--batchsize=50] [--targetlangs=es,fr]
 
 define('CLI_SCRIPT', true);
-require_once(__DIR__ . '/../../../../config.php');
+// Fix path: config.php is three levels up from this script (moodle root).
+require_once(__DIR__ . '/../../../config.php');
 global $DB, $CFG, $USER;
 
 // Parse argv style options

@@ -272,6 +272,16 @@ if ($filter_courseid > 0) {
     }
     echo html_writer::end_div();
 
+    // Inline Moodle-style progress indicator (hidden until a job is started).
+    // Single job-level progress: progress bar + numeric counter below the language checkboxes.
+    $progresshtml = '<div id="local_xlate_course_progress" style="display:none; margin-top:12px">'
+        . '<div class="progress" role="progressbar" aria-label="Autotranslate progress">'
+        . '<div id="local_xlate_course_progress_bar" class="progress-bar" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>'
+        . '</div>'
+        . '<div id="local_xlate_course_progress_text" style="margin-top:6px; font-size:90%">0 / 0</div>'
+        . '</div>';
+    echo $progresshtml;
+
     echo html_writer::end_div(); // col-md-9
 
     // Button column (only the course-level autotranslate button is shown here)
@@ -624,6 +634,73 @@ $amdconfig = [
     'lang' => $PAGE->course ? ($PAGE->course->lang ?? $CFG->lang) : $CFG->lang,
     'siteLang' => $CFG->lang
 ];
+
+// If there's an active course autotranslate job for this course, pass its id
+// to the AMD module so the frontend can resume polling after navigation.
+try {
+    if (!empty($amdconfig['courseid'])) {
+        // If the current user has site-level manage capability, surface any
+        // active job for the course (admin view). Otherwise only surface jobs
+        // owned by the current user.
+        if (has_capability('local/xlate:manage', $PAGE->context)) {
+            $activejob = $DB->get_record_select(
+                'local_xlate_course_job',
+                'courseid = ? AND status IN (?,?,?)',
+                [$amdconfig['courseid'], 'pending', 'running', 'processing'],
+                '*', IGNORE_MULTIPLE
+            );
+        } else {
+            global $USER;
+            $activejob = $DB->get_record_select(
+                'local_xlate_course_job',
+                'courseid = ? AND userid = ? AND status IN (?,?,?)',
+                [$amdconfig['courseid'], isset($USER->id) ? (int)$USER->id : 0, 'pending', 'running', 'processing'],
+                '*', IGNORE_MULTIPLE
+            );
+        }
+        if ($activejob && !empty($activejob->id)) {
+            $amdconfig['currentjobid'] = (int)$activejob->id;
+            // Add some lightweight job metadata to the AMD config so the UI
+            // can show owner and status immediately without waiting for the
+            // first poll response.
+            $amdconfig['currentjobstatus'] = (string)$activejob->status;
+            $amdconfig['currentjobprocessed'] = (int)$activejob->processed;
+            $amdconfig['currentjobtotal'] = (int)$activejob->total;
+            if (!empty($activejob->userid)) {
+                try {
+                    $jobuser = $DB->get_record('user', ['id' => (int)$activejob->userid]);
+                    if ($jobuser) {
+                        $amdconfig['currentjobowner'] = fullname($jobuser);
+                    }
+                } catch (Exception $e) {
+                    // ignore failures fetching user info
+                }
+                // Expose job options (batchsize, targetlang, sourcelang) if present
+                if (!empty($activejob->options)) {
+                    try {
+                        $opts = json_decode($activejob->options, true);
+                        if (!empty($opts) && is_array($opts)) {
+                            if (isset($opts['batchsize'])) {
+                                $amdconfig['currentjobbatchsize'] = (int)$opts['batchsize'];
+                            }
+                            if (isset($opts['sourcelang'])) {
+                                $amdconfig['currentjobsourcelang'] = (string)$opts['sourcelang'];
+                            }
+                            if (isset($opts['targetlang'])) {
+                                $amdconfig['currentjobtargetlang'] = $opts['targetlang'];
+                            }
+                        }
+                    } catch (Exception $e) {
+                        // ignore JSON parse failures
+                    }
+                }
+            }
+        }
+    }
+} catch (Exception $e) {
+    // Non-fatal: if DB check fails, do not block page render. Frontend will
+    // only start polling when a job is queued manually.
+}
 
 // Include a small client-side glossary payload for the default target so the
 // AMD autotranslate module can pass it through to the backend. Keep it small

@@ -3,190 +3,43 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     return {
         init: function (config) {
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
-            if (!courseButton) {
-                return;
+
+            // If the server passed an active job id but the Manage page card or
+            // its elements are not present (for example because the course
+            // filter was lost during navigation), create a small inline
+            // progress container and resume polling so the user still sees
+            // progress for their job.
+            if (config && config.currentjobid && !document.getElementById('local_xlate_course_progress')) {
+                try {
+                    // Append the progress container to the main content area if available,
+                    // otherwise append to document.body.
+                    var parent = document.getElementById('region-main') || document.body;
+                    var wrapper = document.createElement('div');
+                        wrapper.id = 'local_xlate_course_progress_wrapper';
+                        wrapper.style.margin = '12px 0';
+                        wrapper.innerHTML = '' +
+                                '<div id="local_xlate_course_progress" style="display:block;">' +
+                                    '<div style="font-size:90%; margin-bottom:6px">' +
+                                        '<span id="local_xlate_course_job_owner" style="font-weight:600"></span>' +
+                                        '<span id="local_xlate_course_job_status" style="margin-left:8px; color:#666"></span>' +
+                                        '<span id="local_xlate_course_job_langs" style="float:right; font-size:90%"></span>' +
+                                    '</div>' +
+                                    '<div class="progress" role="progressbar" aria-label="Autotranslate progress">' +
+                                        // Use Bootstrap striped + animated classes for nicer effect
+                                        '<div id="local_xlate_course_progress_bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>' +
+                                    '</div>' +
+                                    '<div id="local_xlate_course_progress_text" style="margin-top:6px; font-size:90%">0 / 0</div>' +
+                                '</div>';
+                    parent.insertBefore(wrapper, parent.firstChild);
+                } catch (e) {
+                    // ignore DOM insertion errors
+                }
             }
 
-            /**
-             * Start polling the server for persisted translations for items.
-             * This helper creates a small floating status panel and updates it.
-             * @param {string} targetlang
-             * @param {Array} items
-             */
-            function startPolling(targetlang, items) {
-                var statusId = 'local_xlate_autotranslate_status';
-                var statusEl = document.getElementById(statusId);
-                if (!statusEl) {
-                    statusEl = document.createElement('div');
-                    statusEl.id = statusId;
-                    statusEl.style.position = 'fixed';
-                    statusEl.style.right = '16px';
-                    statusEl.style.bottom = '16px';
-                    statusEl.style.zIndex = 1050;
-                    statusEl.style.maxWidth = '320px';
-                    statusEl.style.background = 'white';
-                    statusEl.style.border = '1px solid #ccc';
-                    statusEl.style.boxShadow = '0 2px 6px rgba(0,0,0,0.1)';
-                    statusEl.style.padding = '12px';
-                    statusEl.style.borderRadius = '6px';
-                    document.body.appendChild(statusEl);
-                }
+            // If there's no course button (no card), keep going — we still may
+            // need to resume polling for an active job.
 
-                // Build an array of plain keys (hashes) for polling and display.
-                var plainids = [];
-                for (var pi = 0; pi < items.length; pi++) {
-                    plainids.push(items[pi].key || items[pi].id || '');
-                }
-                var total = plainids.length;
-                var translatedCount = 0;
-
-                /**
-                 * Render the status panel.
-                 * @param {Array} list
-                 */
-                function renderStatus(list) {
-                    var header = '<strong>Autotranslate</strong><br/>';
-                    var progressLine = '<div style="margin-top:8px">' + translatedCount + ' / ' + total + ' translated</div>';
-                    var listContainer = '<div id="local_xlate_progress_list" ' +
-                        'style="margin-top:8px; max-height:200px; overflow:auto; font-size:90%"></div>';
-                    var closeButton = '<div style="margin-top:8px; text-align:right">' +
-                        '<button id="local_xlate_progress_close" class="btn btn-sm btn-secondary">Close</button>' +
-                        '</div>';
-
-                    statusEl.innerHTML = header + progressLine + listContainer + closeButton;
-
-                    var listEl = document.getElementById('local_xlate_progress_list');
-                    listEl.innerHTML = '';
-                    for (var i = 0; i < list.length; i++) {
-                        var item = list[i];
-                        var row = document.createElement('div');
-                        row.style.padding = '2px 0';
-                        // Server now returns only the plain key (hash) as id; display that.
-                        row.textContent = (item.id || '') + ' — ' + (item.translated ? '✓' : '...');
-                        listEl.appendChild(row);
-                    }
-
-                    var closeBtn = document.getElementById('local_xlate_progress_close');
-                    if (closeBtn) {
-                        closeBtn.addEventListener('click', function () {
-                            if (statusEl && statusEl.parentNode) {
-                                statusEl.parentNode.removeChild(statusEl);
-                            }
-                        });
-                    }
-                }
-
-                // Poll every 5s by default and allow longer total wait for slow cron
-                var pollInterval = 5000;
-                // Allow up to 120 tries -> ~10 minutes max (configurable)
-                var maxTries = 120;
-                // Per-request timeout (ms) to avoid a single stalled XHR blocking progress
-                var perRequestTimeout = 120000; // 2 minutes
-                var tries = 0;
-
-                var pollHandle = setInterval(function () {
-                    tries = tries + 1;
-                    // Poll using plain key/hashes only (not component:key).
-                    var ids = plainids.slice();
-
-                    // Wrap Ajax.call with a per-request timeout so a single slow request
-                    // doesn't block the whole polling loop.
-                    var ajaxPromise = Ajax.call([{
-                        methodname: 'local_xlate_autotranslate_progress',
-                        args: {
-                            items: ids,
-                            targetlang: targetlang
-                        }
-                    }])[0];
-
-                    var timeoutPromise = new Promise(function (resolve, reject) {
-                        setTimeout(function () {
-                            reject(new Error('progress request timed out'));
-                        }, perRequestTimeout);
-                    });
-
-                    Promise.race([ajaxPromise, timeoutPromise]).then(function (progress) {
-                        if (!(progress && progress.success && Array.isArray(progress.results))) {
-                            return null;
-                        }
-
-                        translatedCount = 0;
-                        for (var k = 0; k < progress.results.length; k++) {
-                            if (progress.results[k].translated) {
-                                translatedCount = translatedCount + 1;
-                            }
-                        }
-
-                        // Update Manage page inputs/textareas with any newly-persisted translations.
-                        try {
-                            // Build a quick map from item id -> component so we can find the
-                            // corresponding card on the Manage page. The original `items`
-                            // array is available in the closure.
-                            var keyToComponent = {};
-                            for (var pi = 0; pi < items.length; pi++) {
-                                var ik = items[pi].key || (items[pi].id || '');
-                                if (!ik) { continue; }
-                                keyToComponent[ik] = items[pi].component || '';
-                            }
-
-                            for (var r = 0; r < progress.results.length; r++) {
-                                var pres = progress.results[r];
-                                if (pres && pres.translated && pres.translation) {
-                                    var xkey = pres.id;
-                                    var comp = keyToComponent[xkey] || '';
-                                    // Compose the header text that Manage page uses: component.xkey
-                                    var headerText = (comp ? (comp + '.' + xkey) : xkey).trim();
-                                    // Find the card with that header
-                                    var cardEls = document.querySelectorAll('.card.mb-3');
-                                    for (var ci = 0; ci < cardEls.length; ci++) {
-                                        try {
-                                            var header = cardEls[ci].querySelector('.card-header strong');
-                                            if (!header) { continue; }
-                                            if (header.textContent.trim() !== headerText) { continue; }
-                                            // Within this card, find the form for targetlang and set its translation value
-                                            var form = cardEls[ci].querySelector('form input[name="lang"][value="' + targetlang + '"]');
-                                            if (form) {
-                                                var parentForm = form.closest('form');
-                                                if (parentForm) {
-                                                    var txt = parentForm.querySelector('[name="translation"]');
-                                                    if (txt) {
-                                                        if (txt.tagName && txt.tagName.toLowerCase() === 'textarea') {
-                                                            txt.value = pres.translation;
-                                                        } else {
-                                                            txt.value = pres.translation;
-                                                        }
-                                                        // dispatch input/change events so any listeners update
-                                                        txt.dispatchEvent(new Event('input', { bubbles: true }));
-                                                        txt.dispatchEvent(new Event('change', { bubbles: true }));
-                                                    }
-                                                }
-                                            }
-                                        } catch (e) {
-                                            // ignore per-card errors
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            // don't let UI update errors break polling
-                        }
-
-                        renderStatus(progress.results);
-
-                        if (translatedCount >= total) {
-                            clearInterval(pollHandle);
-                            notification.alert('Autotranslate finished: ' + translatedCount + ' / ' + total + ' translated.');
-                        } else if (tries >= maxTries) {
-                            clearInterval(pollHandle);
-                            notification.alert('Autotranslate polling timed out: ' + translatedCount + ' / ' + total + '.');
-                        }
-
-                        return null;
-                    }).catch(function () {
-                        return null;
-                    });
-                }, pollInterval);
-            }
+            // per-item autotranslate removed — we only support course-level autotranslate now.
 
             // per-item autotranslate removed — we only support course-level autotranslate now.
 
@@ -268,24 +121,64 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                 });
             }
 
+            // If the server detected an active job for this course, resume polling
+            if (config && config.currentjobid) {
+                try {
+                    startCoursePolling(config.currentjobid);
+                } catch (e) {
+                    // ignore any errors starting the resumed poll
+                }
+            }
+
             function startCoursePolling(jobid) {
                 if (!jobid) { return; }
-                var statusId = 'local_xlate_course_autotranslate_status';
-                var statusEl = document.getElementById(statusId);
-                if (!statusEl) {
-                    statusEl = document.createElement('div');
-                    statusEl.id = statusId;
-                    statusEl.style.position = 'fixed';
-                    statusEl.style.left = '16px';
-                    statusEl.style.bottom = '16px';
-                    statusEl.style.zIndex = 1050;
-                    statusEl.style.maxWidth = '420px';
-                    statusEl.style.background = 'white';
-                    statusEl.style.border = '1px solid #ccc';
-                    statusEl.style.boxShadow = '0 2px 6px rgba(0,0,0,0.1)';
-                    statusEl.style.padding = '12px';
-                    statusEl.style.borderRadius = '6px';
-                    document.body.appendChild(statusEl);
+
+                var container = document.getElementById('local_xlate_course_progress');
+                var bar = document.getElementById('local_xlate_course_progress_bar');
+                var text = document.getElementById('local_xlate_course_progress_text');
+                if (!container || !bar || !text) {
+                    // Nothing to update on the page; bail out.
+                    return;
+                }
+
+                // Show the inline progress container
+                container.style.display = 'block';
+
+                // Initialize owner/status from server-provided config when available.
+                if (config) {
+                    var ownerEl = document.getElementById('local_xlate_course_job_owner');
+                    var statusEl = document.getElementById('local_xlate_course_job_status');
+                    if (ownerEl && config.currentjobowner) {
+                        ownerEl.textContent = 'Job by ' + config.currentjobowner;
+                    }
+                    if (statusEl && config.currentjobstatus) {
+                        statusEl.textContent = '(' + config.currentjobstatus + ')';
+                    }
+                    // Show languages being translated (targetlang and sourcelang)
+                    var langsEl = document.getElementById('local_xlate_course_job_langs');
+                    if (langsEl) {
+                        var parts = [];
+                        if (config.currentjobsourcelang) {
+                            parts.push(config.currentjobsourcelang + ' →');
+                        }
+                        if (config.currentjobtargetlang) {
+                            if (Array.isArray(config.currentjobtargetlang)) {
+                                parts.push(config.currentjobtargetlang.join(', '));
+                            } else {
+                                parts.push(config.currentjobtargetlang);
+                            }
+                        }
+                        if (parts.length) {
+                            langsEl.textContent = parts.join(' ');
+                        }
+                    }
+                    if (config.currentjobprocessed !== undefined && config.currentjobtotal !== undefined) {
+                        text.textContent = config.currentjobprocessed + ' / ' + config.currentjobtotal;
+                        var pct = config.currentjobtotal > 0 ? Math.round((config.currentjobprocessed / config.currentjobtotal) * 100) : 0;
+                        bar.style.width = pct + '%';
+                        bar.setAttribute('aria-valuenow', pct);
+                        bar.textContent = pct + '%';
+                    }
                 }
 
                 var tries = 0;
@@ -300,24 +193,26 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                     }])[0].then(function (res) {
                         if (!(res && res.success && res.job)) { return; }
                         var job = res.job;
-                        statusEl.innerHTML = '<strong>Course Autotranslate</strong><br/>' +
-                            'Status: ' + job.status + '<br/>' +
-                            'Processed: ' + job.processed + ' / ' + job.total + '<br/>' +
-                            '<div style="margin-top:8px;text-align:right"><button id="local_xlate_course_status_close" class="btn btn-sm btn-secondary">Close</button></div>';
+                        var total = job.total || 0;
+                        var processed = job.processed || 0;
+                        var percent = total > 0 ? Math.round((processed / total) * 100) : 0;
 
-                        var closeBtn = document.getElementById('local_xlate_course_status_close');
-                        if (closeBtn) {
-                            closeBtn.addEventListener('click', function () {
-                                if (statusEl && statusEl.parentNode) { statusEl.parentNode.removeChild(statusEl); }
-                            });
-                        }
+                        // Update progress bar and numeric text
+                        bar.style.width = percent + '%';
+                        bar.setAttribute('aria-valuenow', percent);
+                        bar.textContent = percent + '%';
+                        text.textContent = processed + ' / ' + total;
 
-                        if (job.status === 'complete' || job.processed >= job.total) {
+                        if (job.status === 'complete' || processed >= total) {
                             clearInterval(handle);
-                            notification.alert('Course autotranslate complete: ' + job.processed + ' / ' + job.total);
+                            bar.style.width = '100%';
+                            bar.setAttribute('aria-valuenow', 100);
+                            bar.textContent = '100%';
+                            text.textContent = (processed || total) + ' / ' + total + ' — complete';
+                            notification.alert('Course autotranslate complete: ' + processed + ' / ' + total);
                         } else if (tries >= maxTries) {
                             clearInterval(handle);
-                            notification.alert('Course autotranslate polling timed out: ' + job.processed + ' / ' + job.total);
+                            notification.alert('Course autotranslate polling timed out: ' + processed + ' / ' + total);
                         }
                     }).catch(function () {
                         // ignore transient errors

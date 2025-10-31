@@ -64,4 +64,25 @@ $functions = [
         'capabilities' => 'local/xlate:viewui',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ]
+    ,
+    'local_xlate_autotranslate_course_enqueue' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'autotranslate_course_enqueue',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Enqueue a course-level autotranslate job',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/xlate:manage',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ],
+    'local_xlate_autotranslate_course_progress' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'autotranslate_course_progress',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Poll progress for a course autotranslate job',
+        'type' => 'read',
+        'ajax' => true,
+        'capabilities' => 'local/xlate:viewui',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ]
 ];

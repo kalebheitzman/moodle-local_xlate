@@ -305,5 +305,10 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025110101, 'local', 'xlate');
     }
 
+    // Create course-level autotranslate job table.
+    if ($oldversion < 2025110102) {
+        upgrade_plugin_savepoint(true, 2025110102, 'local', 'xlate');
+    }
+
     return true;
 }
