@@ -197,42 +197,54 @@ class mlang_migration {
 
         // We'll iterate over both span and {mlang ...} constructs; simple approach: replace spans first.
         $patternspan = '/<span\s+lang=["\']([a-zA-Z-]+)["\']\s+class=["\']multilang["\']>(.*?)<\/span>/is';
+        // Null safety
+        if ($text === null) {
+            return '';
+        }
+
+        // Handle <span class="multilang"> blocks (unchanged logic, but null-safe)
         if (preg_match_all($patternspan, $text, $matches, PREG_SET_ORDER)) {
-            // Build replacement by extracting matching-language pieces in order.
             $built = '';
             foreach ($matches as $m) {
-                $lang = strtolower($m[1]);
-                $content = trim($m[2]);
+                $lang = strtolower($m[1] ?? '');
+                $content = trim($m[2] ?? '');
                 if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
-                    // prefer preferred, but accept sitelang/other as fallback
                     $built .= $content . ' ';
                 }
             }
             if (trim($built) !== '') {
-                // Remove all processed spans and replace them with built text.
-                $text = preg_replace($patternspan, '', $text);
+                $text = preg_replace($patternspan, '', $text ?? '');
                 $text = trim($built) . ' ' . $text;
             }
         }
 
-        // Now handle {mlang xx}...{mlang} pairs.
+        // Now handle {mlang xx}...{mlang} pairs with offset-based replacement to avoid huge regexes
         $pattern = '/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is';
-        if (preg_match_all($pattern, $text, $matches, PREG_SET_ORDER)) {
-            // We will replace each occurrence with the chosen language content.
+        if (preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER)) {
+            $result = '';
+            $lastpos = 0;
             foreach ($matches as $m) {
-                $lang = strtolower(trim($m[1]));
-                $content = trim($m[2]);
+                $lang = strtolower(trim($m[1][0] ?? ''));
+                $content = trim($m[2][0] ?? '');
                 $replacement = '';
                 if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
                     $replacement = $content;
                 }
-                // Replace this specific instance with the replacement (may be empty).
-                $text = preg_replace('/\{mlang\s+' . preg_quote($m[1], '/') . '\}' . preg_quote($m[2], '/') . '\{mlang\}/is', $replacement, $text, 1);
+                $start = $m[0][1];
+                $length = strlen($m[0][0]);
+                // Append text before match
+                $result .= substr($text, $lastpos, $start - $lastpos);
+                // Append replacement
+                $result .= $replacement;
+                $lastpos = $start + $length;
             }
+            // Append any remaining text after last match
+            $result .= substr($text, $lastpos);
+            $text = $result;
         }
 
-        // Finally collapse whitespace.
-        $text = preg_replace('/\s+/u', ' ', trim($text));
+        // Finally collapse whitespace (null-safe)
+        $text = preg_replace('/\s+/u', ' ', trim($text ?? ''));
         return $text;
     }
 
@@ -453,10 +465,11 @@ class mlang_migration {
         }
 
         $placeholders = [];
-        $typelist = "'" . implode("','", $types) . "'";
-        $sql = "SELECT table_name, column_name, data_type
-                  FROM information_schema.columns
-                 WHERE data_type IN ($typelist)";
+    $typelist = "'" . implode("','", $types) . "'";
+    // Add a uniqueid as the first column to satisfy Moodle's get_records_sql() uniqueness requirement.
+    $sql = "SELECT CONCAT(table_name, ':', column_name) AS uniqueid, table_name, column_name, data_type
+          FROM information_schema.columns
+         WHERE data_type IN ($typelist)";
         if ($dbname !== null) {
             $sql .= " AND table_schema = '" . $DB->get_manager()->get_database_name() . "'";
         } else {
