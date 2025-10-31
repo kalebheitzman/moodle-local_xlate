@@ -429,12 +429,13 @@ class mlang_migration {
      * @return array
      */
     public static function discover_candidate_columns(\moodle_database $DB, array $opts = []): array {
-        global $CFG;
+    global $CFG;
 
-        $prefix = $opts['prefix'] ?? $DB->get_prefix();
-        $includepatterns = $opts['include_patterns'] ?? ['content','intro','summary','description','message','body','text','note','feedback','response','html','heading'];
-        $exclude = $opts['exclude_tables'] ?? ['cache','temp','task_','log','backup_'];
-        $fullscan = !empty($opts['full_scan']);
+    $prefix = $opts['prefix'] ?? $DB->get_prefix();
+    $includepatterns = $opts['include_patterns'] ?? ['content','intro','summary','description','message','body','text','note','feedback','response','html','heading'];
+    $exclude = $opts['exclude_tables'] ?? ['cache','temp','task_','log','backup_'];
+    // Default to full scan unless explicitly set to false
+    $fullscan = array_key_exists('full_scan', $opts) ? !empty($opts['full_scan']) : true;
 
         // Text-like types we consider safe to scan.
         $types = ["varchar","char","text","tinytext","mediumtext","longtext","json"];

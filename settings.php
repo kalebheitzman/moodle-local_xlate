@@ -36,7 +36,7 @@ if ($hassiteconfig) {
         // Model selection
         $settings->add(new admin_setting_configtext('local_xlate/openai_model',
             get_string('openai_model', 'local_xlate'),
-            get_string('openai_model_desc', 'local_xlate'), 'gpt-5', PARAM_RAW));
+            get_string('openai_model_desc', 'local_xlate'), 'gpt-4.1', PARAM_RAW));
 
         // System prompt / translation instructions
         // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
