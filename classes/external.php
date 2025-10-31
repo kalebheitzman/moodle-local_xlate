@@ -401,6 +401,134 @@ class local_xlate_external extends external_api {
     }
 
     /**
+     * Parameters for enqueuing a course-level autotranslate job.
+     * @return external_function_parameters
+     */
+    public static function autotranslate_course_enqueue_parameters() {
+        return new external_function_parameters([
+            'courseid' => new external_value(PARAM_INT, 'Course id'),
+            'options' => new external_single_structure([], 'Options', VALUE_DEFAULT, [])
+        ]);
+    }
+
+    /**
+     * Enqueue a course-level autotranslate job. Returns job id.
+     * @param int $courseid
+     * @param array $options
+     * @return array
+     */
+    public static function autotranslate_course_enqueue($courseid, $options = []) {
+        global $DB, $USER;
+
+        $params = self::validate_parameters(self::autotranslate_course_enqueue_parameters(), [
+            'courseid' => $courseid,
+            'options' => $options
+        ]);
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:manage', $context);
+
+        // Count total keys associated with the course
+        $total = 0;
+        try {
+            $total = $DB->count_records('local_xlate_key_course', ['courseid' => $params['courseid']]);
+        } catch (\Exception $e) {
+            $total = 0;
+        }
+
+        $record = new \stdClass();
+        $record->courseid = (int)$params['courseid'];
+        $record->userid = isset($USER->id) ? (int)$USER->id : 0;
+        $record->status = 'pending';
+        $record->total = (int)$total;
+        $record->processed = 0;
+        $record->batchsize = isset($params['options']['batchsize']) ? (int)$params['options']['batchsize'] : 50;
+        $record->options = !empty($params['options']) ? json_encode($params['options']) : null;
+        $record->lastid = 0;
+        $record->ctime = time();
+        $record->mtime = time();
+
+        $jobid = $DB->insert_record('local_xlate_course_job', $record);
+
+        $task = new \local_xlate\task\translate_course_task();
+        $task->set_custom_data((object)['jobid' => $jobid]);
+        $taskid = \core\task\manager::queue_adhoc_task($task);
+
+        return ['success' => true, 'jobid' => $jobid, 'taskid' => $taskid];
+    }
+
+    public static function autotranslate_course_enqueue_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'jobid' => new external_value(PARAM_INT, 'Job id'),
+            'taskid' => new external_value(PARAM_INT, 'Queued task id')
+        ]);
+    }
+
+    /**
+     * Parameters for polling a course-level autotranslate job.
+     * @return external_function_parameters
+     */
+    public static function autotranslate_course_progress_parameters() {
+        return new external_function_parameters([
+            'jobid' => new external_value(PARAM_INT, 'Job id')
+        ]);
+    }
+
+    /**
+     * Poll for progress of a course autotranslate job.
+     * @param int $jobid
+     * @return array
+     */
+    public static function autotranslate_course_progress($jobid) {
+        global $DB;
+
+        $params = self::validate_parameters(self::autotranslate_course_progress_parameters(), ['jobid' => $jobid]);
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:viewui', $context);
+
+        $job = $DB->get_record('local_xlate_course_job', ['id' => $params['jobid']]);
+        if (!$job) {
+            return ['success' => false, 'error' => 'Job not found'];
+        }
+
+        return [
+            'success' => true,
+            'job' => [
+                'id' => (int)$job->id,
+                'courseid' => (int)$job->courseid,
+                'status' => (string)$job->status,
+                'total' => (int)$job->total,
+                'processed' => (int)$job->processed,
+                'batchsize' => (int)$job->batchsize,
+                'lastid' => (int)$job->lastid,
+                'mtime' => (int)$job->mtime,
+                'ctime' => (int)$job->ctime,
+            ]
+        ];
+    }
+
+    public static function autotranslate_course_progress_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'job' => new external_single_structure([
+                'id' => new external_value(PARAM_INT, 'Job id'),
+                'courseid' => new external_value(PARAM_INT, 'Course id'),
+                'status' => new external_value(PARAM_TEXT, 'Job status'),
+                'total' => new external_value(PARAM_INT, 'Total items'),
+                'processed' => new external_value(PARAM_INT, 'Processed items'),
+                'batchsize' => new external_value(PARAM_INT, 'Batch size'),
+                'lastid' => new external_value(PARAM_INT, 'Last processed cursor id'),
+                'mtime' => new external_value(PARAM_INT, 'Modified time'),
+                'ctime' => new external_value(PARAM_INT, 'Created time')
+            ])
+        ]);
+    }
+
+    /**
      * Parameters for polling autotranslate progress.
      * @return external_function_parameters
      */

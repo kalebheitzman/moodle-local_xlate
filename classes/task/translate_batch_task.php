@@ -104,6 +104,7 @@ class translate_batch_task extends adhoc_task {
                             (string)($orig['source_text'] ?? ''),
                             $tl,
                             (string)$translated,
+                            0, // reviewed flag: machine-translated results are not human-reviewed
                             isset($orig['courseid']) ? (int)$orig['courseid'] : 0,
                             isset($orig['context']) ? (string)$orig['context'] : ''
                         );

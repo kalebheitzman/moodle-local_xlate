@@ -56,6 +56,10 @@ $string['no_keys_found'] = 'No translation keys found yet. Browse the site in th
 
 $string['courseid'] = 'Course ID';
 
+$string['translatecoursejobtask'] = 'Course autotranslate job';
+$string['autotranslate_course'] = 'Autotranslate course';
+$string['autotranslate_course_desc'] = 'Translate all captured keys associated with a course in batches and track progress.';
+
 // Glossary strings
 $string['glossary'] = 'Glossary';
 $string['glossary_targetlang_label'] = 'Target language';
