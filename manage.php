@@ -387,6 +387,19 @@ if (!empty($where_conditions)) {
     $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
 }
 
+// Prefer ordering by creation time (ctime) when available in the schema; fall back
+// to modification time (mtime) otherwise. Use the DB manager to detect the
+// presence of the ctime column so we don't hard-fail on older schemas.
+$timename = 'mtime';
+try {
+    $dbmanager = $DB->get_manager();
+    if ($dbmanager->field_exists('local_xlate_key', 'ctime')) {
+        $timename = 'ctime';
+    }
+} catch (\dml_exception $e) {
+    // If we can't check the schema for some reason, keep using mtime.
+}
+
 // Count total records for pagination
 $count_sql = "SELECT COUNT(DISTINCT k.id)
               FROM {local_xlate_key} k
@@ -401,8 +414,8 @@ $sql = "SELECT k.*, COUNT(DISTINCT t.lang) as translation_count
     FROM {local_xlate_key} k
     LEFT JOIN {local_xlate_tr} t ON k.id = t.keyid AND t.status = 1
     $where_clause
-    GROUP BY k.id, k.component, k.xkey, k.source, k.mtime
-    ORDER BY k.mtime DESC";
+    GROUP BY k.id, k.component, k.xkey, k.source, k." . $timename . "
+    ORDER BY k." . $timename . " DESC";
 
 $keys = $DB->get_records_sql($sql, $params, $page * $perpage, $perpage);
 

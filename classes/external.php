@@ -292,6 +292,29 @@ class local_xlate_external extends external_api {
         } catch (\Exception $ex) {
             // ignore logging failures
         }
+        // Also append a lightweight debug record to a plugin-local log file so
+        // we can inspect incoming autotranslate calls from the browser without
+        // requiring access to php-fpm/nginx logs. This file is temporary and
+        // safe to remove after debugging.
+        try {
+            // Use the system temp directory to avoid writing files into the Moodle
+            // codebase. This keeps debug logs out of the repository and uses the
+            // OS-designated temporary area (e.g. /tmp on Linux).
+            $tmpdir = sys_get_temp_dir();
+            $logdir = rtrim($tmpdir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'local_xlate_logs';
+            if (!is_dir($logdir)) {
+                @mkdir($logdir, 0775, true);
+            }
+            $record = [
+                'ts' => time(),
+                'sourcelang' => $sourcelang,
+                'targetlang' => $targetlang,
+                'items_count' => is_array($items) ? count($items) : null,
+            ];
+            @file_put_contents($logdir . DIRECTORY_SEPARATOR . 'autotranslate_calls.log', json_encode($record) . "\n", FILE_APPEND | LOCK_EX);
+        } catch (\Exception $ex) {
+            // ignore filesystem logging failures
+        }
 
         try {
             $params = self::validate_parameters(self::autotranslate_parameters(), [
@@ -432,20 +455,29 @@ class local_xlate_external extends external_api {
             }
             if (!$keydata) {
                 $results[] = [
-                    'id' => $id,
+                    'id' => $xkey,
                     'translated' => false,
                     'translation' => null
                 ];
                 continue;
             }
-
             $tr = $DB->get_record('local_xlate_tr', ['keyid' => $keydata->id, 'lang' => $params['targetlang']]);
             if ($tr) {
+                // Sanitize translation text to ensure it meets external API return
+                // validation (no NUL bytes or other control characters, valid UTF-8).
+                $translation = isset($tr->text) ? (string)$tr->text : '';
+                // Remove NUL and other C0/C1 control chars except common allowed (tab, newline, carriage return).
+                $translation = preg_replace('/[\x00\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $translation);
+                // Ensure valid UTF-8 and strip any invalid sequences.
+                if (!mb_check_encoding($translation, 'UTF-8')) {
+                    $translation = mb_convert_encoding($translation, 'UTF-8', 'UTF-8');
+                }
+
                 $results[] = [
                     // Return only the key/hash portion to the caller.
                     'id' => $xkey,
                     'translated' => true,
-                    'translation' => $tr->text
+                    'translation' => $translation
                 ];
             } else {
                 $results[] = [

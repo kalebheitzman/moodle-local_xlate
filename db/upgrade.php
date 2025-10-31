@@ -218,5 +218,34 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025103004, 'local', 'xlate');
     }
 
+    // Ensure creation time column (ctime) exists on local_xlate_key so UI can
+    // order by creation time rather than modification time. Backfill from mtime
+    // for existing records.
+    if ($oldversion < 2025103100) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_key');
+        $field = new xmldb_field('ctime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        // Add ctime if it doesn't exist.
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            try {
+                $dbman->add_field($table, $field);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add ctime to local_xlate_key: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        // Backfill ctime from mtime where ctime is zero or NULL.
+        try {
+            $DB->execute("UPDATE {local_xlate_key} SET ctime = mtime WHERE (ctime = 0 OR ctime IS NULL) AND mtime IS NOT NULL");
+        } catch (\Exception $e) {
+            debugging('[local_xlate] failed to backfill ctime: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+
+        upgrade_plugin_savepoint(true, 2025103100, 'local', 'xlate');
+    }
+
     return true;
 }

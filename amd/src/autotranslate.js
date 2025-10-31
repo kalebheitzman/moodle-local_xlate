@@ -174,24 +174,36 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                 // fall back to the AMD `config.defaulttarget` value which may be a
                 // string or array.
                 var targets = [];
-                var targetEl = document.getElementById('local_xlate_target');
-                if (targetEl) {
-                    // Support both single-select and multi-select. Collect selected values.
-                    if (targetEl.multiple) {
-                        for (var si = 0; si < targetEl.options.length; si++) {
-                            if (targetEl.options[si].selected) {
-                                targets.push((targetEl.options[si].value || '').toString().trim());
-                            }
-                        }
-                    } else {
-                        var v = targetEl.value || '';
-                        if (v) {
-                            targets.push(v.toString().trim());
+                // First, check for checkbox inputs named local_xlate_target[] (our new UI).
+                var checked = document.querySelectorAll('input[name="local_xlate_target[]"]:checked');
+                if (checked && checked.length) {
+                    for (var ci = 0; ci < checked.length; ci++) {
+                        var val = checked[ci].value || '';
+                        if (val) {
+                            targets.push(val.toString().trim());
                         }
                     }
                 } else {
-                    var targetcfg = (config && config.defaulttarget) ? config.defaulttarget : '';
-                    targets = Array.isArray(targetcfg) ? targetcfg : [targetcfg];
+                    // Fallback to the legacy select element with id local_xlate_target.
+                    var targetEl = document.getElementById('local_xlate_target');
+                    if (targetEl) {
+                        // Support both single-select and multi-select. Collect selected values.
+                        if (targetEl.multiple) {
+                            for (var si = 0; si < targetEl.options.length; si++) {
+                                if (targetEl.options[si].selected) {
+                                    targets.push((targetEl.options[si].value || '').toString().trim());
+                                }
+                            }
+                        } else {
+                            var v = targetEl.value || '';
+                            if (v) {
+                                targets.push(v.toString().trim());
+                            }
+                        }
+                    } else {
+                        var targetcfg = (config && config.defaulttarget) ? config.defaulttarget : '';
+                        targets = Array.isArray(targetcfg) ? targetcfg : [targetcfg];
+                    }
                 }
                 // Trim/normalize and filter empty values
                 targets = targets.map(function (t) {

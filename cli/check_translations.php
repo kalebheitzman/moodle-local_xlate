@@ -5,8 +5,12 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/filelib.php');
 
 $xkeys = [
+    // Previously-checked keys
     '1bl2r7zngtgf','ct9vnl1b0v9x','e4ndme1lo133','xwupbrtur0pq','is43qlo6eih7',
-    '469dmp12qr7h','1it7irbchyb5','neeii71uhkpn','h9h01lz28zle','1fcipcu17w18'
+    '469dmp12qr7h','1it7irbchyb5','neeii71uhkpn','h9h01lz28zle','1fcipcu17w18',
+    // Keys from recent task 34
+    'nhamd6k0acid','1fldych1alv5','410zr2jtaw9f','277gu47uvocl','61zfmb1lib7o',
+    'j473nzl2mbt9','1hx3k471bv0j','4mnf9o1plg6k','8v05o915ye19','1cermio16ybw'
 ];
 $target = 'de';
 
