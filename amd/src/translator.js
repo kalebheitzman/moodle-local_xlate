@@ -379,14 +379,21 @@ define(['core/ajax'], function (Ajax) {
       pageCourseId = M.cfg.courseid;
     }
 
+    var curLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
+    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
+    var reviewedFlag = (curLang === siteLang) ? 1 : 0;
+
     Ajax.call([{
       methodname: 'local_xlate_save_key',
       args: {
         component: component,
         key: key,
         source: text,
-        lang: (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en',
+        lang: curLang,
         translation: text,
+        // If the current page language equals the site default language, mark
+        // captured source strings as reviewed (human-authored in site language).
+        reviewed: reviewedFlag,
         courseid: pageCourseId,
         context: component
       }

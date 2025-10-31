@@ -29,6 +29,7 @@ $string['language'] = 'Language';
 $string['status'] = 'Status';
 $string['active'] = 'Active';
 $string['inactive'] = 'Inactive';
+$string['reviewed'] = 'Reviewed';
 $string['save_translation'] = 'Save Translation';
 // Automatic key capture strings removed because the info card was removed from the UI.
 

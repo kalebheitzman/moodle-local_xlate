@@ -397,7 +397,7 @@ class api {
      * @param int $status
      * @return int Translation ID
      */
-    public static function save_translation(int $keyid, string $lang, string $text, int $status = 1): int {
+    public static function save_translation(int $keyid, string $lang, string $text, int $status = 1, int $reviewed = 0): int {
         global $DB;
         
         $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
@@ -407,6 +407,7 @@ class api {
             // Update existing translation
             $existing->text = $text;
             $existing->status = $status;
+            $existing->reviewed = $reviewed;
             $existing->mtime = $now;
             $DB->update_record('local_xlate_tr', $existing);
             return $existing->id;
@@ -417,6 +418,7 @@ class api {
                 'lang' => $lang,
                 'text' => $text,
                 'status' => $status,
+                'reviewed' => $reviewed,
                 'mtime' => $now
             ];
             return $DB->insert_record('local_xlate_tr', $record);
@@ -432,7 +434,7 @@ class api {
      * @param string $translation
      * @return int Key ID
      */
-    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $courseid = 0, string $context = ''): int {
+    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = ''): int {
         global $DB;
         
         $transaction = $DB->start_delegated_transaction();
@@ -441,8 +443,8 @@ class api {
             // Create or update the key
             $keyid = self::create_or_update_key($component, $xkey, $source);
             
-            // Save the translation
-            self::save_translation($keyid, $lang, $translation);
+            // Save the translation (propagate reviewed flag)
+            self::save_translation($keyid, $lang, $translation, 1, $reviewed);
 
             // If a course association was provided, record it (associate by keyid+courseid).
             if (!empty($courseid) && is_int($courseid) && $courseid > 0) {

@@ -17,6 +17,7 @@ class local_xlate_external extends external_api {
             'source' => new external_value(PARAM_TEXT, 'Source text', VALUE_DEFAULT, ''),
             'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
             'translation' => new external_value(PARAM_TEXT, 'Translation text'),
+            'reviewed' => new external_value(PARAM_INT, 'Human reviewed flag', VALUE_DEFAULT, 0),
             'courseid' => new external_value(PARAM_INT, 'Course id', VALUE_DEFAULT, 0),
             'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, '')
         ]);
@@ -42,7 +43,7 @@ class local_xlate_external extends external_api {
      * @param string $context
      * @return array
      */
-    public static function save_key($component, $key, $source, $lang, $translation, $courseid = 0, $context = '') {
+    public static function save_key($component, $key, $source, $lang, $translation, $reviewed = 0, $courseid = 0, $context = '') {
         global $USER;
 
         $params = self::validate_parameters(self::save_key_parameters(), [
@@ -51,6 +52,7 @@ class local_xlate_external extends external_api {
             'source' => $source,
             'lang' => $lang,
             'translation' => $translation,
+            'reviewed' => $reviewed,
             'courseid' => $courseid,
             'context' => $context
         ]);
@@ -65,6 +67,7 @@ class local_xlate_external extends external_api {
             $params['source'],
             $params['lang'],
             $params['translation'],
+            (int)$params['reviewed'],
             (int)$params['courseid'],
             $params['context']
         );

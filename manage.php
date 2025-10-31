@@ -170,6 +170,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
     $lang = required_param('lang', PARAM_ALPHA);
     $translation = required_param('translation', PARAM_RAW);
     $status = optional_param('status', 0, PARAM_INT);
+    $reviewed = optional_param('reviewed', 0, PARAM_INT);
     
     // Only save if there's actual translation text
     if (empty(trim($translation))) {
@@ -183,6 +184,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
         if ($existing) {
             $existing->text = $translation;
             $existing->status = $status;
+            $existing->reviewed = $reviewed;
             $existing->mtime = time();
             $DB->update_record('local_xlate_tr', $existing);
         } else {
@@ -191,6 +193,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
             $trrecord->lang = $lang;
             $trrecord->text = $translation;
             $trrecord->status = $status;
+            $trrecord->reviewed = $reviewed;
             $trrecord->ctime = time();
             $trrecord->mtime = time();
             $DB->insert_record('local_xlate_tr', $trrecord);
@@ -535,16 +538,33 @@ if (!empty($keys)) {
                     ]);
                 }
                 echo html_writer::end_div();
-                echo html_writer::start_div('col-md-2');
+                // Active checkbox (compact)
+                echo html_writer::start_div('col-md-1 d-flex align-items-center');
                 $checked = $translation && $translation->status ? true : false;
                 echo html_writer::tag('label', 
                     html_writer::empty_tag('input', [
                         'type' => 'checkbox',
                         'name' => 'status',
                         'value' => '1',
-                        'checked' => $checked ? 'checked' : null
+                        'checked' => $checked ? 'checked' : null,
+                        'class' => 'me-1'
                     ]) . ' ' . get_string('active', 'local_xlate'),
-                    ['class' => 'form-check-label']
+                    ['class' => 'form-check-label mb-0 text-nowrap small']
+                );
+                echo html_writer::end_div();
+
+                // Reviewed checkbox (compact)
+                echo html_writer::start_div('col-md-1 d-flex align-items-center');
+                $rchecked = $translation && isset($translation->reviewed) && $translation->reviewed ? true : false;
+                echo html_writer::tag('label', 
+                    html_writer::empty_tag('input', [
+                        'type' => 'checkbox',
+                        'name' => 'reviewed',
+                        'value' => '1',
+                        'checked' => $rchecked ? 'checked' : null,
+                        'class' => 'me-1'
+                    ]) . ' ' . get_string('reviewed', 'local_xlate'),
+                    ['class' => 'form-check-label mb-0 text-nowrap small']
                 );
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-2');

@@ -247,5 +247,31 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025103100, 'local', 'xlate');
     }
 
+    // Add 'reviewed' flag to translations so humans can mark autotranslations as reviewed.
+    if ($oldversion < 2025110100) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_tr');
+        $field = new xmldb_field('reviewed', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            try {
+                $dbman->add_field($table, $field);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add reviewed to local_xlate_tr: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        // Backfill any missing values just in case
+        try {
+            $DB->execute("UPDATE {local_xlate_tr} SET reviewed = 0 WHERE (reviewed = 0 OR reviewed IS NULL)");
+        } catch (\Exception $e) {
+            debugging('[local_xlate] failed to backfill reviewed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+
+        upgrade_plugin_savepoint(true, 2025110100, 'local', 'xlate');
+    }
+
     return true;
 }

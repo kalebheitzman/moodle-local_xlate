@@ -42,6 +42,7 @@
         <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
         <FIELD NAME="text" TYPE="text" NOTNULL="true"/>
         <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1"/>
+  <FIELD NAME="reviewed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
