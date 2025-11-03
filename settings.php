@@ -40,7 +40,7 @@ if ($hassiteconfig) {
 
         // System prompt / translation instructions
         // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
-        $defaultprompt = "You are a professional translation assistant specialized in concise UI copy. Translate input from the source language to the target language. Preserve HTML tags, attributes and entities exactly. Keep placeholders and variables (e.g. {\$a}, {username}, %s) unchanged and in-place. Do NOT rewrite code, URLs, identifiers, or variable names. Prefer concise label-style phrasing appropriate for UI. When applicable, prefer glossary terms provided in the glossary list. Output only valid JSON that matches the required schema; do not include extra text.";
+    $defaultprompt = get_string('openai_prompt_default', 'local_xlate');
 
         $settings->add(new admin_setting_configtextarea('local_xlate/openai_prompt',
             get_string('openai_prompt', 'local_xlate'),

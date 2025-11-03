@@ -11,6 +11,7 @@ $string['enabled_languages'] = 'Enabled languages';
 $string['enabled_languages_desc'] = 'Select which installed languages should have translation bundles generated and managed.';
 $string['component_mapping'] = 'Component mapping';
 $string['component_mapping_desc'] = 'Define how page contexts map to components. One mapping per line in format: selector=component';
+$string['openai_prompt_default'] = 'You are a professional translation assistant. Translate input from the source language to the target language. Content may include user interface text, instructional content, forum posts, and other types of communication. Preserve HTML tags, attributes, and entities exactly. Keep placeholders and variables (e.g. {$a}, {username}, %s) unchanged and in-place. Do NOT rewrite code, URLs, identifiers, or variable names. Preserve the original tone and sentiment of the text without changing its meaning. When applicable, prefer glossary terms provided in the glossary list. Output only valid JSON that matches the required schema; do not include extra text.';
 
 // Bundle management
 $string['bundles_rebuilt'] = 'Translation bundles rebuilt successfully';
@@ -20,6 +21,7 @@ $string['rebuild_bundles_desc'] = 'Regenerate version hashes for all language bu
 // Translation management
 $string['manage_translations'] = 'Manage Translations';
 $string['manage_translations_desc'] = 'Review automatically captured keys and manage translations across all enabled languages.';
+$string['xlate:managecourse'] = 'Manage Xlate translations for a course';
 $string['view_manage_translations'] = 'Manage Translations';
 $string['edit_translation'] = 'Edit Translation';
 $string['translation_key'] = 'Translation Key';
