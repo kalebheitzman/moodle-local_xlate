@@ -264,7 +264,12 @@ class mlang_migration {
     public static function migrate(\moodle_database $DB, array $options = []): array {
         $tables = $options['tables'] ?? self::default_tables();
         $chunk = $options['chunk'] ?? self::DEFAULT_CHUNK;
-        $preferred = $options['preferred'] ?? 'other';
+        if (isset($options['preferred']) && $options['preferred']) {
+            $preferred = $options['preferred'];
+        } else {
+            $sitelang = get_config('core', 'lang') ?: '';
+            $preferred = $sitelang ?: 'other';
+        }
         $execute = !empty($options['execute']);
         $sample = $options['sample'] ?? self::DEFAULT_SAMPLE;
         $maxchanges = isset($options['max_changes']) ? (int)$options['max_changes'] : 0;
