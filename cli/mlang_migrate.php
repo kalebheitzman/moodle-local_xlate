@@ -7,8 +7,8 @@ require_once(__DIR__ . '/../classes/mlang_migration.php');
 
 global $DB;
 
-$opts = getopt('', ['execute::', 'max::', 'preferred::', 'chunk::', 'sample::', 'tables::']);
-$execute = !empty($opts['execute']);
+$opts = getopt('', ['execute', 'max::', 'preferred::', 'chunk::', 'sample::', 'tables::']);
+$execute = array_key_exists('execute', $opts);
 $max = isset($opts['max']) ? (int)$opts['max'] : 0;
 $preferred = $opts['preferred'] ?? 'other';
 $chunk = isset($opts['chunk']) ? (int)$opts['chunk'] : 200;
@@ -39,10 +39,9 @@ if (!empty($opts['tables'])) {
     }
 }
 
-// If no explicit tables provided, auto-discover candidate columns with default heuristics.
+// If no explicit tables provided, always use the hardcoded default_tables mapping for safety and completeness.
 if ($tables === null) {
-    $discoveropts = ['full_scan' => false];
-    $tables = \local_xlate\mlang_migration::discover_candidate_columns($DB, $discoveropts);
+    $tables = \local_xlate\mlang_migration::default_tables();
 }
 
 $options = ['tables' => $tables, 'chunk' => $chunk, 'preferred' => $preferred, 'execute' => $execute, 'sample' => $sample];

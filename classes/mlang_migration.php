@@ -271,17 +271,49 @@ class mlang_migration {
 
         $report = ['run' => date('c'), 'changed' => 0, 'samples' => []];
 
+        // Output candidate list to a file for review
+        $candidatefile = sys_get_temp_dir() . '/mlang_migration_candidates_' . time() . '.txt';
+        $fh = fopen($candidatefile, 'w');
         foreach ($tables as $table => $cols) {
+            foreach ($cols as $col) {
+                error_log("[mlang_migration] Candidate: $table.$col");
+                if ($fh) { fwrite($fh, "$table.$col\n"); }
+            }
+        }
+        if ($fh) { fclose($fh); error_log("[mlang_migration] Candidate list written to $candidatefile"); }
+
+        // Now process as before
+        foreach ($tables as $table => $cols) {
+            error_log("[mlang_migration] Processing table: $table");
             $colslist = implode(', ', array_map(function($c) { return $c; }, $cols));
-            $sql = "SELECT id, " . $colslist . " FROM {" . $table . "}";
-            $offset = 0;
+            $lastid = 0;
             try {
-                while ($rows = $DB->get_records_sql($sql, [], $offset, $chunk)) {
+                while (true) {
+                    $sql = "SELECT id, $colslist FROM {{$table}} WHERE id > :lastid ORDER BY id ASC LIMIT $chunk";
+                    $rows = $DB->get_records_sql($sql, ['lastid' => $lastid]);
+                    error_log("[mlang_migration]  Fetched batch: lastid $lastid, count " . count($rows));
+                    if (empty($rows)) {
+                        break;
+                    }
                     foreach ($rows as $row) {
                         foreach ($cols as $col) {
-                            if (!isset($row->{$col}) || $row->{$col} === null) { continue; }
+                            if (!isset($row->{$col}) || $row->{$col} === null) {
+                                static $skipped_null = 0;
+                                if ($skipped_null < 10) {
+                                    error_log("[mlang_migration] Skipped null: $table.$col row id: " . ($row->id ?? 'n/a'));
+                                    $skipped_null++;
+                                }
+                                continue;
+                            }
                             $orig = (string)$row->{$col};
-                            if (!self::contains_mlang($orig)) { continue; }
+                            if (!self::contains_mlang($orig)) {
+                                static $skipped_nomatch = 0;
+                                if ($skipped_nomatch < 10) {
+                                    error_log("[mlang_migration] Skipped no mlang: $table.$col row id: " . ($row->id ?? 'n/a'));
+                                    $skipped_nomatch++;
+                                }
+                                continue;
+                            }
 
                             $parsed = self::process_mlang_tags($orig);
                             $normalized = self::normalise_source($parsed['source_text'] ?? '');
@@ -294,6 +326,8 @@ class mlang_migration {
                             if ($new === '' && !empty($parsed['source_text'])) { $new = $parsed['source_text']; }
 
                             if ($new !== $orig) {
+                                error_log("[mlang_migration]   Row id: " . ($row->id ?? 'n/a'));
+                                error_log("[mlang_migration]    Column: $col");
                                 // Record sample regardless of execute to allow review.
                                 if (count($report['samples']) < $sample) {
                                     $report['samples'][] = [
@@ -306,12 +340,16 @@ class mlang_migration {
                                 }
 
                                 if ($execute) {
+                                    error_log("[mlang_migration] Attempting update: $table.$col id=" . ($row->id ?? 'n/a'));
+                                    error_log("[mlang_migration]   Old value: " . mb_substr($orig, 0, 200));
+                                    error_log("[mlang_migration]   New value: " . mb_substr($new, 0, 200));
                                     // Do a safe transactional update and record provenance.
                                     // Use delegated transaction if available; otherwise do best-effort updates without explicit transaction.
                                     if (method_exists($DB, 'start_delegated_transaction')) {
                                         $transaction = $DB->start_delegated_transaction();
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
+                                            error_log("[mlang_migration]   Update succeeded: $table.$col id=" . ($row->id ?? 'n/a'));
 
                                             $prov = new \stdClass();
                                             $prov->tablename = $table;
@@ -339,6 +377,7 @@ class mlang_migration {
                                             } catch (\Exception $e2) {
                                                 // ignore rollback failures
                                             }
+                                            error_log("[mlang_migration]   Update FAILED: $table.$col id=" . ($row->id ?? 'n/a') . " - " . $e->getMessage());
                                             debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             continue;
                                         }
@@ -346,7 +385,9 @@ class mlang_migration {
                                         // Best-effort fallback for older DB implementations: update and try to insert provenance.
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
+                                            error_log("[mlang_migration]   Update succeeded: $table.$col id=" . ($row->id ?? 'n/a'));
                                         } catch (\Exception $e) {
+                                            error_log("[mlang_migration]   Update FAILED: $table.$col id=" . ($row->id ?? 'n/a') . " - " . $e->getMessage());
                                             debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             continue;
                                         }
@@ -379,8 +420,11 @@ class mlang_migration {
                                 }
                             }
                         }
+                        // Update lastid to the highest id in this batch
+                        if (isset($row->id) && $row->id > $lastid) {
+                            $lastid = $row->id;
+                        }
                     }
-                    $offset += $chunk;
                 }
             } catch (\Exception $e) {
                 debugging('[local_xlate] Skipping table ' . $table . ' during migrate: ' . $e->getMessage(), DEBUG_DEVELOPER);
