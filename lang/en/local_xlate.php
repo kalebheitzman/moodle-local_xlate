@@ -1,4 +1,5 @@
 <?php
+$string['mlangcleanuptask'] = 'Scheduled MLang cleanup (legacy multilang tags)';
 $string['pluginname'] = 'Xlate (client-side translations)';
 $string['enable'] = 'Enable Xlate';
 $string['enable_desc'] = 'Turn on/off client-side translation injection.';

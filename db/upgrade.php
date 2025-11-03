@@ -15,6 +15,11 @@ defined('MOODLE_INTERNAL') || die();
  */
 function xmldb_local_xlate_upgrade(int $oldversion): bool {
 
+    if ($oldversion < 2025110300) {
+        // Add scheduled mlang cleanup task (no DB schema changes needed).
+        upgrade_plugin_savepoint(true, 2025110300, 'local', 'xlate');
+    }
+
     if ($oldversion < 2025102403) {
         // Placeholder for future upgrade logic.
 

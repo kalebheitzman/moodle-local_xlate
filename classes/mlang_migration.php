@@ -262,7 +262,8 @@ class mlang_migration {
      * @return array report including changed count and sample entries
      */
     public static function migrate(\moodle_database $DB, array $options = []): array {
-        $tables = $options['tables'] ?? self::default_tables();
+        // Use autodiscovery if tables are not provided.
+        $tables = $options['tables'] ?? self::discover_candidate_columns($DB);
         $chunk = $options['chunk'] ?? self::DEFAULT_CHUNK;
         if (isset($options['preferred']) && $options['preferred']) {
             $preferred = $options['preferred'];
