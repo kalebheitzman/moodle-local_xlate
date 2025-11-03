@@ -423,11 +423,13 @@ class backend {
                 ];
             }
 
-            // Log token usage for each translated item.
+            // Log token usage for each translated item, including prompt and completion tokens if available.
             global $DB;
             if (!empty($meta['usage_tokens']['total']) && is_array($results)) {
                 $now = time();
                 $tokens = (int)$meta['usage_tokens']['total'];
+                $prompt_tokens = isset($meta['usage_tokens']['prompt']) ? (int)$meta['usage_tokens']['prompt'] : null;
+                $completion_tokens = isset($meta['usage_tokens']['completion']) ? (int)$meta['usage_tokens']['completion'] : null;
                 $modelstr = $meta['model'] ?? '';
                 $elapsed = $meta['elapsed_ms'] ?? 0;
                 $lang = $targetlang;
@@ -438,6 +440,8 @@ class backend {
                             'lang' => $lang,
                             'xkey' => $r['id'],
                             'tokens' => $tokens,
+                            'prompt_tokens' => $prompt_tokens,
+                            'completion_tokens' => $completion_tokens,
                             'model' => $modelstr,
                             'response_ms' => $elapsed
                         ];

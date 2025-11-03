@@ -132,13 +132,15 @@
   </TABLES>
     <TABLE NAME="local_xlate_token_usage" COMMENT="Tracks token usage for autotranslation requests">
       <FIELDS>
-        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
-        <FIELD NAME="xkey" TYPE="char" LENGTH="64" NOTNULL="true"/>
-        <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
-        <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
+  <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+  <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+  <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
+  <FIELD NAME="xkey" TYPE="char" LENGTH="64" NOTNULL="true"/>
+  <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
+  <FIELD NAME="prompt_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
+  <FIELD NAME="completion_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
+  <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
+  <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

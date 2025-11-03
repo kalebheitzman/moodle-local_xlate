@@ -30,7 +30,26 @@ if ($modelfilter !== '') {
 $wheresql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $total = $DB->count_records_select('local_xlate_token_usage', $where ? implode(' AND ', $where) : '', $params);
+
 $totaltokens = $DB->get_field_sql('SELECT SUM(tokens) FROM {local_xlate_token_usage} ' . $wheresql, $params);
+$totalprompt = $DB->get_field_sql('SELECT SUM(prompt_tokens) FROM {local_xlate_token_usage} ' . $wheresql, $params);
+$totalcompletion = $DB->get_field_sql('SELECT SUM(completion_tokens) FROM {local_xlate_token_usage} ' . $wheresql, $params);
+
+// Load pricing table
+$pricing = include(__DIR__ . '/config/pricing.php');
+
+// Determine model for pricing (if filtered, use that; else use most common or default)
+$model = $modelfilter;
+if (!$model) {
+    $model = $DB->get_field_sql('SELECT model FROM {local_xlate_token_usage} WHERE model IS NOT NULL AND model != "" GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1');
+}
+$model = $model ?: 'gpt-4.1';
+$modelpricing = $pricing[$model] ?? $pricing['gpt-4.1'];
+
+// Calculate estimated costs
+$cost_prompt = $totalprompt ? ($totalprompt / 1000.0) * $modelpricing['prompt'] : 0;
+$cost_completion = $totalcompletion ? ($totalcompletion / 1000.0) * $modelpricing['completion'] : 0;
+$cost_total = $cost_prompt + $cost_completion;
 
 $usages = $DB->get_records_sql('SELECT * FROM {local_xlate_token_usage} ' . $wheresql . ' ORDER BY timecreated DESC', $params, $page * $perpage, $perpage);
 
@@ -46,7 +65,14 @@ echo html_writer::tag('p', 'This page shows token usage for all autotranslation 
 echo html_writer::start_tag('ul', ['class' => 'list-unstyled mb-3']);
 echo html_writer::tag('li', '<strong>Total requests:</strong> ' . (int)$total);
 echo html_writer::tag('li', '<strong>Total tokens:</strong> ' . (int)$totaltokens);
+echo html_writer::tag('li', '<strong>Total prompt tokens:</strong> ' . (int)$totalprompt);
+echo html_writer::tag('li', '<strong>Total completion tokens:</strong> ' . (int)$totalcompletion);
+echo html_writer::tag('li', '<strong>Estimated prompt cost:</strong> $' . number_format($cost_prompt, 4));
+echo html_writer::tag('li', '<strong>Estimated completion cost:</strong> $' . number_format($cost_completion, 4));
+echo html_writer::tag('li', '<strong>Estimated total cost:</strong> $' . number_format($cost_total, 4));
 echo html_writer::end_tag('ul');
+// Show pricing table link/info
+echo html_writer::div('Pricing is based on the selected model. <a href="pricing.php" target="_blank">View/edit pricing table</a>.', 'mb-3 text-muted');
 
 // Filter form
 echo html_writer::start_tag('form', ['method' => 'get', 'class' => 'form-inline mb-3']);
@@ -70,6 +96,8 @@ echo html_writer::tag('th', 'Time');
 echo html_writer::tag('th', 'Language');
 echo html_writer::tag('th', 'Key');
 echo html_writer::tag('th', 'Tokens');
+echo html_writer::tag('th', 'Prompt');
+echo html_writer::tag('th', 'Completion');
 echo html_writer::tag('th', 'Model');
 echo html_writer::tag('th', 'Response ms');
 echo html_writer::end_tag('tr');
@@ -81,6 +109,8 @@ foreach ($usages as $row) {
     echo html_writer::tag('td', s($row->lang));
     echo html_writer::tag('td', s($row->xkey));
     echo html_writer::tag('td', (int)$row->tokens);
+    echo html_writer::tag('td', isset($row->prompt_tokens) ? (int)$row->prompt_tokens : '');
+    echo html_writer::tag('td', isset($row->completion_tokens) ? (int)$row->completion_tokens : '');
     echo html_writer::tag('td', s($row->model));
     echo html_writer::tag('td', (int)$row->response_ms);
     echo html_writer::end_tag('tr');

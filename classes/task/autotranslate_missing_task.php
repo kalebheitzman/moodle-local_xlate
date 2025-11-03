@@ -43,7 +43,8 @@ class autotranslate_missing_task extends scheduled_task {
             }
             mtrace("Autotranslating ".count($missing)." keys for $lang...");
             $chunks = array_chunk($missing, $batchsize);
-            foreach ($chunks as $chunk) {
+            mtrace("Splitting into ".count($chunks)." batches of up to $batchsize");
+            foreach ($chunks as $i => $chunk) {
                 $items = [];
                 foreach ($chunk as $row) {
                     $items[] = [
@@ -53,8 +54,10 @@ class autotranslate_missing_task extends scheduled_task {
                         'placeholders' => []
                     ];
                 }
+                mtrace("Batch ".($i+1)."/".count($chunks).": sending ".count($items)." items to backend for $lang");
                 $result = \local_xlate\translation\backend::translate_batch('autotask-'.uniqid(), 'en', $lang, $items, [], []);
                 if (!empty($result['ok']) && !empty($result['results'])) {
+                    mtrace("Received ".count($result['results'])." results for batch ".($i+1)."/$lang");
                     foreach ($result['results'] as $r) {
                         if (!empty($r['id']) && isset($r['translated'])) {
                             // Insert translation if still missing (avoid race/dup).
@@ -74,7 +77,7 @@ class autotranslate_missing_task extends scheduled_task {
                         }
                     }
                 } else {
-                    mtrace("Autotranslate error for $lang: ".json_encode($result['errors'] ?? []));
+                    mtrace("Autotranslate error for $lang batch ".($i+1).": ".json_encode($result['errors'] ?? []));
                 }
             }
         }
