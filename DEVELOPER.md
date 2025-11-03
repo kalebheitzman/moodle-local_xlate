@@ -164,20 +164,60 @@ external integrations.
 
 ## MLang migration tooling (developer guide)
 
-The plugin includes helpers and a CLI runner to discover, dry-run and (optionally)
-apply destructive cleanup of legacy MLang blocks (`{mlang ...}` and
-`<span lang="xx" class="multilang">...</span>`). Use these tools carefully —
-always run a dry-run and inspect samples before applying changes, and take a
-DB backup prior to running any destructive migration.
+The plugin includes a robust CLI runner and helpers to discover, dry-run, and (optionally) apply destructive cleanup of legacy MLang blocks (`{mlang ...}` and `<span lang="xx" class="multilang">...</span>`). Use these tools carefully—always run a dry-run and inspect samples before applying changes, and take a DB backup prior to running any destructive migration.
 
-Note: some temporary scanner scripts that were used during early development
-(for example `cli/find_mlang_all.php`, `cli/find_mlang_sections.php`, and the
-separate `cli/mlang_dryrun.php`) have been removed from the repository. The
-supported and maintained CLI entrypoint is `cli/mlang_migrate.php` described
-below.
+**Key features and technical details:**
 
-Key files and APIs:
-- `classes/mlang_migration.php`
+- **Autodiscovery:**
+  - Candidate columns are discovered by DB type (`text`, `varchar`, etc.), not by name pattern.
+  - All tables with "xlate" in the name are excluded by default.
+  - No hardcoded table lists; you can override with `--tables` if needed.
+
+- **Block configdata handling:**
+  - For `block_instances.configdata`, the script base64-decodes and unserializes the value.
+  - All string fields (e.g., `title`) are recursively scanned for mlang tags and cleaned.
+  - If any changes are made, the structure is re-serialized and base64-encoded before saving.
+
+- **Language selection:**
+  - By default, the migration uses the current site language (`sitelang`) for replacements.
+  - If `sitelang` is not set, it falls back to `other`.
+  - You can override with `--preferred=other` or a specific language code.
+
+- **Provenance and logging:**
+  - Every change is recorded in `local_xlate_mlang_migration` (table created on install/upgrade).
+  - Each row includes `old_value`, `new_value`, `migrated_at`, and `migrated_by`.
+  - Summary logs are output after each table, and a sample of changes is included in the report.
+
+- **Error handling:**
+  - Defensive checks are in place for DB errors and unserialization failures.
+  - If a DB update fails, the script logs the error and continues.
+
+- **Extending/customizing:**
+  - To add more complex recursive scanning (e.g., nested arrays in configdata), extend the configdata handling logic in `mlang_migration.php`.
+  - To target additional or custom fields, use the `--tables` option with a JSON file or comma-separated list.
+
+- **CLI options:**
+  - `--execute`: actually perform changes (otherwise dry-run only).
+  - `--preferred=<lang>`: set preferred language for replacements.
+  - `--max=<n>`: limit number of changes for staged testing.
+  - `--tables=<file or list>`: override autodiscovery with specific tables/columns.
+
+**Key files and APIs:**
+- `classes/mlang_migration.php`: main migration logic, autodiscovery, configdata handling, provenance.
+- `cli/mlang_migrate.php`: CLI runner, parses options and invokes migration.
+
+**Workflow summary:**
+1. Run a dry-run to discover and report all candidate columns and matches.
+2. Review the JSON report and sample replacements.
+3. Run a staged migration with `--max` to test a few changes.
+4. Run a full migration when ready.
+
+**Best practices:**
+- Always back up your database before running with `--execute`.
+- Always review the dry-run report and samples.
+- Run during a maintenance window if possible.
+
+See the code for further extension points and error handling details.
   - `discover_candidate_columns($DB, $opts)` — enumerate text-like columns.
   - `dryrun($DB, $options)` — read-only scan that writes a JSON report to
     `sys_get_temp_dir()`.

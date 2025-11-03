@@ -29,34 +29,41 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 
 ## MLang cleanup (legacy multi-language blocks)
 
-This plugin includes tooling to detect and (optionally) remove legacy `{mlang ...}` and `<span lang="xx" class="multilang">...</span>` blocks from DB content. Use these tools carefully — always run a dry-run first and back up your DB before executing.
+This plugin includes a robust migration tool to detect and (optionally) remove legacy `{mlang ...}` and `<span lang="xx" class="multilang">...</span>` blocks from your Moodle database content.
 
-Note: temporary one-off scanner helpers that were used during development (for example `cli/find_mlang_all.php` and `cli/find_mlang_sections.php`) have been removed from the repository. The canonical, supported CLI runner is `cli/mlang_migrate.php` (documented below).
+**Key features:**
+- Autodiscovers all text-like columns (text, varchar, etc.), excluding tables with "xlate" in the name.
+- Handles block configdata fields: decodes, unserializes, and cleans mlang tags from all string fields (e.g., block titles in custom HTML blocks).
+- Defaults to your site's current language for replacements (if not set, falls back to `other`).
+- Records provenance for every change in `local_xlate_mlang_migration`.
+- Always run a dry-run first and back up your DB before executing real changes.
 
-Quick workflow:
+**Quick workflow:**
+1. **Dry-run (safe):**
+	```bash
+	sudo -u www-data php local/xlate/cli/mlang_migrate.php
+	```
+	This produces a report in your system temp directory (e.g. `/tmp/local_xlate_mlang_migrate_<ts>.json`) listing matches and sample replacements.
 
-1. Run a dry-run scan to discover candidate columns and produce a JSON report:
+2. **Review the report and samples.**
+	- By default, the script uses your site's language for replacements. You can override with `--preferred=other` or a specific language code.
 
-```bash
-# discover and dry-run (safe)
-sudo -u www-data php local/xlate/cli/mlang_migrate.php
-```
+3. **Staged migration (test a few rows):**
+	```bash
+	sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute --max=5
+	```
 
-The dry-run produces a report in your system temp directory (e.g. `/tmp/local_xlate_mlang_migrate_<ts>.json`) listing matches and sample replacements.
+4. **Full migration:**
+	```bash
+	sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute
+	```
 
-2. Review the report and samples. Tweak `preferred` selection (`other`, `sitelang`, or language code) if necessary.
+**Safety notes:**
+- Always back up your database before running with `--execute`.
+- Review the dry-run report and samples to confirm expected replacements.
+- The tool is designed to be safe and robust, but destructive changes cannot be undone without a backup.
 
-3. When ready, run a staged migration (limit changes) to test behaviour on a few rows:
-
-```bash
-sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute --max=5
-```
-
-4. If the staged run looks correct, run a full migration (no max limit):
-
-```bash
-sudo -u www-data php local/xlate/cli/mlang_migrate.php --execute
-```
+See DEVELOPER.md for technical details, advanced options, and extension guidance.
 
 Notes and safety:
 - The migration records provenance in table `local_xlate_mlang_migration` (created during plugin upgrade). Each row includes `old_value`, `new_value`, `migrated_at`, and `migrated_by`.
