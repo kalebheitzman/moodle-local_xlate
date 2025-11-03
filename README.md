@@ -1,4 +1,3 @@
-
 # local_xlate
 
 ## Features (At a Glance)
@@ -170,5 +169,21 @@ Notes about glossary and ordering
 	(empty object when no keys exist for the language). You can POST a list of keys to this endpoint for page-specific bundles.
 - In the browser console check `window.__XLATE__` to see the active language,
 	site default language, and in-memory translation map.
+
+## Scheduled Autotranslation (new)
+
+This plugin now includes a scheduled task to automatically generate translations for all missing keys and enabled languages using the autotranslation backend (e.g., OpenAI). The task runs in batches to avoid overloading the database or API, and will never overwrite existing translations.
+
+- Enable or disable the task in the plugin settings ("Enable scheduled autotranslation").
+- The task runs nightly by default, but can be triggered manually:
+	```bash
+	sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\autotranslate_missing_task'
+	```
+- Progress and errors are logged to the scheduled task log.
+
+## Token Usage Tracking
+
+All autotranslation requests log token usage to a dedicated table. You can view total and recent usage in the admin UI at `/local/xlate/usage.php` (requires `local/xlate:manage`).
+
 
 Need help? File issues or submit PRs on GitHub.

@@ -127,6 +127,25 @@ Code notes:
 - The navigation hook is implemented in `lib.php` and checks for either capability before showing the link.
 - `manage.php` now respects `courseid` and allows access when the viewer has `local/xlate:managecourse` in that course context (site managers with `local/xlate:manage` still have full access).
 
+## Scheduled Autotranslation Task
+
+- Class: `local_xlate\task\autotranslate_missing_task`
+- Registered in `db/tasks.php`, runs nightly by default.
+- Iterates all translation keys and enabled languages, batching requests (default: 20 keys per batch) to avoid DB/API overload.
+- Only fills in missing translations; never overwrites existing ones.
+- Controlled by the `autotranslate_task_enabled` setting.
+- Logs progress and errors via `mtrace()`.
+- Can be triggered manually via CLI or from the scheduled tasks UI.
+
+### Token Usage Logging
+- Every autotranslation batch logs token usage to the `local_xlate_token_usage` table (see `db/install.xml`).
+- Each record includes timestamp, language, key, token count, model, and response time.
+- Admins can view usage at `/local/xlate/usage.php`.
+
+### Batching and Efficiency
+- The task queries only for keys/languages with missing translations, not all records.
+- Batch size is set in the task class and can be adjusted for your environment.
+
 ## 7. Admin Interface (`manage.php`)
 - Displays automatically captured keys with search, filters, pagination, and
   per-language translation inputs.

@@ -15,11 +15,6 @@ defined('MOODLE_INTERNAL') || die();
  */
 function xmldb_local_xlate_upgrade(int $oldversion): bool {
 
-    if ($oldversion < 2025110300) {
-        // Add scheduled mlang cleanup task (no DB schema changes needed).
-        upgrade_plugin_savepoint(true, 2025110300, 'local', 'xlate');
-    }
-
     if ($oldversion < 2025102403) {
         // Placeholder for future upgrade logic.
 
@@ -313,6 +308,30 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
     // Create course-level autotranslate job table.
     if ($oldversion < 2025110102) {
         upgrade_plugin_savepoint(true, 2025110102, 'local', 'xlate');
+    }
+
+    if ($oldversion < 2025110300) {
+        // Add scheduled mlang cleanup task (no DB schema changes needed).
+        upgrade_plugin_savepoint(true, 2025110300, 'local', 'xlate');
+    }
+
+    // Add local_xlate_token_usage table for token usage logging
+    if ($oldversion < 2025110303) {
+        global $DB;
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_token_usage');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('lang', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('xkey', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('model', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('response_ms', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        upgrade_plugin_savepoint(true, 2025110303, 'local', 'xlate');
     }
 
     return true;

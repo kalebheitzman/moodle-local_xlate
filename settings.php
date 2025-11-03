@@ -7,6 +7,10 @@ if ($hassiteconfig) {
     $settings = new admin_settingpage('local_xlate', get_string('pluginname', 'local_xlate'));
 
     if ($ADMIN->fulltree) {
+        // --- Scheduled Autotranslate Task --------------------------------
+        $settings->add(new admin_setting_configcheckbox('local_xlate/autotranslate_task_enabled',
+            get_string('autotranslate_task_enable', 'local_xlate'),
+            get_string('autotranslate_task_enable_desc', 'local_xlate'), 0));
         // --- General settings ------------------------------------------------
         $settings->add(new admin_setting_heading('local_xlate/generalheading', '', get_string('settings_intro', 'local_xlate')));
 

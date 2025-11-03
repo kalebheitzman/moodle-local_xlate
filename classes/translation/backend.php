@@ -423,6 +423,33 @@ class backend {
                 ];
             }
 
+            // Log token usage for each translated item.
+            global $DB;
+            if (!empty($meta['usage_tokens']['total']) && is_array($results)) {
+                $now = time();
+                $tokens = (int)$meta['usage_tokens']['total'];
+                $modelstr = $meta['model'] ?? '';
+                $elapsed = $meta['elapsed_ms'] ?? 0;
+                $lang = $targetlang;
+                foreach ($results as $r) {
+                    if (!empty($r['id'])) {
+                        $rec = [
+                            'timecreated' => $now,
+                            'lang' => $lang,
+                            'xkey' => $r['id'],
+                            'tokens' => $tokens,
+                            'model' => $modelstr,
+                            'response_ms' => $elapsed
+                        ];
+                        try {
+                            $DB->insert_record('local_xlate_token_usage', $rec, false);
+                        } catch (\Exception $e) {
+                            // Log but do not fail translation if token logging fails.
+                            error_log('[local_xlate] Failed to log token usage: ' . $e->getMessage());
+                        }
+                    }
+                }
+            }
             return ['ok' => true, 'results' => $results, 'meta' => $meta, 'raw' => $response];
 
         } catch (\Exception $e) {

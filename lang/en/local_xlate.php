@@ -1,10 +1,13 @@
 <?php
+$string['autotranslate_missing_task'] = 'Scheduled autotranslation for missing keys';
 $string['mlangcleanuptask'] = 'Scheduled MLang cleanup (legacy multilang tags)';
 $string['pluginname'] = 'Xlate (client-side translations)';
 $string['enable'] = 'Enable Xlate';
 $string['enable_desc'] = 'Turn on/off client-side translation injection.';
 $string['xlate:manage'] = 'Manage Xlate translations';
 $string['xlate:viewui'] = 'View Xlate admin UI';
+$string['autotranslate_task_enable'] = 'Enable scheduled autotranslation';
+$string['autotranslate_task_enable_desc'] = 'If enabled, a scheduled task will automatically generate translations for all missing languages and keys using the autotranslation backend.';
 
 // Auto-detection settings
 $string['enabled_languages'] = 'Enabled languages';
