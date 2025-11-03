@@ -284,34 +284,24 @@ class mlang_migration {
 
         // Now process as before
         foreach ($tables as $table => $cols) {
-            error_log("[mlang_migration] Processing table: $table");
             $colslist = implode(', ', array_map(function($c) { return $c; }, $cols));
             $lastid = 0;
-            try {
-                while (true) {
+            $table_update_count = 0;
+            $table_exception = null;
+            while (true) {
+                try {
                     $sql = "SELECT id, $colslist FROM {{$table}} WHERE id > :lastid ORDER BY id ASC LIMIT $chunk";
                     $rows = $DB->get_records_sql($sql, ['lastid' => $lastid]);
-                    error_log("[mlang_migration]  Fetched batch: lastid $lastid, count " . count($rows));
                     if (empty($rows)) {
                         break;
                     }
                     foreach ($rows as $row) {
                         foreach ($cols as $col) {
                             if (!isset($row->{$col}) || $row->{$col} === null) {
-                                static $skipped_null = 0;
-                                if ($skipped_null < 10) {
-                                    error_log("[mlang_migration] Skipped null: $table.$col row id: " . ($row->id ?? 'n/a'));
-                                    $skipped_null++;
-                                }
                                 continue;
                             }
                             $orig = (string)$row->{$col};
                             if (!self::contains_mlang($orig)) {
-                                static $skipped_nomatch = 0;
-                                if ($skipped_nomatch < 10) {
-                                    error_log("[mlang_migration] Skipped no mlang: $table.$col row id: " . ($row->id ?? 'n/a'));
-                                    $skipped_nomatch++;
-                                }
                                 continue;
                             }
 
@@ -326,8 +316,6 @@ class mlang_migration {
                             if ($new === '' && !empty($parsed['source_text'])) { $new = $parsed['source_text']; }
 
                             if ($new !== $orig) {
-                                error_log("[mlang_migration]   Row id: " . ($row->id ?? 'n/a'));
-                                error_log("[mlang_migration]    Column: $col");
                                 // Record sample regardless of execute to allow review.
                                 if (count($report['samples']) < $sample) {
                                     $report['samples'][] = [
@@ -340,16 +328,12 @@ class mlang_migration {
                                 }
 
                                 if ($execute) {
-                                    error_log("[mlang_migration] Attempting update: $table.$col id=" . ($row->id ?? 'n/a'));
-                                    error_log("[mlang_migration]   Old value: " . mb_substr($orig, 0, 200));
-                                    error_log("[mlang_migration]   New value: " . mb_substr($new, 0, 200));
                                     // Do a safe transactional update and record provenance.
                                     // Use delegated transaction if available; otherwise do best-effort updates without explicit transaction.
                                     if (method_exists($DB, 'start_delegated_transaction')) {
                                         $transaction = $DB->start_delegated_transaction();
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
-                                            error_log("[mlang_migration]   Update succeeded: $table.$col id=" . ($row->id ?? 'n/a'));
 
                                             $prov = new \stdClass();
                                             $prov->tablename = $table;
@@ -385,9 +369,7 @@ class mlang_migration {
                                         // Best-effort fallback for older DB implementations: update and try to insert provenance.
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
-                                            error_log("[mlang_migration]   Update succeeded: $table.$col id=" . ($row->id ?? 'n/a'));
                                         } catch (\Exception $e) {
-                                            error_log("[mlang_migration]   Update FAILED: $table.$col id=" . ($row->id ?? 'n/a') . " - " . $e->getMessage());
                                             debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             continue;
                                         }
@@ -413,6 +395,7 @@ class mlang_migration {
                                 }
 
                                 $report['changed']++;
+                                $table_update_count++;
                                 // If a max_changes cap is provided, stop early when reached.
                                 if ($maxchanges > 0 && $report['changed'] >= $maxchanges) {
                                     // Return immediately with current report and samples.
@@ -425,49 +408,20 @@ class mlang_migration {
                             $lastid = $row->id;
                         }
                     }
+                } catch (\Exception $e) {
+                    $table_exception = $e;
+                    break;
                 }
-            } catch (\Exception $e) {
-                debugging('[local_xlate] Skipping table ' . $table . ' during migrate: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+            if ($table_exception) {
+                debugging('[local_xlate] Skipping table ' . $table . ' during migrate: ' . $table_exception->getMessage(), DEBUG_DEVELOPER);
                 continue;
             }
+            // Summary logging after processing each table
+            $colnames = implode(', ', $cols);
+            error_log("[mlang_migration] Table: $table | Columns: $colnames | Updated: $table_update_count");
         }
-
         return $report;
-    }
-
-    /**
-     * Default table/column map to scan. Extend as needed via options.
-     * Keys are table names (without prefix), values are arrays of column names.
-     * @return array
-     */
-    public static function default_tables(): array {
-        // Expanded default table/column mapping includes common title/name fields
-        // so the migration is portable and thorough without requiring external JSON.
-        return [
-            'course' => ['fullname', 'summary'],
-            'course_sections' => ['name', 'summary'],
-            'course_categories' => ['name', 'description'],
-            'page' => ['name', 'content'],
-            'label' => ['name', 'intro'],
-            'resource' => ['name', 'intro'],
-            'book_chapters' => ['title', 'content'],
-            'assign' => ['name', 'intro'],
-            'quiz' => ['name', 'intro'],
-            'question' => ['questiontext'],
-            'forum' => ['name', 'intro'],
-            'forum_posts' => ['subject', 'message'],
-            'glossary' => ['name', 'intro'],
-            'glossary_entries' => ['concept', 'definition'],
-            'workshop' => ['name', 'intro'],
-            'lesson' => ['name', 'content'],
-            'url' => ['name', 'intro'],
-            'scorm' => ['name', 'intro'],
-            'choice' => ['name', 'intro'],
-            'data' => ['name', 'intro'],
-            'wiki' => ['name'],
-            // Local plugin table for translations (if present) so text rows can be cleaned.
-            'local_xlate_tr' => ['text'],
-        ];
     }
 
     /**
@@ -480,113 +434,30 @@ class mlang_migration {
      *  - full_scan: if true, include any text-like column (not just name-matched)
      *
      * This is a read-only operation and intended to be conservative by default.
-     * @param \moodle_database $DB
-     * @param array $opts
-     * @return array
      */
     public static function discover_candidate_columns(\moodle_database $DB, array $opts = []): array {
-    global $CFG;
-
-    $prefix = $opts['prefix'] ?? $DB->get_prefix();
-    $includepatterns = $opts['include_patterns'] ?? ['content','intro','summary','description','message','body','text','note','feedback','response','html','heading'];
-    $exclude = $opts['exclude_tables'] ?? ['cache','temp','task_','log','backup_'];
-    // Default to full scan unless explicitly set to false
-    $fullscan = array_key_exists('full_scan', $opts) ? !empty($opts['full_scan']) : true;
-
-        // Text-like types we consider safe to scan.
+        $prefix = $opts['prefix'] ?? $DB->get_prefix();
+        $includepatterns = $opts['include_patterns'] ?? ['content','intro','summary','description','message','body','text','note','feedback','response','html','heading'];
+        $fullscan = array_key_exists('full_scan', $opts) ? !empty($opts['full_scan']) : true;
         $types = ["varchar","char","text","tinytext","mediumtext","longtext","json"];
-
-        // Query information_schema for this database.
-        // Try to obtain the current DB name if available; otherwise fall back to DATABASE().
-        $dbname = null;
-        try {
-            $mgr = $DB->get_manager();
-            if (is_object($mgr) && method_exists($mgr, 'get_database_name')) {
-                $dbname = $mgr->get_database_name();
-            }
-        } catch (\Exception $e) {
-            $dbname = null;
-        }
-
-        $placeholders = [];
-    $typelist = "'" . implode("','", $types) . "'";
-    // Add a uniqueid as the first column to satisfy Moodle's get_records_sql() uniqueness requirement.
-    $sql = "SELECT CONCAT(table_name, ':', column_name) AS uniqueid, table_name, column_name, data_type
-          FROM information_schema.columns
-         WHERE data_type IN ($typelist)";
-        if ($dbname !== null) {
-            $sql .= " AND table_schema = '" . $DB->get_manager()->get_database_name() . "'";
-        } else {
-            $sql .= " AND table_schema = DATABASE()";
-        }
-
-        // Limit to tables that start with the Moodle prefix for safety.
-        if (!empty($prefix)) {
-            $sql .= " AND table_name LIKE '" . $DB->get_prefix() . "%'";
-        }
-
-        $sql .= " ORDER BY table_name, column_name";
-
-        $candidates = [];
-        try {
-            $rows = $DB->get_records_sql($sql);
-        } catch (\Exception $e) {
-            // If information_schema is not accessible or query fails, fall back to defaults.
-            debugging('[local_xlate] discover_candidate_columns failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
-            return self::default_tables();
-        }
-
-        foreach ($rows as $r) {
-            $tbl = $r->table_name;
-            // Strip prefix if present.
-            if (!empty($prefix) && strpos($tbl, $prefix) === 0) {
-                $short = substr($tbl, strlen($prefix));
-            } else {
-                $short = $tbl;
-            }
-
-            // Skip excluded table name patterns.
-            $skip = false;
-            foreach ($exclude as $ex) {
-                if (stripos($short, $ex) === 0 || stripos($short, $ex) !== false && substr($ex, -1) === '_') {
-                    $skip = true; break;
-                }
-            }
-            if ($skip) { continue; }
-
-            $col = $r->column_name;
-            $add = false;
-            if ($fullscan) {
-                $add = true;
-            } else {
-                foreach ($includepatterns as $p) {
-                    if (stripos($col, $p) !== false) { $add = true; break; }
-                }
-            }
-            if (!$add) { continue; }
-
-            if (!isset($candidates[$short])) { $candidates[$short] = []; }
-            if (!in_array($col, $candidates[$short])) { $candidates[$short][] = $col; }
-        }
-
-        // If discovery yielded nothing, fall back to default_tables to be safe.
-        if (empty($candidates)) {
-            return self::default_tables();
-        }
-
-        // Optionally prune tables with zero rows to avoid scanning empty tables.
-        $final = [];
-        foreach ($candidates as $table => $cols) {
-            try {
-                $count = $DB->count_records($table);
-            } catch (\dml_exception $e) {
-                // Table might not exist in this install; skip it.
+        $map = [];
+        $tables = $DB->get_tables();
+        foreach ($tables as $tablename) {
+            if (stripos($tablename, 'xlate') !== false) {
                 continue;
             }
-            if ($count === 0) { continue; }
-            $final[$table] = $cols;
+            if (isset($opts['exclude_tables']) && in_array($tablename, $opts['exclude_tables'])) {
+                continue;
+            }
+            $columns = $DB->get_columns($tablename);
+            foreach ($columns as $col => $info) {
+                $type = strtolower($info->type ?? '');
+                if (!in_array($type, $types)) continue;
+                if ($fullscan || preg_match('/'.implode('|', array_map('preg_quote', $includepatterns)).'/i', $col)) {
+                    $map[$tablename][] = $col;
+                }
+            }
         }
-
-        return !empty($final) ? $final : self::default_tables();
+        return $map;
     }
 }

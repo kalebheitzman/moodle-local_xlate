@@ -39,9 +39,9 @@ if (!empty($opts['tables'])) {
     }
 }
 
-// If no explicit tables provided, always use the hardcoded default_tables mapping for safety and completeness.
+// If no explicit tables provided, use autodiscovery for candidate columns.
 if ($tables === null) {
-    $tables = \local_xlate\mlang_migration::default_tables();
+    $tables = \local_xlate\mlang_migration::discover_candidate_columns($DB, ['full_scan' => true]);
 }
 
 $options = ['tables' => $tables, 'chunk' => $chunk, 'preferred' => $preferred, 'execute' => $execute, 'sample' => $sample];
