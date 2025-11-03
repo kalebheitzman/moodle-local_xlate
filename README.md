@@ -1,4 +1,21 @@
+
 # local_xlate
+
+## Features (At a Glance)
+- FOUT-free client-side translation for Moodle 5+
+- Automatic DOM translation and string capture
+- Robust migration tool for legacy `{mlang}` and `<span class="multilang">` tags
+- Scheduled task for ongoing cleanup of multilang tags
+- Admin UI for managing translations and glossary
+- Optional OpenAI autotranslation integration
+- Provenance tracking for all migration changes
+
+## Changelog (Recent Changes)
+
+- **2025-11-03**: Added scheduled task for automated MLang cleanup (`mlang_cleanup_task.php`).
+- Improved autodiscovery and safety in migration tooling.
+- Enhanced documentation and developer guidance.
+
 
 Client-side translation plugin for Moodle 5+ inspired by LocalizeJS. It injects
 versioned translation bundles during page rendering, prevents flash-of-untranslated-text (FOUT), and translates the DOM in real time – including dynamically injected content. Keys are always structure-based, 12-character hashes, and capture is disabled in edit mode.
@@ -28,6 +45,7 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 	 plugins → Xlate**.
 
 ## MLang cleanup (legacy multi-language blocks)
+
 
 This plugin includes a robust migration tool to detect and (optionally) remove legacy `{mlang ...}` and `<span lang="xx" class="multilang">...</span>` blocks from your Moodle database content.
 
@@ -63,7 +81,22 @@ This plugin includes a robust migration tool to detect and (optionally) remove l
 - Review the dry-run report and samples to confirm expected replacements.
 - The tool is designed to be safe and robust, but destructive changes cannot be undone without a backup.
 
+
 See DEVELOPER.md for technical details, advanced options, and extension guidance.
+
+## FAQ / Troubleshooting
+
+**Q: Is it safe to run the migration or scheduled task?**
+A: Always run a dry-run first and back up your database before executing real changes. The tool is robust, but destructive changes cannot be undone without a backup.
+
+**Q: How do I check if the scheduled task ran?**
+A: Check the Moodle scheduled tasks UI or run the task manually via CLI (see above).
+
+**Q: What if I see DB errors after migration?**
+A: Review the dry-run report, check for unserialization or DB update errors, and consult DEVELOPER.md for defensive coding and rollback strategies.
+
+**Q: How do I contribute or report issues?**
+A: See CONTRIBUTING.md or file issues/PRs on GitHub.
 
 Notes and safety:
 - The migration records provenance in table `local_xlate_mlang_migration` (created during plugin upgrade). Each row includes `old_value`, `new_value`, `migrated_at`, and `migrated_by`.

@@ -1,5 +1,8 @@
 # Developer Notes
 
+## Contributing
+See `CONTRIBUTING.md` for coding standards, pull request workflow, and how to file issues. All contributions and bug reports are welcome!
+
 ## 1. Purpose & Flow
 `local_xlate` brings LocalizeJS-style client translations to Moodle 5+. The
 plugin injects a bootloader, serves immutable JSON bundles, and runs an AMD
@@ -277,28 +280,70 @@ Testing and CI:
 ```
 local/xlate/
 ├── amd/
+│   ├── src/autotranslate.js
 │   ├── src/translator.js
-│   └── build/translator.min.js
+│   └── build/*.js, *.js.map
 ├── bundle.php
 ├── classes/
-│   ├── hooks/output.php
+│   ├── external.php
+│   ├── glossary.php
+│   ├── mlang_migration.php
+│   ├── translation/backend.php
 │   ├── local/api.php
-│   └── external.php
+│   ├── hooks/output.php
+│   └── task/
+│       ├── mlang_cleanup_task.php   # Scheduled MLang cleanup
+│       ├── mlang_dryrun.php
+│       ├── mlang_migrate.php
+│       ├── translate_batch_task.php
+│       └── translate_course_task.php
+├── cli/
+│   ├── mlang_migrate.php            # CLI migration runner
+│   ├── check_translations.php
+│   ├── inspect_job.php
+│   ├── list_adhoc.php
+│   ├── queue_course_job.php
+│   ├── queue_task.php
+│   ├── run_adhoc_process.php
+│   └── show_new_translations.php
 ├── db/
 │   ├── access.php
 │   ├── caches.php
 │   ├── hooks.php
 │   ├── install.xml
 │   ├── services.php
+│   ├── tasks.php
 │   └── upgrade.php
-├── example_html_output.html
 ├── lang/en/local_xlate.php
 ├── manage.php
 ├── settings.php
 ├── version.php
 ├── README.md
-└── DEVELOPER.md (this document)
+├── DEVELOPER.md (this document)
+├── CONTRIBUTING.md
+├── phpcs.xml.dist
+├── .editorconfig, .eslintignore, .gitignore
+├── spec/
+│   ├── translate_batch_function.json
+│   └── translate_batch_response_schema.json
+└── ...
 ```
+## Troubleshooting / FAQ
+
+**Q: How do I debug migration or scheduled task issues?**
+A: Check CLI output, review logs (via `mtrace()`), and inspect the dry-run JSON report. Defensive checks are in place for DB and unserialization errors.
+
+**Q: How do I roll back a migration?**
+A: Restore your database from backup. All destructive changes are logged, but cannot be automatically undone.
+
+**Q: Where do I add new migration or translation logic?**
+A: Extend `mlang_migration.php` for migration logic, or add new AMD modules for client-side features. The scheduled task and CLI runner will use updated logic automatically.
+
+**Q: How do I run integration or regression tests?**
+A: Seed test data with `{mlang}` content, run the CLI migration in dry-run mode, and verify provenance and output. Consider adding automated tests for new features.
+
+**Q: Where can I get help or contribute?**
+A: See `CONTRIBUTING.md` or file issues/PRs on GitHub.
 
 
 - (No manual or toggle: keys are always auto-assigned by the JS.)
