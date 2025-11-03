@@ -301,22 +301,41 @@ class mlang_migration {
                                 continue;
                             }
                             $orig = (string)$row->{$col};
-                            if (!self::contains_mlang($orig)) {
-                                continue;
+                            $isblockconfig = ($table === 'block_instances' || $table === 'mdl_block_instances') && $col === 'configdata';
+                            $new = $orig;
+                            if ($isblockconfig) {
+                                // Handle base64-encoded, serialized configdata for blocks.
+                                $decoded = @base64_decode($orig);
+                                $changed = false;
+                                if ($decoded !== false && $decoded !== '') {
+                                    $data = @unserialize($decoded);
+                                    if (is_array($data) || is_object($data)) {
+                                        $data = (array)$data;
+                                        foreach ($data as $k => $v) {
+                                            if (is_string($v) && self::contains_mlang($v)) {
+                                                $clean = self::strip_mlang_tags($v, $preferred);
+                                                if ($clean !== $v) {
+                                                    $data[$k] = $clean;
+                                                    $changed = true;
+                                                }
+                                            }
+                                        }
+                                        if ($changed) {
+                                            $new = base64_encode(serialize($data));
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (!self::contains_mlang($orig)) {
+                                    continue;
+                                }
+                                $parsed = self::process_mlang_tags($orig);
+                                $normalized = self::normalise_source($parsed['source_text'] ?? '');
+                                $new = self::strip_mlang_tags($orig, $preferred);
+                                if ($new === '' && !empty($parsed['source_text'])) { $new = $parsed['source_text']; }
                             }
 
-                            $parsed = self::process_mlang_tags($orig);
-                            $normalized = self::normalise_source($parsed['source_text'] ?? '');
-                            // source_hash removed: provenance/reporting no longer requires a separate hash value.
-
-                            // Build replacement text based on preference.
-                            $new = self::strip_mlang_tags($orig, $preferred);
-
-                            // If strip produced empty string but parsed has source_text, prefer that.
-                            if ($new === '' && !empty($parsed['source_text'])) { $new = $parsed['source_text']; }
-
                             if ($new !== $orig) {
-                                // Record sample regardless of execute to allow review.
                                 if (count($report['samples']) < $sample) {
                                     $report['samples'][] = [
                                         'table' => $table,
@@ -326,25 +345,19 @@ class mlang_migration {
                                         'new' => mb_substr($new, 0, 2000),
                                     ];
                                 }
-
                                 if ($execute) {
-                                    // Do a safe transactional update and record provenance.
-                                    // Use delegated transaction if available; otherwise do best-effort updates without explicit transaction.
                                     if (method_exists($DB, 'start_delegated_transaction')) {
                                         $transaction = $DB->start_delegated_transaction();
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
-
                                             $prov = new \stdClass();
                                             $prov->tablename = $table;
                                             $prov->recordid = $row->id;
                                             $prov->columnname = $col;
                                             $prov->old_value = $orig;
                                             $prov->new_value = $new;
-                                            // source_hash removed from provenance recording.
                                             $prov->migrated_at = time();
                                             $prov->migrated_by = (isloggedin() && !empty($GLOBALS['USER']->id)) ? $GLOBALS['USER']->id : 0;
-
                                             try {
                                                 if ($DB->get_manager()->table_exists(new \xmldb_table('local_xlate_mlang_migration'))) {
                                                     $DB->insert_record('local_xlate_mlang_migration', $prov);
@@ -352,38 +365,30 @@ class mlang_migration {
                                             } catch (\Exception $e) {
                                                 debugging('[local_xlate] provenance insert failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             }
-
-                                            // Commit by allowing transaction to complete.
                                             $transaction->allow_commit();
                                         } catch (\Exception $e) {
                                             try {
                                                 $transaction->rollback($e);
-                                            } catch (\Exception $e2) {
-                                                // ignore rollback failures
-                                            }
+                                            } catch (\Exception $e2) {}
                                             error_log("[mlang_migration]   Update FAILED: $table.$col id=" . ($row->id ?? 'n/a') . " - " . $e->getMessage());
                                             debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             continue;
                                         }
                                     } else {
-                                        // Best-effort fallback for older DB implementations: update and try to insert provenance.
                                         try {
                                             $DB->set_field($table, $col, $new, ['id' => $row->id]);
                                         } catch (\Exception $e) {
                                             debugging('[local_xlate] migration update failed for ' . $table . ':' . $row->id . ' - ' . $e->getMessage(), DEBUG_DEVELOPER);
                                             continue;
                                         }
-
                                         $prov = new \stdClass();
                                         $prov->tablename = $table;
                                         $prov->recordid = $row->id;
                                         $prov->columnname = $col;
                                         $prov->old_value = $orig;
                                         $prov->new_value = $new;
-                                        // source_hash removed from provenance recording.
                                         $prov->migrated_at = time();
                                         $prov->migrated_by = (isloggedin() && !empty($GLOBALS['USER']->id)) ? $GLOBALS['USER']->id : 0;
-
                                         try {
                                             if ($DB->get_manager()->table_exists(new \xmldb_table('local_xlate_mlang_migration'))) {
                                                 $DB->insert_record('local_xlate_mlang_migration', $prov);
@@ -393,17 +398,13 @@ class mlang_migration {
                                         }
                                     }
                                 }
-
                                 $report['changed']++;
                                 $table_update_count++;
-                                // If a max_changes cap is provided, stop early when reached.
                                 if ($maxchanges > 0 && $report['changed'] >= $maxchanges) {
-                                    // Return immediately with current report and samples.
                                     return $report;
                                 }
                             }
                         }
-                        // Update lastid to the highest id in this batch
                         if (isset($row->id) && $row->id > $lastid) {
                             $lastid = $row->id;
                         }
@@ -417,7 +418,6 @@ class mlang_migration {
                 debugging('[local_xlate] Skipping table ' . $table . ' during migrate: ' . $table_exception->getMessage(), DEBUG_DEVELOPER);
                 continue;
             }
-            // Summary logging after processing each table
             $colnames = implode(', ', $cols);
             error_log("[mlang_migration] Table: $table | Columns: $colnames | Updated: $table_update_count");
         }
@@ -437,9 +437,8 @@ class mlang_migration {
      */
     public static function discover_candidate_columns(\moodle_database $DB, array $opts = []): array {
         $prefix = $opts['prefix'] ?? $DB->get_prefix();
-        $includepatterns = $opts['include_patterns'] ?? ['content','intro','summary','description','message','body','text','note','feedback','response','html','heading'];
-        $fullscan = array_key_exists('full_scan', $opts) ? !empty($opts['full_scan']) : true;
-        $types = ["varchar","char","text","tinytext","mediumtext","longtext","json"];
+        // Only include these types for candidate columns
+        $types = ["text","tinytext","mediumtext","longtext","varchar"];
         $map = [];
         $tables = $DB->get_tables();
         foreach ($tables as $tablename) {
@@ -453,9 +452,7 @@ class mlang_migration {
             foreach ($columns as $col => $info) {
                 $type = strtolower($info->type ?? '');
                 if (!in_array($type, $types)) continue;
-                if ($fullscan || preg_match('/'.implode('|', array_map('preg_quote', $includepatterns)).'/i', $col)) {
-                    $map[$tablename][] = $col;
-                }
+                $map[$tablename][] = $col;
             }
         }
         return $map;
