@@ -59,6 +59,7 @@ DB (local_xlate_key + local_xlate_tr)
 
 ## 4. Bundle & Cache Layer (`classes/local/api.php`)
 * Bundle endpoint supports both GET (full bundle) and POST (filtered by keys array) for efficient translation and capture.
+
 | Method | Purpose |
 | ------ | ------- |
 | `get_bundle($lang)` | Returns `{translations, sourceMap}`. Cached in Moodle application cache (1-hour TTL). |
