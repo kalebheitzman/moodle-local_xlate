@@ -71,6 +71,16 @@ Notes and safety:
 - Always take a DB backup before running `--execute` and run the migration during a maintenance window.
 - The tool scans only text-like columns; it avoids binary/blob columns by default. Use `--tables` to pass a JSON file or comma-separated `table:column` pairs to target specific fields.
 
+## Automated MLang cleanup (scheduled task)
+
+A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automatically (default: nightly) to detect and remove legacy `{mlang ...}` and `<span class="multilang">` tags from new or imported content. No manual intervention is needed for ongoing hygiene.
+
+- You can run the task manually with:
+  ```bash
+  sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\mlang_cleanup_task'
+  ```
+- See the admin scheduled tasks UI to adjust frequency or check last run status.
+
 ## Configuration
 1. Open **Site administration → Plugins → Local plugins → Xlate**.
 2. Ensure *Enable Xlate* is checked. When disabled no CSS or scripts are

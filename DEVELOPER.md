@@ -1,4 +1,3 @@
-
 # Developer Notes
 
 ## 1. Purpose & Flow
@@ -307,3 +306,15 @@ local/xlate/
 - Expose composite string for each key in admin UI/debug mode.
 
 Happy hacking!
+
+## Scheduled MLang cleanup task
+
+- The scheduled task class is `local_xlate\task\mlang_cleanup_task` (see `classes/task/mlang_cleanup_task.php`).
+- It is registered in `db/tasks.php` to run nightly by default, but can be configured in the Moodle admin UI.
+- The task reuses the migration logic in `mlang_migration.php` and will autodiscover all candidate columns, including block configdata, and clean up legacy multilang tags.
+- Logs are output via `mtrace()` and can be viewed in the CLI or scheduled task logs.
+- You can trigger the task manually with:
+  ```bash
+  sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\mlang_cleanup_task'
+  ```
+- If you extend the migration logic, the scheduled task will automatically use the new behavior.
