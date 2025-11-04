@@ -151,7 +151,6 @@ $systemcontext = context_system::instance();
 
 $action = optional_param('action', '', PARAM_ALPHANUMEXT);
 $keyid = optional_param('keyid', 0, PARAM_INT);
-$lang = optional_param('lang', '', PARAM_ALPHA);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
@@ -193,7 +192,7 @@ $PAGE->set_heading(get_string('admin_manage_translations', 'local_xlate'));
 
 if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
-    $lang = required_param('lang', PARAM_ALPHA);
+    $targetlang = required_param('target_lang', PARAM_ALPHA);
     $translation = required_param('translation', PARAM_RAW);
     $status = optional_param('status', 0, PARAM_INT);
     $reviewed = optional_param('reviewed', 0, PARAM_INT);
@@ -204,7 +203,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
     }
     
     // Check if translation exists
-    $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
+    $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $targetlang]);
     
     try {
         if ($existing) {
@@ -216,7 +215,7 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
         } else {
             $trrecord = new stdClass();
             $trrecord->keyid = $keyid;
-            $trrecord->lang = $lang;
+            $trrecord->lang = $targetlang;
             $trrecord->text = $translation;
             $trrecord->status = $status;
             $trrecord->reviewed = $reviewed;
@@ -546,7 +545,7 @@ if (!empty($keys)) {
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save_translation']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
-                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'lang', 'value' => $langcode]);
+                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'target_lang', 'value' => $langcode]);
                 echo html_writer::start_div('row align-items-center');
                 echo html_writer::start_div('col-md-2');
                 echo html_writer::tag('label', $installedlangs[$langcode] . ' (' . $langcode . ')');

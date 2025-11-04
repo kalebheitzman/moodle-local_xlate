@@ -38,7 +38,7 @@ $PAGE->set_heading(get_string('admin_usage', 'local_xlate'));
 global $DB, $OUTPUT;
 
 // Filters and pagination.
-$langfilter = optional_param('lang', '', PARAM_ALPHANUMEXT);
+$langfilter = optional_param('xlatelang', '', PARAM_ALPHANUMEXT);
 $modelfilter = optional_param('model', '', PARAM_RAW);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 25, PARAM_INT);
@@ -135,8 +135,8 @@ echo html_writer::start_div('card-body');
 // Filter form
 echo html_writer::start_tag('form', ['method' => 'get', 'class' => 'form-inline mb-3']);
 echo html_writer::start_div('form-group mr-2');
-echo html_writer::label('Language', 'lang', false, ['class' => 'mr-1']);
-echo html_writer::select(array_merge([''=>'All'], array_combine($langs, $langs)), 'lang', $langfilter, null, ['class'=>'custom-select mr-2', 'id'=>'lang']);
+echo html_writer::label('Language', 'xlatelang', false, ['class' => 'mr-1']);
+echo html_writer::select(array_merge([''=>'All'], array_combine($langs, $langs)), 'xlatelang', $langfilter, null, ['class'=>'custom-select mr-2', 'id'=>'xlatelang']);
 echo html_writer::end_div();
 echo html_writer::start_div('form-group mr-2');
 echo html_writer::label('Model', 'model', false, ['class' => 'mr-1']);
@@ -200,7 +200,7 @@ echo html_writer::end_tag('table');
 echo html_writer::end_div();
 
 // Pagination
-$baseurl = new moodle_url('/local/xlate/usage.php', ['lang'=>$langfilter, 'model'=>$modelfilter, 'perpage'=>$perpage]);
+$baseurl = new moodle_url('/local/xlate/usage.php', ['xlatelang'=>$langfilter, 'model'=>$modelfilter, 'perpage'=>$perpage]);
 $totalpages = ceil($total / $perpage);
 if ($totalpages > 1) {
     echo html_writer::start_div('d-flex justify-content-center my-3');
