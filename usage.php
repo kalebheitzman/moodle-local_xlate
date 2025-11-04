@@ -106,7 +106,8 @@ echo html_writer::tag('p', 'This page shows token usage for all autotranslation 
 if (!$hasstoredcosts && ($totalinputtokens || $totalcachedtokens || $totaloutputtokens)) {
     echo html_writer::div('Totals estimated using current pricing settings because stored cost data was missing.', 'mb-3');
 } else {
-    echo html_writer::div('Costs reflect the values stored with each batch. Update pricing under Site administration > Plugins > Local plugins > Local Xlate.', 'mb-3');
+    $settingslink = html_writer::link(new moodle_url('/admin/settings.php', ['section' => 'local_xlate']), 'Settings');
+    echo html_writer::div('Costs reflect the values stored with each batch. Update pricing under ' . $settingslink . '.', 'mb-3');
 }
 
 // Condensed summary metrics for quick scanning.
@@ -124,15 +125,12 @@ foreach ($metrics as $metric) {
 }
 echo html_writer::end_div();
 
-$tokenparts = ['Input ' . number_format($totalinputtokens), 'Output ' . number_format($totaloutputtokens)];
-if ($totalcachedtokens > 0) {
-    array_splice($tokenparts, 1, 0, 'Cached ' . number_format($totalcachedtokens));
-}
+echo html_writer::end_div(); // card-body
+echo html_writer::end_div(); // card
 
-$costparts = ['Input $' . number_format($totalinputcost, 4), 'Output $' . number_format($totaloutputcost, 4)];
-if ($totalcachedcost > 0) {
-    array_splice($costparts, 1, 0, 'Cached $' . number_format($totalcachedcost, 4));
-}
+// Filter and table card
+echo html_writer::start_div('card');
+echo html_writer::start_div('card-body');
 
 // Filter form
 echo html_writer::start_tag('form', ['method' => 'get', 'class' => 'form-inline mb-3']);
