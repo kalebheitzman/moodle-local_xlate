@@ -8,6 +8,7 @@
         <FIELD NAME="xkey" TYPE="char" LENGTH="191" NOTNULL="true"/>
         <FIELD NAME="source" TYPE="text" NOTNULL="false"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="ctime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
@@ -22,7 +23,7 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="keyid" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="context" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="context" TYPE="char" LENGTH="255" NOTNULL="false"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
@@ -30,7 +31,7 @@
         <KEY NAME="fk_keyid" TYPE="foreign" FIELDS="keyid" REFTABLE="local_xlate_key" REFFIELDS="id" ONDELETE="cascade"/>
       </KEYS>
       <INDEXES>
-  <INDEX NAME="ix_courseid" UNIQUE="false" FIELDS="courseid"/>
+        <INDEX NAME="ix_courseid" UNIQUE="false" FIELDS="courseid"/>
         <INDEX NAME="uq_key_course" UNIQUE="true" FIELDS="keyid,courseid"/>
       </INDEXES>
     </TABLE>
@@ -42,7 +43,7 @@
         <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
         <FIELD NAME="text" TYPE="text" NOTNULL="true"/>
         <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1"/>
-  <FIELD NAME="reviewed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="reviewed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
@@ -129,23 +130,6 @@
         <INDEX NAME="idx_status" UNIQUE="false" FIELDS="status"/>
       </INDEXES>
     </TABLE>
-  </TABLES>
-    <TABLE NAME="local_xlate_token_usage" COMMENT="Tracks token usage for autotranslation requests">
-      <FIELDS>
-  <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-  <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
-  <FIELD NAME="xkey" TYPE="char" LENGTH="64" NOTNULL="true"/>
-  <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="prompt_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
-  <FIELD NAME="completion_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
-  <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
-  <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
-      </FIELDS>
-      <KEYS>
-        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-      </KEYS>
-    </TABLE>
     <TABLE NAME="local_xlate_token_batch" COMMENT="Tracks token usage for each batch autotranslation request">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
@@ -156,7 +140,7 @@
         <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="prompt_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
         <FIELD NAME="completion_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
-        <FIELD NAME="cost" TYPE="decimal" LENGTH="12,6" NOTNULL="false"/>
+        <FIELD NAME="cost" TYPE="number" LENGTH="12,6" NOTNULL="false"/>
         <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
         <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="false"/>
       </FIELDS>
@@ -168,4 +152,5 @@
         <INDEX NAME="idx_lang" UNIQUE="false" FIELDS="lang"/>
       </INDEXES>
     </TABLE>
+  </TABLES>
 </XMLDB>

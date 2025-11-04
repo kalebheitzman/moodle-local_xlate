@@ -310,44 +310,7 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025110102, 'local', 'xlate');
     }
 
-    // Add local_xlate_token_usage table for token usage logging
-    if ($oldversion < 2025110303) {
-        global $DB;
-        $dbman = $DB->get_manager();
-        $table = new xmldb_table('local_xlate_token_usage');
-        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
-        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('lang', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('xkey', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('model', XMLDB_TYPE_CHAR, '64', null, null, null, null);
-        $table->add_field('response_ms', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
-        if (!$dbman->table_exists($table)) {
-            $dbman->create_table($table);
-        }
-        upgrade_plugin_savepoint(true, 2025110303, 'local', 'xlate');
-    }
-
-    // Add prompt_tokens and completion_tokens columns to local_xlate_token_usage
-    if ($oldversion < 2025110305) {
-        global $DB;
-        $dbman = $DB->get_manager();
-        $table = new xmldb_table('local_xlate_token_usage');
-        $prompt = new xmldb_field('prompt_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $completion = new xmldb_field('completion_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        if ($dbman->table_exists($table)) {
-            if (!$dbman->field_exists($table, $prompt)) {
-                $dbman->add_field($table, $prompt);
-            }
-            if (!$dbman->field_exists($table, $completion)) {
-                $dbman->add_field($table, $completion);
-            }
-        }
-        upgrade_plugin_savepoint(true, 2025110305, 'local', 'xlate');
-    }
-
-        // Add local_xlate_token_batch table for batch-level token usage logging
+    // Add local_xlate_token_batch table for batch-level token usage logging
     if ($oldversion < 2025110307) {
         global $DB;
 
@@ -364,7 +327,7 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         $table->add_field('tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
         $table->add_field('prompt_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
         $table->add_field('completion_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-    $table->add_field('cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, null);
+        $table->add_field('cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, null);
         $table->add_field('response_ms', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
         $table->add_field('jobid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
 

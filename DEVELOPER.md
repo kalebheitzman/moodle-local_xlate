@@ -138,7 +138,7 @@ Code notes:
 - Can be triggered manually via CLI or from the scheduled tasks UI.
 
 ### Token Usage Logging
-- Every autotranslation batch logs token usage to the `local_xlate_token_usage` table (see `db/install.xml`).
+  Every autotranslation batch logs token usage to the `local_xlate_token_batch` table (see `db/install.xml`).
 - Each record includes timestamp, language, key, token count, model, and response time.
 - Admins can view usage at `/local/xlate/usage.php`.
 
