@@ -137,9 +137,7 @@ class api {
         $user = $user ?: $USER;
         $context = $context ?: \context_system::instance();
         
-        // Create cache key that includes context and user permissions
-        // Use only alphanumeric characters for cache key (Moodle requirement)
-        $cache_key = $lang . '_' . $context->id . '_' . preg_replace('/[^a-zA-Z0-9]/', '', $pagetype) . '_' . $courseid;
+        $cache_key = self::make_bundle_cache_key($lang, $context, $pagetype, $courseid);
         $cache = \cache::make('local_xlate', 'bundle');
         
         if ($hit = $cache->get($cache_key)) {
@@ -175,6 +173,7 @@ class api {
         
         // Cache for shorter time due to context sensitivity
         $cache->set($cache_key, $bundle);
+        self::remember_bundle_cache_key($lang, $cache_key, $cache);
         return $bundle;
     }
 
@@ -244,6 +243,28 @@ class api {
         }
         
         return $filters;
+    }
+
+    private static function make_bundle_cache_key(string $lang, \context $context, string $pagetype, int $courseid): string {
+        $sanitisedpagetype = preg_replace('/[^a-zA-Z0-9]/', '', $pagetype);
+        return $lang . '_' . $context->id . '_' . $sanitisedpagetype . '_' . $courseid;
+    }
+
+    private static function bundle_index_cache_key(string $lang): string {
+        return '__index__' . $lang;
+    }
+
+    private static function remember_bundle_cache_key(string $lang, string $cachekey, \cache $cache): void {
+        $indexkey = self::bundle_index_cache_key($lang);
+        $keys = $cache->get($indexkey);
+        if (!is_array($keys)) {
+            $keys = [];
+        }
+
+        if (!in_array($cachekey, $keys, true)) {
+            $keys[] = $cachekey;
+            $cache->set($indexkey, $keys);
+        }
     }
 
     public static function get_version(string $lang): string {
@@ -551,6 +572,16 @@ class api {
      */
     public static function invalidate_bundle_cache(string $lang): void {
         $cache = \cache::make('local_xlate', 'bundle');
+        $indexkey = self::bundle_index_cache_key($lang);
+        $keys = $cache->get($indexkey);
+
+        if (is_array($keys)) {
+            foreach ($keys as $cachekey) {
+                $cache->delete($cachekey);
+            }
+        }
+
+        $cache->delete($indexkey);
         $cache->delete($lang);
     }
     

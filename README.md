@@ -143,6 +143,7 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 - With auto-detect enabled the translator captures user-facing strings,
 	generates stable, structure-based 12-character keys, and stores them
 	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
+- For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, which only requires the user to be logged in. This allows ordinary users browsing the site to populate source strings while keeping write access to translations restricted to site managers.
 
 Role and capabilities
 ---------------------
@@ -183,7 +184,7 @@ This plugin now includes a scheduled task to automatically generate translations
 
 ## Token Usage Tracking
 
-All autotranslation requests log token usage to a dedicated table. You can view total and recent usage in the admin UI at `/local/xlate/usage.php` (requires `local/xlate:manage`).
+Batch translation calls record token usage in `local_xlate_token_batch`. You can view aggregate and recent usage in the admin UI at `/local/xlate/usage.php` (requires `local/xlate:manage`).
 
 
 Need help? File issues or submit PRs on GitHub.

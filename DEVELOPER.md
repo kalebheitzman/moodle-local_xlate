@@ -53,6 +53,7 @@ DB (local_xlate_key + local_xlate_tr)
   - **Edit mode disables capture**: If the page is in edit mode, capture/tagging is always skipped (see `isEditing` flag in JS config).
   - Capability check happens via `local_xlate_save_key`
     (`local/xlate:manage`).
+  - The associate-only web service (`local_xlate_associate_keys`) intentionally skips capability checks and only calls `require_login()` so regular users can help populate source strings while browsing.
   - No manual or toggle: keys are always auto-assigned by the JS.
 - Captured text includes text nodes plus `placeholder`, `title`, `alt`, and `aria-label`
   attributes. Stable keys combine detected component, element type, normalized
@@ -163,6 +164,7 @@ Defined in `classes/external.php` and `db/services.php`:
 | `local_xlate_save_key` | `local/xlate:manage` | Save/update key + translation, bump bundle version, clear caches. |
 | `local_xlate_get_key` | `local/xlate:viewui` | Retrieve key metadata for tooling. |
 | `local_xlate_rebuild_bundles` | `local/xlate:manage` | Rebuild bundle versions for languages with active translations. |
+| `local_xlate_associate_keys` | _(require_login only)_ | Ensure keys exist and associate them with a course/context so source strings are captured from general traffic. |
 
 The AMD module uses `local_xlate_save_key`; the others enable admin tooling and
 external integrations.
