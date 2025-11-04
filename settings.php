@@ -123,7 +123,7 @@ if ($hassiteconfig) {
         $settings->add(new admin_setting_configtextarea('local_xlate/exclude_selectors',
             get_string('exclude_selectors', 'local_xlate'),
             get_string('exclude_selectors_desc', 'local_xlate'),
-            "#page-header\n.secondary-navigation\n.nav-drawer\n.navbar\n.page-context-header\n.page-footer\n.breadcrumb\n.discussion-list\n.discussionname\n.forum-post-container\n.journaluserentrywrapper\n.path-mod-forum\n.path-admin\n.usermenu\n._jswarning\n.toast\n.alert\n.badge", PARAM_TEXT));
+            "#page-header\n#page-footer\n.secondary-navigation\n.nav-drawer\n.navbar\n.page-context-header\n.page-footer\n.breadcrumb\n.drawer-toggles\n.drawer-header\n.discussion-list\n.discussionname\n.forum-post-container\n.journaluserentrywrapper\n.path-mod-forum\n.path-admin\n.usermenu\n._jswarning\n.toast\n.alert\n.badge", PARAM_TEXT));
     }
 
     $ADMIN->add('localplugins', $settings);
