@@ -567,8 +567,13 @@ class api {
             
             return $keyid;
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // Roll back and bubble up so callers can react appropriately.
             $transaction->rollback($e);
+            if (!($e instanceof \moodle_exception)) {
+                debugging('[local_xlate] save_key_with_translation failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+            throw $e;
         }
     }
     
