@@ -9,15 +9,15 @@ function local_xlate_render_admin_nav($active = '') {
     $tabs = [
         'manage' => [
             'url' => new moodle_url('/local/xlate/manage.php'),
-            'label' => 'Manage',
+            'label' => get_string('nav_manage', 'local_xlate'),
         ],
         'glossary' => [
             'url' => new moodle_url('/local/xlate/glossary.php'),
-            'label' => 'Glossary',
+            'label' => get_string('nav_glossary', 'local_xlate'),
         ],
         'usage' => [
             'url' => new moodle_url('/local/xlate/usage.php'),
-            'label' => 'Usage',
+            'label' => get_string('nav_usage', 'local_xlate'),
         ],
         'settings' => [
             'url' => new moodle_url('/admin/settings.php', ['section' => 'local_xlate']),

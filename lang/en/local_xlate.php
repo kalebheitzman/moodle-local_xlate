@@ -65,6 +65,9 @@ $string['courseid'] = 'Course ID';
 $string['translatecoursejobtask'] = 'Course autotranslate job';
 $string['autotranslate_course'] = 'Autotranslate course';
 $string['autotranslate_course_desc'] = 'Translate all captured keys associated with a course in batches and track progress.';
+$string['nav_manage'] = 'Manage';
+$string['nav_glossary'] = 'Glossary';
+$string['nav_usage'] = 'Usage';
 
 // Glossary strings
 $string['glossary'] = 'Glossary';

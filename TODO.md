@@ -6,5 +6,5 @@
 - [x] **High** `classes/local/api.php::get_page_bundle()`: debug code disabled component filtering, causing every bundle request to fetch the entire translation table and expose unrelated data.
 - [x] **Med** `classes/local/api.php::save_key_with_translation()`: on exception the catch block rolls back and returns `null`, so callers continue as if the save succeeded; errors are silently swallowed.
 - [x] **Med** `classes/external.php`, `classes/translation/backend.php`, `classes/task/translate_course_task.php`: extensive `error_log()` usage dumps payloads and translations into web-server logs, conflicting with Moodle privacy guidelines; prefer `debugging()` or controlled logging.
-- [ ] **Low** `admin_nav.php`: tab labels are hard-coded English strings instead of `get_string()` calls, so the admin navigation cannot be translated.
+- [x] **Low** `admin_nav.php`: tab labels are hard-coded English strings instead of `get_string()` calls, so the admin navigation cannot be translated.
 
