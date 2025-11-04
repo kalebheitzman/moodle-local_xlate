@@ -152,13 +152,26 @@ class api {
             $component_filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
         }
         
-        // TEMPORARY: Disable filtering to debug
-    $sql = "SELECT k.xkey, k.source, t.text, k.component
+        list($componentsql, $componentparams) = self::build_component_filter_sql($component_filters);
+        $coursejoin = '';
+        $coursewhere = '';
+        $params = ['lang' => $lang];
+
+        if (!empty($componentparams)) {
+            $params = array_merge($params, $componentparams);
+        }
+
+        if ($courseid > 0) {
+            $coursejoin = " LEFT JOIN {local_xlate_key_course} kc ON kc.keyid = k.id";
+            $coursewhere = " AND (kc.courseid = :courseid OR kc.courseid IS NULL)";
+            $params['courseid'] = $courseid;
+        }
+
+        $sql = "SELECT k.xkey, k.source, t.text, k.component
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
-                 WHERE t.lang = :lang AND t.status = 1";
-        
-        $params = ['lang' => $lang];
+                  $coursejoin
+                 WHERE t.lang = :lang AND t.status = 1 $componentsql $coursewhere";
         
         $recs = $DB->get_records_sql($sql, $params);
         
@@ -172,7 +185,7 @@ class api {
         }
         
         // Cache for shorter time due to context sensitivity
-        $cache->set($cache_key, $bundle);
+    $cache->set($cache_key, $bundle);
         self::remember_bundle_cache_key($lang, $cache_key, $cache);
         return $bundle;
     }
@@ -243,6 +256,24 @@ class api {
         }
         
         return $filters;
+    }
+
+    private static function build_component_filter_sql(array $filters): array {
+        if (empty($filters)) {
+            return ['', []];
+        }
+
+        $likes = [];
+        $params = [];
+        foreach ($filters as $i => $filter) {
+            // Wildcards already include % when needed; use LIKE for patterns.
+            $param = 'component' . $i;
+            $likes[] = "k.component LIKE :$param";
+            $params[$param] = $filter;
+        }
+
+        $sql = ' AND (' . implode(' OR ', $likes) . ')';
+        return [$sql, $params];
     }
 
     private static function make_bundle_cache_key(string $lang, \context $context, string $pagetype, int $courseid): string {
