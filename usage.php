@@ -43,8 +43,28 @@ $modelfilter = optional_param('model', '', PARAM_RAW);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 25, PARAM_INT);
 
+$usernow = usergetdate(time());
+$defaultmonth = (int)$usernow['mon'];
+$defaultyear = (int)$usernow['year'];
+$monthfilter = optional_param('xlatemonth', 0, PARAM_INT);
+$yearfilter = optional_param('xlateyear', 0, PARAM_INT);
+if ($monthfilter < 1 || $monthfilter > 12) {
+    $monthfilter = $defaultmonth;
+}
+if ($yearfilter <= 0) {
+    $yearfilter = $defaultyear;
+}
+$monthstart = make_timestamp($yearfilter, $monthfilter, 1, 0, 0, 0);
+$nextmonth = ($monthfilter === 12) ? 1 : $monthfilter + 1;
+$nextmonthyear = ($monthfilter === 12) ? $yearfilter + 1 : $yearfilter;
+$monthend = make_timestamp($nextmonthyear, $nextmonth, 1, 0, 0, 0);
+
 $params = [];
 $where = [];
+// Restrict results to the selected month/year window by default.
+$where[] = 'timecreated >= :monthstart AND timecreated < :monthend';
+$params['monthstart'] = $monthstart;
+$params['monthend'] = $monthend;
 if ($langfilter !== '') {
     $where[] = 'lang = :lang';
     $params['lang'] = $langfilter;
@@ -95,6 +115,27 @@ if (!$hasstoredcosts && ($totalinputtokens || $totalcachedtokens || $totaloutput
 // Get distinct languages and models for filter dropdowns.
 $langs = $DB->get_fieldset_sql('SELECT DISTINCT lang FROM {local_xlate_token_batch} ORDER BY lang');
 $models = $DB->get_fieldset_sql('SELECT DISTINCT model FROM {local_xlate_token_batch} WHERE model IS NOT NULL AND model != "" ORDER BY model');
+$langoptions = $langs ? array_combine($langs, $langs) : [];
+$modeloptions = $models ? array_combine($models, $models) : [];
+
+// Build month and year selector options.
+$monthoptions = [];
+for ($m = 1; $m <= 12; $m++) {
+    $monthoptions[$m] = userdate(make_timestamp(2000, $m, 1, 0, 0, 0), '%B');
+}
+$mindate = $DB->get_field_sql('SELECT MIN(timecreated) FROM {local_xlate_token_batch}');
+$firstyear = $mindate ? (int)userdate((int)$mindate, '%Y') : $defaultyear;
+if ($firstyear > $defaultyear) {
+    $firstyear = $defaultyear;
+}
+$yearoptions = [];
+for ($year = $defaultyear; $year >= $firstyear; $year--) {
+    $yearoptions[$year] = (string)$year;
+}
+if (!isset($yearoptions[$yearfilter])) {
+    $yearoptions[$yearfilter] = (string)$yearfilter;
+    krsort($yearoptions, SORT_NUMERIC);
+}
 
 echo $OUTPUT->header();
 require_once(__DIR__ . '/admin_nav.php');
@@ -135,12 +176,20 @@ echo html_writer::start_div('card-body');
 // Filter form
 echo html_writer::start_tag('form', ['method' => 'get', 'class' => 'form-inline mb-3']);
 echo html_writer::start_div('form-group mr-2');
+echo html_writer::label('Month', 'xlatemonth', false, ['class' => 'mr-1']);
+echo html_writer::select($monthoptions, 'xlatemonth', $monthfilter, null, ['class'=>'custom-select mr-2', 'id'=>'xlatemonth']);
+echo html_writer::end_div();
+echo html_writer::start_div('form-group mr-2');
+echo html_writer::label('Year', 'xlateyear', false, ['class' => 'mr-1']);
+echo html_writer::select($yearoptions, 'xlateyear', $yearfilter, null, ['class'=>'custom-select mr-2', 'id'=>'xlateyear']);
+echo html_writer::end_div();
+echo html_writer::start_div('form-group mr-2');
 echo html_writer::label('Language', 'xlatelang', false, ['class' => 'mr-1']);
-echo html_writer::select(array_merge([''=>'All'], array_combine($langs, $langs)), 'xlatelang', $langfilter, null, ['class'=>'custom-select mr-2', 'id'=>'xlatelang']);
+echo html_writer::select(array_merge([''=>'All'], $langoptions), 'xlatelang', $langfilter, null, ['class'=>'custom-select mr-2', 'id'=>'xlatelang']);
 echo html_writer::end_div();
 echo html_writer::start_div('form-group mr-2');
 echo html_writer::label('Model', 'model', false, ['class' => 'mr-1']);
-echo html_writer::select(array_merge([''=>'All'], array_combine($models, $models)), 'model', $modelfilter, null, ['class'=>'custom-select mr-2', 'id'=>'model']);
+echo html_writer::select(array_merge([''=>'All'], $modeloptions), 'model', $modelfilter, null, ['class'=>'custom-select mr-2', 'id'=>'model']);
 echo html_writer::end_div();
 echo html_writer::empty_tag('input', ['type'=>'submit', 'class'=>'btn btn-primary', 'value'=>'Filter']);
 echo html_writer::end_tag('form');
@@ -200,7 +249,13 @@ echo html_writer::end_tag('table');
 echo html_writer::end_div();
 
 // Pagination
-$baseurl = new moodle_url('/local/xlate/usage.php', ['xlatelang'=>$langfilter, 'model'=>$modelfilter, 'perpage'=>$perpage]);
+$baseurl = new moodle_url('/local/xlate/usage.php', [
+    'xlatemonth' => $monthfilter,
+    'xlateyear' => $yearfilter,
+    'xlatelang' => $langfilter,
+    'model' => $modelfilter,
+    'perpage' => $perpage
+]);
 $totalpages = ceil($total / $perpage);
 if ($totalpages > 1) {
     echo html_writer::start_div('d-flex justify-content-center my-3');
