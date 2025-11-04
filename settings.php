@@ -68,6 +68,22 @@ if ($hassiteconfig) {
             get_string('openai_model', 'local_xlate'),
             get_string('openai_model_desc', 'local_xlate'), 'gpt-4.1', PARAM_RAW));
 
+        // Pricing for usage estimation
+        $settings->add(new admin_setting_heading('local_xlate/pricingheading', '',
+            get_string('pricing_heading', 'local_xlate')));
+
+        $settings->add(new \local_xlate\admin\setting\pricing('local_xlate/pricing_input_per_million',
+            get_string('pricing_input_per_million', 'local_xlate'),
+            get_string('pricing_input_per_million_desc', 'local_xlate'), '2.00'));
+
+        $settings->add(new \local_xlate\admin\setting\pricing('local_xlate/pricing_cached_input_per_million',
+            get_string('pricing_cached_input_per_million', 'local_xlate'),
+            get_string('pricing_cached_input_per_million_desc', 'local_xlate'), '0.50'));
+
+        $settings->add(new \local_xlate\admin\setting\pricing('local_xlate/pricing_output_per_million',
+            get_string('pricing_output_per_million', 'local_xlate'),
+            get_string('pricing_output_per_million_desc', 'local_xlate'), '8.00'));
+
         // System prompt / translation instructions
         // Escape $ in example placeholders so PHP does not attempt to interpolate an undefined variable.
     $defaultprompt = get_string('openai_prompt_default', 'local_xlate');

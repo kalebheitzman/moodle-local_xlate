@@ -1,6 +1,34 @@
 // AMD module to queue autotranslate for visible keys in Manage UI.
+/**
+ * Autotranslate UI helper for the Manage page.
+ *
+ * Wires up the course-level "Autotranslate" button, resumes progress polling
+ * for in-flight jobs, and ensures a progress widget is rendered even when the
+ * user navigates away from the originating course filter.
+ *
+ * Expected config keys:
+ *  - courseid (number)
+ *  - currentjobid (number)
+ *  - currentjobowner (string)
+ *  - currentjobstatus (string)
+ *  - currentjobsourcelang (string)
+ *  - currentjobtargetlang (string|string[])
+ *  - currentjobprocessed (number)
+ *  - currentjobtotal (number)
+ *  - batchsize (number)
+ *  - sourcelang (string)
+ *  - defaulttarget (string|string[])
+ */
 define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     return {
+        /**
+         * Initialise the autotranslate UI bindings.
+         *
+         * @param {Object} config Server-provided settings for the Manage page.
+         * @param {number} [config.courseid] Current course filter identifier.
+         * @param {number} [config.currentjobid] Active job to resume polling.
+         * @returns {void}
+         */
         init: function (config) {
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
 
@@ -15,21 +43,22 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                     // otherwise append to document.body.
                     var parent = document.getElementById('region-main') || document.body;
                     var wrapper = document.createElement('div');
-                        wrapper.id = 'local_xlate_course_progress_wrapper';
-                        wrapper.style.margin = '12px 0';
-                        wrapper.innerHTML = '' +
-                                '<div id="local_xlate_course_progress" style="display:block;">' +
-                                    '<div style="font-size:90%; margin-bottom:6px">' +
-                                        '<span id="local_xlate_course_job_owner" style="font-weight:600"></span>' +
-                                        '<span id="local_xlate_course_job_status" style="margin-left:8px; color:#666"></span>' +
-                                        '<span id="local_xlate_course_job_langs" style="float:right; font-size:90%"></span>' +
-                                    '</div>' +
-                                    '<div class="progress" role="progressbar" aria-label="Autotranslate progress">' +
-                                        // Use Bootstrap striped + animated classes for nicer effect
-                                        '<div id="local_xlate_course_progress_bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>' +
-                                    '</div>' +
-                                    '<div id="local_xlate_course_progress_text" style="margin-top:6px; font-size:90%">0 / 0</div>' +
-                                '</div>';
+                    wrapper.id = 'local_xlate_course_progress_wrapper';
+                    wrapper.style.margin = '12px 0';
+                    wrapper.innerHTML = '' +
+                        '<div id="local_xlate_course_progress" style="display:block;">' +
+                        '<div style="font-size:90%; margin-bottom:6px">' +
+                        '<span id="local_xlate_course_job_owner" style="font-weight:600"></span>' +
+                        '<span id="local_xlate_course_job_status" style="margin-left:8px; color:#666"></span>' +
+                        '<span id="local_xlate_course_job_langs" style="float:right; font-size:90%"></span>' +
+                        '</div>' +
+                        '<div class="progress" role="progressbar" aria-label="Autotranslate progress">' +
+                        // Use Bootstrap striped + animated classes for nicer effect
+                        '<div id="local_xlate_course_progress_bar" class="progress-bar progress-bar-striped ' +
+                        'progress-bar-animated bg-info" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>' +
+                        '</div>' +
+                        '<div id="local_xlate_course_progress_text" style="margin-top:6px; font-size:90%">0 / 0</div>' +
+                        '</div>';
                     parent.insertBefore(wrapper, parent.firstChild);
                 } catch (e) {
                     // ignore DOM insertion errors
@@ -130,6 +159,12 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                 }
             }
 
+            /**
+             * Poll course job progress and update the inline progress UI.
+             *
+             * @param {number} jobid Identifies the queued `translate_course_task`.
+             * @returns {void}
+             */
             function startCoursePolling(jobid) {
                 if (!jobid) { return; }
 
@@ -174,7 +209,9 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                     }
                     if (config.currentjobprocessed !== undefined && config.currentjobtotal !== undefined) {
                         text.textContent = config.currentjobprocessed + ' / ' + config.currentjobtotal;
-                        var pct = config.currentjobtotal > 0 ? Math.round((config.currentjobprocessed / config.currentjobtotal) * 100) : 0;
+                        var pct = config.currentjobtotal > 0
+                            ? Math.round((config.currentjobprocessed / config.currentjobtotal) * 100)
+                            : 0;
                         bar.style.width = pct + '%';
                         bar.setAttribute('aria-valuenow', pct);
                         bar.textContent = pct + '%';
@@ -209,7 +246,9 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                             bar.setAttribute('aria-valuenow', 100);
                             bar.textContent = '100%';
                             text.textContent = (processed || total) + ' / ' + total + ' — complete';
-                            notification.alert('Course autotranslate complete: ' + processed + ' / ' + total);
+                            notification.alert(
+                                'Course autotranslate complete: ' + processed + ' / ' + total
+                            );
                         } else if (tries >= maxTries) {
                             clearInterval(handle);
                             notification.alert('Course autotranslate polling timed out: ' + processed + ' / ' + total);

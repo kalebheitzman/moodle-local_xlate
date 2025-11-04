@@ -6,11 +6,13 @@
 // 2. If currentLang === siteLang: Save to DB (capture mode)
 // 3. If currentLang !== siteLang: Translate using bundle
 /**
- * Translator AMD module for local_xlate.
+ * AMD module that detects, captures, and renders Local Xlate translations.
  *
- * Exports:
- * - init(config): initialize translator with config (lang, siteLang, bundleurl, version, isEditing)
- * - run(map): run translation pass using provided map
+ * Responsibilities:
+ *  - Capture mode: tag DOM nodes, check existing bundle entries, persist newly
+ *    discovered strings, and link keys to the active course when permitted.
+ *  - Translation mode: tag DOM nodes, request a filtered bundle, apply
+ *    translations, and track subsequent DOM mutations to keep content synced.
  */
 define(['core/ajax'], function (Ajax) {
   var ATTR_KEY_PREFIX = 'data-xlate-key-';
@@ -624,7 +626,8 @@ define(['core/ajax'], function (Ajax) {
 
   /**
    * Run translator
-   * @param {Object} map - The translation map
+   * @param {Object<string,string>} map Translation map keyed by structural hash.
+   * @returns {void}
    */
   function run(map) {
     try {
@@ -738,8 +741,17 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * @typedef {Object} TranslatorConfig
+   * @property {string} lang Current page language code.
+   * @property {string} siteLang Site default language used for capture mode.
+   * @property {string} bundleurl REST endpoint returning translation bundles.
+   * @property {string} version Bundle version hash used for cache busting.
+   * @property {boolean} isEditing True when Moodle editing mode is active.
+   */
+
+  /**
    * Initialize translator
-   * @param {Object} config - Configuration object
+   * @param {TranslatorConfig} config Configuration object injected server-side.
    */
   function init(config) {
     document.documentElement.classList.add('xlate-loading');
