@@ -103,21 +103,35 @@ echo html_writer::start_div('card mb-4');
 echo html_writer::start_div('card-body');
 echo html_writer::tag('h2', 'Token Usage', ['class' => 'mb-3']);
 echo html_writer::tag('p', 'This page shows token usage for all autotranslation requests. Use the filters to narrow results by language or model.');
-echo html_writer::start_tag('ul', ['class' => 'list-unstyled mb-3']);
-echo html_writer::tag('li', '<strong>Total batches:</strong> ' . (int)$total);
-echo html_writer::tag('li', '<strong>Total tokens:</strong> ' . (int)$totaltokens);
-echo html_writer::tag('li', '<strong>Input tokens:</strong> ' . (int)$totalinputtokens);
-echo html_writer::tag('li', '<strong>Cached input tokens:</strong> ' . (int)$totalcachedtokens);
-echo html_writer::tag('li', '<strong>Output tokens:</strong> ' . (int)$totaloutputtokens);
-echo html_writer::tag('li', '<strong>Total cost:</strong> $' . number_format($totalcost, 4));
-echo html_writer::tag('li', '<strong>Input cost:</strong> $' . number_format($totalinputcost, 4));
-echo html_writer::tag('li', '<strong>Cached input cost:</strong> $' . number_format($totalcachedcost, 4));
-echo html_writer::tag('li', '<strong>Output cost:</strong> $' . number_format($totaloutputcost, 4));
-echo html_writer::end_tag('ul');
 if (!$hasstoredcosts && ($totalinputtokens || $totalcachedtokens || $totaloutputtokens)) {
-    echo html_writer::div('Totals estimated using current pricing settings because stored cost data was missing.', 'mb-3 text-muted');
+    echo html_writer::div('Totals estimated using current pricing settings because stored cost data was missing.', 'mb-3');
 } else {
-    echo html_writer::div('Costs reflect the values stored with each batch. Update pricing under Site administration > Plugins > Local plugins > Local Xlate.', 'mb-3 text-muted');
+    echo html_writer::div('Costs reflect the values stored with each batch. Update pricing under Site administration > Plugins > Local plugins > Local Xlate.', 'mb-3');
+}
+
+// Condensed summary metrics for quick scanning.
+$metrics = [
+    ['label' => 'Total batches', 'value' => number_format((int)$total)],
+    ['label' => 'Total tokens', 'value' => number_format((int)$totaltokens)],
+    ['label' => 'Total cost', 'value' => '$' . number_format($totalcost, 4)],
+];
+
+echo html_writer::start_div('row text-center align-items-stretch mb-2');
+foreach ($metrics as $metric) {
+    $content = html_writer::tag('div', $metric['value'], ['class' => 'h4 mb-1']) .
+        html_writer::tag('div', $metric['label'], ['class' => 'text-muted small text-uppercase']);
+    echo html_writer::div($content, 'col-12 col-sm-4 mb-3');
+}
+echo html_writer::end_div();
+
+$tokenparts = ['Input ' . number_format($totalinputtokens), 'Output ' . number_format($totaloutputtokens)];
+if ($totalcachedtokens > 0) {
+    array_splice($tokenparts, 1, 0, 'Cached ' . number_format($totalcachedtokens));
+}
+
+$costparts = ['Input $' . number_format($totalinputcost, 4), 'Output $' . number_format($totaloutputcost, 4)];
+if ($totalcachedcost > 0) {
+    array_splice($costparts, 1, 0, 'Cached $' . number_format($totalcachedcost, 4));
 }
 
 // Filter form
