@@ -12,7 +12,7 @@ class api {
      * @param array $keys List of xkeys to fetch
      * @return array Map of xkey => text
      */
-    public static function get_keys_bundle(string $lang, array $keys): array {
+    public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0): array {
         global $DB;
 
         if (empty($keys)) {
@@ -40,7 +40,31 @@ class api {
         list($insql, $inparams) = $DB->get_in_or_equal($clean, SQL_PARAMS_NAMED, 'k');
         $params = array_merge(['lang' => $lang], $inparams);
 
-        $sql = "SELECT k.xkey, t.text\n                  FROM {local_xlate_key} k\n                  JOIN {local_xlate_tr} t ON t.keyid = k.id\n                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql";
+        $context = $context ?: \context_system::instance();
+        $componentsql = '';
+        $componentparams = [];
+
+        if ($context instanceof \context) {
+            $filters = self::get_component_filters($pagetype, $context, $courseid);
+            if (empty($filters)) {
+                $filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
+            }
+            list($componentsql, $componentparams) = self::build_component_filter_sql($filters);
+        }
+
+        if (!empty($componentparams)) {
+            $params = array_merge($params, $componentparams);
+        }
+
+        $coursejoin = '';
+        $coursewhere = '';
+        if ($courseid > 0) {
+            $coursejoin = " LEFT JOIN {local_xlate_key_course} kc ON kc.keyid = k.id";
+            $coursewhere = " AND (kc.courseid = :courseid OR kc.courseid IS NULL)";
+            $params['courseid'] = $courseid;
+        }
+
+        $sql = "SELECT k.xkey, t.text\n+                  FROM {local_xlate_key} k\n+                  JOIN {local_xlate_tr} t ON t.keyid = k.id\n+                  $coursejoin\n+                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql$componentsql$coursewhere";
 
         $recs = $DB->get_records_sql($sql, $params);
 
@@ -65,7 +89,7 @@ class api {
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
 
-        $translations = self::get_keys_bundle($lang, $keys);
+    $translations = self::get_keys_bundle($lang, $keys);
 
         // Build sourceMap for the returned keys
         $sourceMap = [];

@@ -39,7 +39,7 @@ try {
         $raw = file_get_contents('php://input');
         $data = json_decode($raw, true);
         if (is_array($data) && !empty($data['keys']) && is_array($data['keys'])) {
-            $map = \local_xlate\local\api::get_keys_bundle($lang, $data['keys']);
+            $map = \local_xlate\local\api::get_keys_bundle($lang, $data['keys'], $context, $pagetype, $courseid);
             // Shorter cache for key-specific bundles
             header('Cache-Control: private, max-age=120');
             echo json_encode($map, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
