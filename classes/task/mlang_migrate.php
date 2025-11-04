@@ -36,13 +36,30 @@ require_once(dirname(dirname(__DIR__)) . '/classes/mlang_migration.php');
 
 /**
  * Adhoc task wrapper to run a destructive MLang migration (idempotent).
- * By default runs in dry-run mode; must be passed execute=true to perform writes.
+ *
+ * Accepts the same option keys as the migration CLI helper; callers may
+ * provide them via custom data when queueing the task.
+ *
+ * @package local_xlate\task
  */
 class mlang_migrate extends adhoc_task {
+    /**
+     * Human-readable name for the migration adhoc task.
+     *
+     * @return string
+     */
     public function get_name() {
         return get_string('mlangmigrate', 'local_xlate');
     }
 
+    /**
+     * Execute the migration task, optionally performing writes.
+     *
+     * Converts custom data into migration options, runs the migration helper,
+     * and logs a summary of changed records.
+     *
+     * @return void
+     */
     public function execute() {
         global $DB;
 

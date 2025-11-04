@@ -27,6 +27,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * @var array<string,array<string,mixed>> Cache definitions consumed by Moodle's cache API.
+ */
 $definitions = [
     'bundle' => [
         'mode' => cache_store::MODE_APPLICATION,

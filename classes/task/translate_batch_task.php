@@ -34,12 +34,37 @@ use core\task\adhoc_task;
 
 /**
  * Adhoc task to run translate_batch via backend and persist results when possible.
+ *
+ * Custom data contract:
+ *  - requestid (string)
+ *  - sourcelang (string)
+ *  - targetlang (string|array)
+ *  - items (array<array|\stdClass>)
+ *  - glossary (array<array|\stdClass>)
+ *  - options (array)
+ *
+ * @package local_xlate\task
  */
 class translate_batch_task extends adhoc_task {
+    /**
+     * Provide a language string describing the adhoc task.
+     *
+     * @return string
+     */
     public function get_name(): string {
         return get_string('translatebatchtask', 'local_xlate');
     }
 
+    /**
+     * Execute the queued batch translation job.
+     *
+     * Normalises the payload stored in custom data, invokes the translation
+     * backend (handling multi-language batches), and persists machine
+     * translations via the Local Xlate API when matching item metadata is
+     * available.
+     *
+     * @return void
+     */
     public function execute() {
         global $DB;
 

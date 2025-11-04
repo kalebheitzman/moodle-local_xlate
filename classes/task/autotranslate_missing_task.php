@@ -32,11 +32,34 @@ defined('MOODLE_INTERNAL') || die();
 
 use core\task\scheduled_task;
 
+/**
+ * Scheduled task that backfills missing translations using the AI backend.
+ *
+ * Periodically scans all enabled languages and enqueues batches directly via
+ * the translation backend for keys lacking approved translations.
+ *
+ * @package local_xlate\task
+ */
 class autotranslate_missing_task extends scheduled_task {
+    /**
+     * Provide a human-readable task name string.
+     *
+     * @return string
+     */
     public function get_name() {
         return get_string('autotranslate_missing_task', 'local_xlate');
     }
 
+    /**
+     * Run the scheduled autotranslation pass.
+     *
+     * Applies plugin configuration (enabled languages, batch size) to identify
+     * untranslated keys per language, submits each batch to the translation
+     * backend, and persists new translations when the backend replies
+     * successfully.
+     *
+     * @return void
+     */
     public function execute() {
         global $DB;
         if (!get_config('local_xlate', 'autotranslate_task_enabled')) {

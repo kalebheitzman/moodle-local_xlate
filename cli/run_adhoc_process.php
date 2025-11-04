@@ -58,6 +58,17 @@ if (!empty($row->customdata)) {
     }
 }
 
+/**
+ * @var array{
+ *     requestid?:string,
+ *     sourcelang?:string,
+ *     targetlang?:string|array<int,string>,
+ *     items?:array<int,array|object>,
+ *     glossary?:array<int,array|object>,
+ *     options?:array<int|string,mixed>
+ * }|false $raw
+ */
+
 if (empty($raw) || !is_array($raw)) {
     fwrite(STDERR, "Could not parse customdata for task id={$taskid}\n");
     exit(4);
@@ -71,6 +82,7 @@ $glossary = $raw['glossary'] ?? [];
 $options = $raw['options'] ?? [];
 
 // Normalize items (stdClass -> arrays) when necessary
+/** @var array<int,array<string,mixed>> $normalizeditems */
 $normalizeditems = [];
 foreach ($items as $it) {
     if (is_object($it)) {
@@ -81,6 +93,7 @@ foreach ($items as $it) {
 }
 
 // Normalize glossary
+/** @var array<int,array<string,mixed>> $normalizedglossary */
 $normalizedglossary = [];
 foreach ($glossary as $g) {
     if (is_object($g)) {
@@ -99,6 +112,12 @@ foreach ($targetlangs as $tl) {
     }
     fwrite(STDOUT, "Calling backend::translate_batch request={$requestid} src={$sourcelang} dst={$tl} items=" . count($normalizeditems) . "\n");
     try {
+        /**
+         * @var array{
+         *     ok?:bool,
+         *     results?:array<int,array{id?:string,key?:string,translated?:string}>
+         * }|null $result
+         */
         $result = \local_xlate\translation\backend::translate_batch($requestid, $sourcelang, $tl, $normalizeditems, $normalizedglossary, $options);
     } catch (\Exception $e) {
         fwrite(STDERR, "backend::translate_batch raised exception: " . $e->getMessage() . "\n");

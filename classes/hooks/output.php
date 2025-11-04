@@ -33,7 +33,22 @@ defined('MOODLE_INTERNAL') || die();
 use core\hook\output\before_standard_head_html_generation as Head;
 use core\hook\output\before_standard_top_of_body_html_generation as Body;
 
+/**
+ * Registers frontend bootstrapping for the translator on Moodle page renders.
+ *
+ * Responds to core output hooks to inject minimal CSS/JS needed to lazy-load
+ * the translator module. Respects admin pages, editing mode, and plugin
+ * enablement settings to avoid interfering with core workflows.
+ *
+ * @package local_xlate\hooks
+ */
 class output {
+    /**
+     * Inject head-level assets before Moodle renders the standard head HTML.
+     *
+     * @param Head $hook Output hook instance used to append HTML.
+     * @return void
+     */
     public static function before_head(Head $hook): void {
         if (!get_config('local_xlate', 'enable')) { 
             return; 
@@ -49,6 +64,16 @@ class output {
         $hook->add_html('<!-- XLATE HEAD HOOK FIRED -->');
     }
 
+    /**
+     * Inject translator bootstrap script before the body HTML is emitted.
+     *
+     * Builds contextual metadata (course, pagetype, current language) and
+     * publishes it as global variables and bootstrap arguments for the AMD
+     * module initialisation.
+     *
+     * @param Body $hook Output hook instance used to append HTML.
+     * @return void
+     */
     public static function before_body(Body $hook): void {
         if (!get_config('local_xlate', 'enable')) { 
             return; 
@@ -159,8 +184,9 @@ class output {
     }
 
     /**
-     * Check if current page is an admin/management path that shouldn't be translated
-     * @return bool True if this is an admin path
+     * Determine whether the current request targets an admin or editing path.
+     *
+     * @return bool True when translation injection should be skipped.
      */
     private static function is_admin_path(): bool {
         global $PAGE;

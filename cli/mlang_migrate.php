@@ -33,6 +33,11 @@ require_once(__DIR__ . '/../classes/mlang_migration.php');
 
 global $DB;
 
+/**
+ * Parsed CLI options supported by this script.
+ *
+ * @var array<string,mixed>
+ */
 $opts = getopt('', ['execute', 'max::', 'preferred::', 'chunk::', 'sample::', 'tables::']);
 $execute = array_key_exists('execute', $opts);
 $max = isset($opts['max']) ? (int)$opts['max'] : 0;
@@ -40,6 +45,11 @@ $preferred = $opts['preferred'] ?? 'other';
 $chunk = isset($opts['chunk']) ? (int)$opts['chunk'] : 200;
 $sample = isset($opts['sample']) ? (int)$opts['sample'] : 2000;
 
+/**
+ * Table map derived from CLI options or autodiscovery.
+ *
+ * @var array<string,array<int,string>>|null
+ */
 $tables = null;
 if (!empty($opts['tables'])) {
     // Expect a JSON file path or a comma-separated list of table.column pairs (table:col)
@@ -70,6 +80,11 @@ if ($tables === null) {
     $tables = \local_xlate\mlang_migration::discover_candidate_columns($DB, ['full_scan' => true]);
 }
 
+/**
+ * Options passed to the migration helper.
+ *
+ * @var array<string,mixed>
+ */
 $options = ['tables' => $tables, 'chunk' => $chunk, 'preferred' => $preferred, 'execute' => $execute, 'sample' => $sample];
 if ($max > 0) { $options['max_changes'] = $max; }
 

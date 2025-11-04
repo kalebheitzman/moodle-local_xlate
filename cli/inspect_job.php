@@ -31,6 +31,9 @@
 define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 
+/**
+ * Job identifier provided via CLI argument; defaults to 1 for convenience.
+ */
 $jobid = isset($argv[1]) ? (int)$argv[1] : 1;
 
 global $DB;

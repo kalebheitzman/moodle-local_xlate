@@ -46,10 +46,12 @@ $opts = [];
 if (!empty($job->options)) {
     $opts = json_decode($job->options, true) ?: [];
 }
+/** @var array<string,mixed> $opts */
 $targetlangs = [];
 if (!empty($opts['targetlang'])) {
     $targetlangs = is_array($opts['targetlang']) ? $opts['targetlang'] : [$opts['targetlang']];
 }
+/** @var array<int,string> $targetlangs */
 if (empty($targetlangs)) {
     echo "No target languages found in job options.\n";
 }
@@ -57,6 +59,9 @@ $ctime = (int)$job->ctime;
 
 foreach ($targetlangs as $lang) {
     echo "Translations for lang: $lang since " . date('c', $ctime) . "\n";
+    /**
+     * @var array<int,\stdClass> $recs translation rows joined with key metadata
+     */
     $recs = $DB->get_records_sql("SELECT t.id, t.keyid, t.lang, t.text, t.mtime, k.component, k.xkey
         FROM {local_xlate_tr} t JOIN {local_xlate_key} k ON k.id = t.keyid
         WHERE t.lang = :lang AND t.mtime >= :ctime

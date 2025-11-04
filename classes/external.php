@@ -33,8 +33,9 @@ require_once($CFG->libdir . '/externallib.php');
 class local_xlate_external extends external_api {
 
     /**
-     * Save key parameters
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::save_key()}.
+     *
+     * @return external_function_parameters Parameter schema used by Moodle external API validation.
      */
     public static function save_key_parameters() {
         return new external_function_parameters([
@@ -50,24 +51,22 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Save a translation key
-     * @param string $component
-     * @param string $key
-     * @param string $source
-     * @param string $lang
-     * @param string $translation
-     * @return array
-     */
-    /**
-     * Save a translation key
-     * @param string $component
-     * @param string $key
-     * @param string $source
-     * @param string $lang
-     * @param string $translation
-     * @param int $courseid
-     * @param string $context
-     * @return array
+     * Persist a translated string through the Local Xlate API.
+     *
+     * Validates parameters, checks the caller has the {@code local/xlate:manage}
+     * capability, and stores both the translation and optional course
+     * association. Returns a success flag and the numeric key id for further
+     * processing.
+     *
+     * @param string $component Component responsible for the translation key.
+     * @param string $key Stable translation key identifier.
+     * @param string $source Source language text for context.
+     * @param string $lang Target language code to persist.
+     * @param string $translation Translated text to store.
+     * @param int $reviewed Whether the translation has a human review flag set.
+     * @param int $courseid Course id to associate with the key (0 for global scope).
+     * @param string $context Optional capture context string for auditing.
+     * @return array Response payload containing success flag and key id.
      */
     public static function save_key($component, $key, $source, $lang, $translation, $reviewed = 0, $courseid = 0, $context = '') {
         global $USER;
@@ -105,8 +104,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Save key returns
-     * @return external_single_structure
+     * Describe the structure returned by {@see self::save_key()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function save_key_returns() {
         return new external_single_structure([
@@ -116,8 +116,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Get key parameters
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::get_key()}.
+     *
+     * @return external_function_parameters Parameter schema for validation.
      */
     public static function get_key_parameters() {
         return new external_function_parameters([
@@ -127,10 +128,14 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Get a translation key
-     * @param string $component
-     * @param string $key
-     * @return array
+     * Retrieve a translation key record by component + key pair.
+     *
+     * Ensures the caller has {@code local/xlate:viewui} capability before
+     * returning limited key metadata.
+     *
+     * @param string $component Component identifier to search within.
+     * @param string $key Translation key to retrieve.
+     * @return array Response containing the serialized key record or null.
      */
     public static function get_key($component, $key) {
         $params = self::validate_parameters(self::get_key_parameters(), [
@@ -154,8 +159,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Get key returns
-     * @return external_single_structure
+     * Describe the structure returned by {@see self::get_key()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function get_key_returns() {
         return new external_single_structure([
@@ -171,16 +177,18 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Rebuild bundles parameters
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::rebuild_bundles()}.
+     *
+     * @return external_function_parameters Empty parameter definition.
      */
     public static function rebuild_bundles_parameters() {
         return new external_function_parameters([]);
     }
 
     /**
-     * Rebuild all translation bundles
-     * @return array
+     * Rebuild all translation bundles by recomputing version hashes.
+     *
+     * @return array{success:bool,rebuilt:array<int,string>} Response payload consumed by clients.
      */
     public static function rebuild_bundles() {
         $context = context_system::instance();
@@ -196,8 +204,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Rebuild bundles returns
-     * @return external_single_structure
+     * Describe the response produced by {@see self::rebuild_bundles()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function rebuild_bundles_returns() {
         return new external_single_structure([
@@ -210,8 +219,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Associate keys parameters
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::associate_keys()}.
+     *
+     * @return external_function_parameters Parameter schema for validation.
      */
     public static function associate_keys_parameters() {
         return new external_function_parameters([
@@ -228,11 +238,16 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Associate multiple keys with a course (create keys if missing)
-     * @param array $keys
-     * @param int $courseid
-     * @param string $context
-     * @return array
+     * Associate a batch of keys with a course, creating missing keys.
+     *
+     * Validates the caller input, enforces authentication, and delegates to the
+     * API layer to ensure keys exist and are linked with the provided course
+     * id. Returns per-key status details to aid client reconciliation.
+     *
+     * @param array<int,array{component:string,key:string,source?:string}> $keys Collection of component/key/source triples.
+     * @param int $courseid Course id to attach the keys to.
+     * @param string $context Optional string describing capture context.
+     * @return array{success:bool,details:array<string,string>} Response containing success flag and association details.
      */
     public static function associate_keys($keys, $courseid, $context = '') {
         global $USER;
@@ -243,10 +258,10 @@ class local_xlate_external extends external_api {
             'context' => $context
         ]);
 
-        // Require login but allow any authenticated user to trigger associations
+        // Require login but allow any authenticated user to trigger associations.
         require_login();
 
-    $details = \local_xlate\local\api::associate_keys_with_course($params['keys'], (int)$params['courseid'], $params['context']);
+        $details = \local_xlate\local\api::associate_keys_with_course($params['keys'], (int)$params['courseid'], $params['context']);
 
         return [
             'success' => true,
@@ -255,19 +270,28 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Associate keys returns
-     * @return external_single_structure
+     * Describe the response produced by {@see self::associate_keys()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function associate_keys_returns() {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success'),
-            'details' => new external_single_structure([], 'Details', VALUE_OPTIONAL)
+            'details' => new external_multiple_structure(
+                new external_single_structure([
+                    'key' => new external_value(PARAM_TEXT, 'Translation key identifier', VALUE_OPTIONAL),
+                    'status' => new external_value(PARAM_TEXT, 'Association status label', VALUE_OPTIONAL)
+                ]),
+                'Per-key association outcomes',
+                VALUE_OPTIONAL
+            )
         ]);
     }
 
     /**
-     * Parameters for queuing a translation batch via AI backend.
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::autotranslate()}.
+     *
+     * @return external_function_parameters Parameter schema covering items/glossary/options.
      */
     public static function autotranslate_parameters() {
         return new external_function_parameters([
@@ -301,13 +325,19 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Queue an adhoc task to translate a batch using the AI backend.
-     * @param string $sourcelang
-    * @param string|array $targetlang
-     * @param array $items
-     * @param array $glossary
-     * @param array $options
-     * @return array
+     * Queue an adhoc batch translation task via the AI backend.
+     *
+     * Performs validation, capability checks, and then schedules
+     * {@see \\local_xlate\\task\\translate_batch_task} with the provided
+     * items, glossary, and options. Throws if validation fails or the task
+     * cannot be queued.
+     *
+     * @param string $sourcelang Source language code for submitted items.
+     * @param array<int,string>|string $targetlang One or more target language codes.
+     * @param array<int,array{id:string,component?:string,key?:string,source_text:string,placeholders?:array<int,string>}> $items Collection of item records to translate.
+     * @param array<int,array{term:string,replacement:string}> $glossary Optional glossary overrides.
+     * @param array<string,mixed> $options Optional backend tuning parameters.
+     * @return array{success:bool,taskid:int} Response containing success flag and queued task id.
      */
     public static function autotranslate($sourcelang, $targetlang, $items, $glossary = [], $options = []) {
         global $USER;
@@ -376,8 +406,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Returns for autotranslate.
-     * @return external_single_structure
+     * Describe the response produced by {@see self::autotranslate()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function autotranslate_returns() {
         return new external_single_structure([
@@ -387,8 +418,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Parameters for enqueuing a course-level autotranslate job.
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::autotranslate_course_enqueue()}.
+     *
+     * @return external_function_parameters Parameter schema covering course id and options.
      */
     public static function autotranslate_course_enqueue_parameters() {
         return new external_function_parameters([
@@ -406,10 +438,15 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Enqueue a course-level autotranslate job. Returns job id.
-     * @param int $courseid
-     * @param array $options
-     * @return array
+     * Enqueue a course-scoped autotranslation job and queue its adhoc task.
+     *
+     * Validates input, ensures the caller has {@code local/xlate:manage},
+     * persists a row in {@code local_xlate_course_job}, and schedules
+     * {@see \\local_xlate\\task\\translate_course_task}.
+     *
+     * @param int $courseid Course identifier to translate.
+     * @param array<string,mixed> $options Optional job options (batch size, languages, etc.).
+     * @return array{success:bool,jobid:int,taskid:int} Response containing success flag, job id, and task id.
      */
     public static function autotranslate_course_enqueue($courseid, $options = []) {
         global $DB, $USER;
@@ -452,6 +489,11 @@ class local_xlate_external extends external_api {
         return ['success' => true, 'jobid' => $jobid, 'taskid' => $taskid];
     }
 
+    /**
+     * Describe the response produced by {@see self::autotranslate_course_enqueue()}.
+     *
+     * @return external_single_structure API response definition for clients.
+     */
     public static function autotranslate_course_enqueue_returns() {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success'),
@@ -461,8 +503,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Parameters for polling a course-level autotranslate job.
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::autotranslate_course_progress()}.
+     *
+     * @return external_function_parameters Parameter schema for validation.
      */
     public static function autotranslate_course_progress_parameters() {
         return new external_function_parameters([
@@ -471,9 +514,13 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Poll for progress of a course autotranslate job.
-     * @param int $jobid
-     * @return array
+     * Retrieve progress information for a queued course translation job.
+     *
+     * Ensures the caller holds {@code local/xlate:viewui} capability before
+     * exposing job metadata to the client.
+     *
+     * @param int $jobid Job identifier to inspect.
+     * @return array{success:bool,job?:array<string,int|string>,error?:string} Response containing job summary data or error flag.
      */
     public static function autotranslate_course_progress($jobid) {
         global $DB;
@@ -505,6 +552,11 @@ class local_xlate_external extends external_api {
         ];
     }
 
+    /**
+     * Describe the response produced by {@see self::autotranslate_course_progress()}.
+     *
+     * @return external_single_structure API response definition for clients.
+     */
     public static function autotranslate_course_progress_returns() {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success'),
@@ -523,8 +575,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Parameters for polling autotranslate progress.
-     * @return external_function_parameters
+     * Describe the parameters accepted by {@see self::autotranslate_progress()}.
+     *
+     * @return external_function_parameters Parameter schema for validation.
      */
     public static function autotranslate_progress_parameters() {
         return new external_function_parameters([
@@ -537,11 +590,15 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Poll for progress of autotranslate by checking persisted translations for the given items.
-     * Returns an array of {id, translated, translation} entries.
-     * @param array $items
-     * @param string $targetlang
-     * @return array
+     * Determine translation status for specific items and target language.
+     *
+     * Checks stored translations for the supplied keys and returns
+     * {id, translated, translation} tuples so the client UI can update in
+     * near real time.
+     *
+     * @param array<int,string> $items Array of item identifiers (`component:key` or just key).
+     * @param string $targetlang Target language to check.
+     * @return array{success:bool,results:array<int,array{id:string,translated:bool,translation:?string}>} Response containing success flag and per-item results.
      */
     public static function autotranslate_progress($items, $targetlang) {
         global $DB;
@@ -617,8 +674,9 @@ class local_xlate_external extends external_api {
     }
 
     /**
-     * Returns for autotranslate_progress.
-     * @return external_single_structure
+     * Describe the response produced by {@see self::autotranslate_progress()}.
+     *
+     * @return external_single_structure API response definition for clients.
      */
     public static function autotranslate_progress_returns() {
         return new external_single_structure([

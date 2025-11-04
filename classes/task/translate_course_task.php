@@ -34,12 +34,34 @@ use core\task\adhoc_task;
 
 /**
  * Adhoc task to process a course-scoped autotranslate job in batches.
+ *
+ * The task expects custom data containing `jobid`, which identifies a record in
+ * `local_xlate_course_job`. Each execution processes a slice of the job and
+ * requeues itself until all associated keys are translated.
+ *
+ * @package local_xlate\task
  */
 class translate_course_task extends adhoc_task {
+    /**
+     * Return the language string for this adhoc task.
+     *
+     * @return string
+     */
     public function get_name(): string {
         return get_string('translatecoursejobtask', 'local_xlate');
     }
 
+    /**
+     * Execute an autotranslate course job.
+     *
+     * Loads the job definition, pulls the next chunk of key-course associations,
+     * calls the translation backend (supporting multiple target languages), and
+     * persists the responses through the Local Xlate API. Progress metadata is
+     * updated after each batch and the task is requeued until completion.
+     *
+     * @return void
+     * @throws \Exception Propagates backend failures to trigger core retries.
+     */
     public function execute() {
         global $DB;
 

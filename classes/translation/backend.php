@@ -33,22 +33,32 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Backend wrapper skeleton for AI translation provider integration.
  *
- * This class implements the high-level flow for batched translation requests
- * using function-calling (translate_batch). It is intentionally a skeleton
- * with TODOs where provider-specific HTTP code should go. The implementation
- * focuses on input preparation, response validation and glossary enforcement.
+ * The backend coordinates request preparation, glossary prompt injection,
+ * transport, and response validation for the translate_batch flow. Provider
+ * specific HTTP concerns can be swapped in at the marked extension points,
+ * but the overall contract stays: accept Moodle-side batch requests and return
+ * structured translation data ready for post-processing.
+ *
+ * @package local_xlate\translation
  */
 class backend {
     /**
-     * Translate a batch of items.
+     * Translate a batch of strings via the configured LLM provider.
      *
-     * @param string $requestid batch id
-     * @param string $sourcelang
-     * @param string $targetlang
-     * @param array $items array of ['id','source_text','context','placeholders']
-     * @param array $glossary array of ['term','replacement']
-     * @param array $options optional keys: temperature, max_tokens, model
-     * @return array result structure: ['ok' => bool, 'results' => [...], 'meta' => [...], 'errors' => [...]]
+     * Builds an OpenAI-compatible function-calling payload, dispatches it using
+     * Moodle's curl client, validates the JSON arguments returned by the model,
+     * and raises structured errors for any failure along the way. Glossary
+     * entries are woven into the system prompt and later checked against the
+     * translations during post-processing to surface warnings.
+     *
+     * @param string $requestid Stable identifier for correlating a translate_batch request.
+     * @param string $sourcelang ISO language code for the source text.
+     * @param string $targetlang ISO language code for the desired translation.
+     * @param array<int,array{id?:string,key?:string|null,source_text:string,context?:string,placeholders?:array<int,string>}> $items Items to translate as provided by the caller.
+     * @param array<int,array{term:string,replacement:string}> $glossary Optional glossary constraints supplied by the caller.
+     * @param array<string,mixed> $options Provider-specific tuning options such as temperature, max_tokens, or model name.
+    * @return array{ok:bool,results?:array<int,array{id:string,translated:string,applied_glossary_terms:array<int,array{term:string,replacement:string}>,warnings:array<int,string>,confidence?:float,model_tokens?:array<string,int|float>}>,meta?:array<string,mixed>,errors?:array,raw?:array} Structured response compatible with the external API layer.
+     * @throws \coding_exception If Moodle configuration is missing during runtime checks.
      */
     public static function translate_batch($requestid, $sourcelang, $targetlang, $items, $glossary = [], $options = []) {
         global $CFG;
@@ -490,8 +500,16 @@ class backend {
     }
 
     /**
-     * Post-process a single translated item: enforce glossary and validate placeholders.
-     * Returns an array with keys: translated, applied_glossary_terms, warnings (array).
+     * Post-process a single translated entry for reporting quality signals.
+     *
+     * Applies soft glossary detection (records which replacements are already
+     * present) and verifies that each placeholder found in the original string
+     * still appears in the translated text. Results are advisory only; the
+     * translated value is not modified.
+     *
+     * @param array{id:string,source_text?:string,translated:string,placeholders?:array<int,string>} $item Item produced by the LLM provider for a single translation.
+     * @param array<int,array{term:string,replacement:string}> $glossary List of glossary constraints applied to the batch.
+     * @return array{translated:string,applied_glossary_terms:array<int,array{term:string,replacement:string}>,warnings:array<int,string>} Advisory output used by the web service response.
      */
     public static function postprocess_item($item, $glossary) {
         // $item is ['id','source_text','translated','placeholders']

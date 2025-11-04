@@ -29,6 +29,11 @@ define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/filelib.php');
 
+/**
+ * Canonical sample batch payload used to exercise translate_batch_task.
+ *
+ * @var array<int,array{id:string,component:string,key:string,source_text:string}> $items
+ */
 $items = [
     ['id' => 'region_mainpage:1bl2r7zngtgf', 'component' => 'region_mainpage', 'key' => '1bl2r7zngtgf', 'source_text' => 'CourseEditor2'],
     ['id' => 'region_mainpage:ct9vnl1b0v9x', 'component' => 'region_mainpage', 'key' => 'ct9vnl1b0v9x', 'source_text' => 'ProcessMonitor'],
@@ -43,14 +48,27 @@ $items = [
 ];
 
 $task = new \local_xlate\task\translate_batch_task();
-$task->set_custom_data((object)[
+/**
+ * @psalm-type TranslateBatchCustomData = object{
+ *     requestid:string,
+ *     sourcelang:string,
+ *     targetlang:array<int,string>,
+ *     items:array<int,array{id:string,component:string,key:string,source_text:string}>,
+ *     glossary:array<int,mixed>,
+ *     options:array<int,mixed>
+ * }
+ * @var TranslateBatchCustomData $customdata
+ */
+$customdata = (object)[
     'requestid' => uniqid('rb_'),
     'sourcelang' => 'en',
     'targetlang' => ['de'],
     'items' => $items,
     'glossary' => [],
     'options' => []
-]);
+];
+
+$task->set_custom_data($customdata);
 
 $taskid = \core\task\manager::queue_adhoc_task($task);
 echo "Queued task id: {$taskid}\n";

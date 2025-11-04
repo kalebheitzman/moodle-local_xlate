@@ -32,6 +32,12 @@ defined('MOODLE_INTERNAL') || die();
 
 /**
  * Helper for MLang migration operations (dry-run and destructive variants).
+ *
+ * Centralises the logic for scanning Moodle tables for legacy multilang tags,
+ * reporting matches, and replacing them with Local Xlate-friendly content.
+ * The helpers are reused by CLI utilities and adhoc/scheduled tasks.
+ *
+ * @package local_xlate
  */
 class mlang_migration {
     /** Default chunk size for scanning rows. */
@@ -43,9 +49,9 @@ class mlang_migration {
     /**
      * Run a non-destructive dry-run scan for MLang occurrences.
      *
-     * @param \moodle_database $DB
-     * @param array $options Optional settings: tables => [col,...], chunk, sample
-     * @return array Report containing counts and sample entries.
+     * @param \moodle_database $DB Database handle used for scanning.
+     * @param array{tables?:array<string,array<int,string>>,chunk?:int,sample?:int} $options Optional scan settings.
+     * @return array<string,mixed> Report containing counts and sample entries.
      */
     public static function dryrun(\moodle_database $DB, array $options = []): array {
         $tables = $options['tables'] ?? self::default_tables();
@@ -123,8 +129,9 @@ class mlang_migration {
 
     /**
      * Quick test for presence of mlang-like constructs.
-     * @param string $text
-     * @return bool
+     *
+     * @param string $text String to inspect.
+     * @return bool True if legacy multilang markers are present.
      */
     public static function contains_mlang(string $text): bool {
         if ($text === '') { return false; }
@@ -134,10 +141,12 @@ class mlang_migration {
     }
 
     /**
-     * Parse {mlang} and <span lang=".." class="multilang"> occurrences and extract source and translations.
-     * Returns array with keys: source_text, display_text, translations (lang => text)
-     * @param string $text
-     * @return array
+     * Parse {mlang} and <span lang=".." class="multilang"> occurrences.
+     *
+     * Extracts source/display text and translations for downstream processing.
+     *
+     * @param string $text Raw content containing legacy multilang markup.
+     * @return array{source_text:string,display_text:string,translations:array<string,string>} Parsed content data.
      */
     public static function process_mlang_tags(string $text): array {
         $sitelang = get_config('core', 'lang') ?: 'en';
@@ -194,8 +203,9 @@ class mlang_migration {
 
     /**
      * Normalise source text for hashing and matching.
-     * @param string $source
-     * @return string
+     *
+     * @param string $source Text to normalise.
+     * @return string Normalised string safe for hashing/comparison.
      */
     public static function normalise_source(string $source): string {
         $s = trim($source);
@@ -209,11 +219,14 @@ class mlang_migration {
     }
 
     /**
-     * Strip MLang blocks from text and produce a replacement string using the preferred source.
-     * Preferred may be 'other' or a sitelang code. Falls back to the first content found.
-     * @param string $text
-     * @param string $preferred
-     * @return string
+     * Strip MLang blocks and return text built from the preferred language.
+     *
+     * Preferred may be 'other', 'sitelang', or a specific language code. Falls
+     * back to the first content found when no preferred match exists.
+     *
+     * @param string $text Source text containing legacy tags.
+     * @param string $preferred Preferred language selector.
+     * @return string Cleaned text after removing legacy markup.
      */
     public static function strip_mlang_tags(string $text, string $preferred = 'other'): string {
         $sitelang = get_config('core', 'lang') ?: 'en';
@@ -276,17 +289,19 @@ class mlang_migration {
     }
 
     /**
-     * Perform destructive migration to replace MLang with chosen source across candidate columns.
-     * By default runs in dry-run mode (no writes). Set 'execute' => true to actually modify rows.
+     * Perform destructive migration replacing legacy markup with preferred text.
+     *
      * Options:
-     *  - tables => map table => [cols]
+     *  - tables => map of table => column list
      *  - chunk => rows per loop
      *  - preferred => 'other' | 'sitelang' | language code
-     *  - execute => bool (default false)
-     *  - sample => int (max samples to include in returned report)
-     * @param \moodle_database $DB
-     * @param array $options
-     * @return array report including changed count and sample entries
+     *  - execute => bool (default false, dry-run)
+     *  - sample => int (max samples to include in report)
+     *  - max_changes => int (optional cap on number of rows to update)
+     *
+     * @param \moodle_database $DB Database handle used for migration.
+     * @param array<string,mixed> $options Migration options.
+     * @return array<string,mixed> Report including changed count and samples.
      */
     public static function migrate(\moodle_database $DB, array $options = []): array {
         // Use autodiscovery if tables are not provided.

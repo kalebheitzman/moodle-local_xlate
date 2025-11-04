@@ -33,12 +33,18 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Glossary helper class.
  *
- * Basic CRUD and lookup helpers for the language glossary.
+ * Wraps CRUD operations for the glossary table and provides lookup helpers
+ * used when building prompts or presenting glossary management UIs.
+ *
+ * @package local_xlate
  */
 class glossary {
     /**
      * Lookup glossary entries for a target language.
-     * Returns an array of records.
+     *
+     * @param string $targetlang Language code the glossary entries translate into.
+     * @param int $limit Maximum number of rows to return.
+     * @return array<int,\stdClass> Records from `local_xlate_glossary` ordered by id.
      */
     public static function get_by_target($targetlang, $limit = 200) {
         global $DB;
@@ -47,8 +53,10 @@ class glossary {
     }
 
     /**
-     * Add or update a glossary entry.
-     * $data should be an object with fields matching table columns.
+     * Insert a new glossary entry.
+     *
+     * @param array|\stdClass $data Row fields matching the glossary table schema.
+     * @return int Newly inserted record id.
      */
     public static function add_entry($data) {
         global $DB;
@@ -65,8 +73,15 @@ class glossary {
     }
 
     /**
-     * Lookup best match(s) for a source string between languages.
-     * Simple exact normalized matching first; can be extended to fuzzy.
+     * Lookup best match(es) for a source string between languages.
+     *
+     * Performs an exact match on normalized source text; callers can extend to
+     * fuzzier matching upstream if needed.
+     *
+     * @param string $source Raw source text.
+     * @param string $source_lang Source language code.
+     * @param string $target_lang Target language code.
+     * @return array<int,\stdClass> Matching glossary rows.
      */
     public static function lookup_glossary($source, $source_lang, $target_lang) {
         global $DB;
@@ -79,7 +94,10 @@ class glossary {
     }
 
     /**
-     * Count distinct source groups (by source_lang + source_text) optionally filtered by search.
+     * Count distinct source groups (source_lang + source_text).
+     *
+     * @param string $search Optional substring filter applied to source text.
+     * @return int Number of distinct source entries.
      */
     public static function count_sources($search = '') {
         global $DB;
@@ -94,9 +112,15 @@ class glossary {
     }
 
     /**
-     * Get distinct source groups with pagination.
-     * Returns array of objects keyed by the returned first column (id). Each object contains
-     * fields: id (min id), source_lang, source_text, translations_count, mtime, ctime
+     * Retrieve distinct source groups with pagination.
+     *
+     * Each row contains id (MIN(id)), source_lang, source_text, translations_count,
+     * mtime, and ctime to power glossary management UIs.
+     *
+     * @param string $search Optional substring filter applied to source text.
+     * @param int $offset Offset for pagination.
+     * @param int $limit Maximum number of records to return.
+     * @return array<int,\stdClass> Records keyed by the MIN(id) column.
      */
     public static function get_sources($search = '', $offset = 0, $limit = 20) {
         global $DB;
@@ -108,7 +132,7 @@ class glossary {
         }
         // Ensure the first selected column is a unique key (use MIN(id)) so get_records_sql
         // returns an array keyed by a unique value and does not throw duplicate-key errors.
-    $sql = "SELECT MIN(id) as id, source_lang, source_text, COUNT(*) as translations_count, MAX(mtime) as mtime, MAX(ctime) as ctime
+        $sql = "SELECT MIN(id) as id, source_lang, source_text, COUNT(*) as translations_count, MAX(mtime) as mtime, MAX(ctime) as ctime
           FROM {local_xlate_glossary}
           $where
           GROUP BY source_lang, source_text
@@ -118,7 +142,11 @@ class glossary {
     }
 
     /**
-     * Get all translations for a given source_text + source_lang.
+     * Retrieve every translation for a given source string within a language.
+     *
+     * @param string $source_text Source text to match.
+     * @param string $source_lang Source language code.
+     * @return array<int,\stdClass> Glossary rows ordered by target language.
      */
     public static function get_translations_for_source($source_text, $source_lang) {
         global $DB;
@@ -128,8 +156,15 @@ class glossary {
     }
 
     /**
-     * Save or update a translation for a source_text/source_lang/target_lang.
-     * Returns the record id of the inserted/updated row.
+     * Upsert a translation for a source_lang/source_text/target_lang triple.
+     *
+     * @param string $source_lang Source language code.
+     * @param string $source_text Source text to translate.
+     * @param string $target_lang Target language code.
+     * @param string $target_text Translation text to store.
+     * @param int $userid User id recorded in created_by when inserting.
+     * @return int Record id of the inserted or updated row.
+     * @throws \invalid_argument_exception When required fields are missing.
      */
     public static function save_translation($source_lang, $source_text, $target_lang, $target_text, $userid = 0) {
         global $DB;

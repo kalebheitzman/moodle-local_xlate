@@ -27,6 +27,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * @var array<string,array<string,mixed>> Capability map registered with Moodle.
+ */
 $capabilities = [
     'local/xlate:manage' => [
         'riskbitmask' => RISK_CONFIG,

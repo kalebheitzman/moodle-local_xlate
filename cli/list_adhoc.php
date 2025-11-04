@@ -31,6 +31,11 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/filelib.php');
 
 global $DB;
+/**
+ * Current adhoc task rows fetched for inspection.
+ *
+ * @var array<int,\stdClass>
+ */
 $rows = $DB->get_records('task_adhoc');
 if (empty($rows)) {
     echo "No adhoc tasks found.\n";

@@ -34,6 +34,9 @@ require_once(__DIR__ . '/../../../config.php');
 global $DB, $CFG, $USER;
 
 // Parse argv style options
+/**
+ * @var array<string, string|bool> $opts command-line switches keyed without the leading dashes
+ */
 $opts = [];
 foreach ($argv as $arg) {
     if (strpos($arg, '--') === 0) {
@@ -44,6 +47,7 @@ foreach ($argv as $arg) {
 
 $courseid = isset($opts['courseid']) ? (int)$opts['courseid'] : 0;
 $batchsize = isset($opts['batchsize']) ? (int)$opts['batchsize'] : 50;
+/** @var array<int,string> $targetlangs */
 $targetlangs = [];
 if (!empty($opts['targetlangs'])) {
     $targetlangs = array_map('trim', explode(',', $opts['targetlangs']));
@@ -57,6 +61,7 @@ if (!$courseid) {
 // Count keys
 $total = $DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
 
+/** @var stdClass $record row persisted to local_xlate_course_job */
 $record = new stdClass();
 $record->courseid = $courseid;
 $record->userid = isset($USER->id) ? (int)$USER->id : 0;
@@ -64,6 +69,10 @@ $record->status = 'pending';
 $record->total = $total;
 $record->processed = 0;
 $record->batchsize = $batchsize;
+/**
+ * @var array{batchsize:int,targetlang:array<int,string>,sourcelang:string} $options
+ *     Persisted job options consumed by \local_xlate\task\translate_course_task.
+ */
 $options = [
     'batchsize' => $batchsize,
     'targetlang' => $targetlangs,
@@ -77,6 +86,7 @@ $record->mtime = time();
 $jobid = $DB->insert_record('local_xlate_course_job', $record);
 echo "Inserted job id: {$jobid} (courseid={$courseid}, total={$total})\n";
 
+/** @var \local_xlate\task\translate_course_task $task */
 $task = new \local_xlate\task\translate_course_task();
 $task->set_custom_data((object)['jobid' => $jobid]);
 \core\task\manager::queue_adhoc_task($task);

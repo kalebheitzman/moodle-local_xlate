@@ -29,6 +29,9 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../classes/hooks/output.php');
 
+/**
+ * @var array<int,array<string,mixed>> Hook callback registrations for Moodle core hook dispatcher.
+ */
 $callbacks = [
     [
         'hook' => \core\hook\output\before_standard_head_html_generation::class,

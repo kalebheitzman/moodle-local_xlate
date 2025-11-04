@@ -26,8 +26,8 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Execute local_xlate upgrade steps.
  *
- * @param int $oldversion The version we are upgrading from.
- * @return bool
+ * @param int $oldversion The plugin version we are upgrading from.
+ * @return bool Always returns true once upgrade path completes.
  */
 function xmldb_local_xlate_upgrade(int $oldversion): bool {
 

@@ -27,6 +27,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * @var array<int,array<string,mixed>> Scheduled task definitions consumed by Moodle cron.
+ */
 $tasks = [
     [
         'classname' => 'local_xlate\task\mlang_cleanup_task',

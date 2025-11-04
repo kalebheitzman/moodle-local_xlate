@@ -30,11 +30,29 @@ namespace local_xlate\task;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Scheduled task that performs periodic multilang cleanup migrations.
+ *
+ * @package local_xlate\task
+ */
 class mlang_cleanup_task extends \core\task\scheduled_task {
+    /**
+     * Provide the Moodle display name for the task.
+     *
+     * @return string
+     */
     public function get_name() {
         return get_string('mlangcleanuptask', 'local_xlate');
     }
 
+    /**
+     * Execute the cleanup pass via the migration helper.
+     *
+     * Runs the multilang migration in write mode to replace legacy tags and
+     * emits summary information to the scheduled task log via mtrace.
+     *
+     * @return void
+     */
     public function execute() {
         global $DB;
         mtrace('[mlang_cleanup_task] Starting scheduled mlang cleanup...');

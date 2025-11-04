@@ -28,6 +28,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * @var array<string,array<string,mixed>> External service function definitions exposed by the plugin.
+ */
 $functions = [
     'local_xlate_save_key' => [
         'classname' => 'local_xlate_external',

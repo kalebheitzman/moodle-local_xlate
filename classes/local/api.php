@@ -13,7 +13,6 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
-
 /**
  * Core API for the Local Xlate plugin.
  *
@@ -30,14 +29,31 @@ namespace local_xlate\local;
 
 defined('MOODLE_INTERNAL') || die();
 
+/**
+ * Facade for translation persistence, bundle assembly, and cache coordination.
+ *
+ * Centralises the data-layer affordances used by the plugin's REST endpoints,
+ * UI controllers, and scheduled tasks for reading and writing translation
+ * records. Methods in this class encapsulate the SQL access patterns, cache
+ * invalidation rules, and version bookkeeping required to keep translation
+ * bundles in sync.
+ *
+ * @package local_xlate\local
+ */
 class api {
     /**
-     * Get translations for a specific set of keys only.
-     * Returns a flat associative array: { xkey => translation }
+     * Fetch a translation bundle for explicit keys without extra metadata.
      *
-     * @param string $lang Language code
-     * @param array $keys List of xkeys to fetch
-     * @return array Map of xkey => text
+     * Applies component filters derived from the page context and optionally
+     * narrows results to keys associated with a course. Useful for AJAX
+     * endpoints that only require xkey => translation pairs.
+     *
+     * @param string $lang Target language code (e.g. `en`, `es`).
+     * @param array<int,string> $keys Stable translation keys to resolve.
+     * @param \context|null $context Context used to derive component filters; defaults to system.
+     * @param string $pagetype Optional pagetype hint (e.g. `mod-forum-view`).
+     * @param int $courseid Optional course to scope associations.
+     * @return array<string,string> Map of xkey => translated text.
      */
     public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0): array {
         global $DB;
@@ -91,7 +107,11 @@ class api {
             $params['courseid'] = $courseid;
         }
 
-        $sql = "SELECT k.xkey, t.text\n+                  FROM {local_xlate_key} k\n+                  JOIN {local_xlate_tr} t ON t.keyid = k.id\n+                  $coursejoin\n+                 WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql$componentsql$coursewhere";
+    $sql = "SELECT k.xkey, t.text
+          FROM {local_xlate_key} k
+          JOIN {local_xlate_tr} t ON t.keyid = k.id
+          $coursejoin
+         WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql$componentsql$coursewhere";
 
         $recs = $DB->get_records_sql($sql, $params);
 
@@ -104,14 +124,16 @@ class api {
     }
 
     /**
-     * Get translations for a specific set of keys and optionally include
-     * association information for a given course.
-     * Returns an array with keys: translations (map xkey=>text), sourceMap, associations (optional map xkey=>bool)
+     * Resolve translations for specific keys and expose source + course metadata.
      *
-     * @param string $lang
-     * @param array $keys
-     * @param int $courseid
-     * @return array
+     * Extends {@see get_keys_bundle()} by returning the normalised source map
+     * used for fuzzy lookups and, when a course ID is supplied, a boolean map
+     * indicating whether each key is associated with that course.
+     *
+     * @param string $lang Target language code.
+     * @param array<int,string> $keys Stable translation keys to resolve.
+     * @param int $courseid Optional course to include association status for.
+     * @return array{translations:array<string,string>,sourceMap:array<string,string>,associations?:array<string,bool>} Structured bundle response.
      */
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
@@ -174,13 +196,18 @@ class api {
     }
     
     /**
-     * Get page-specific translation bundle with context filtering
-     * @param string $lang Language code
-     * @param string $pagetype Moodle page type
-     * @param \context $context Current context
-     * @param \stdClass $user Current user
-     * @param int $courseid Course ID if applicable
-     * @return array Translation bundle
+     * Build a cached bundle for the current page context.
+     *
+     * Generates a translation set plus source map tailored to the supplied
+     * pagetype, context, and optional course. Results are cached using the
+     * context-sensitive cache key helpers until invalidated by write operations.
+     *
+     * @param string $lang Language code for the bundle.
+     * @param string $pagetype Optional Moodle pagetype hint.
+     * @param \context|null $context Active execution context (defaults to system).
+     * @param \stdClass|null $user Optional user object (defaults to global $USER).
+     * @param int $courseid Optional course for scoping results.
+     * @return array{translations:array<string,string>,sourceMap:array<string,string>} Cached bundle payload.
      */
     public static function get_page_bundle(string $lang, string $pagetype = '', ?\context $context = null, ?\stdClass $user = null, int $courseid = 0): array {
         global $DB, $USER;
@@ -236,15 +263,19 @@ class api {
         }
         
         // Cache for shorter time due to context sensitivity
-    $cache->set($cache_key, $bundle);
+        $cache->set($cache_key, $bundle);
         self::remember_bundle_cache_key($lang, $cache_key, $cache);
         return $bundle;
     }
 
     /**
-     * Normalise source text for fuzzy lookups (case/punctuation agnostic)
-     * @param string|null $source
-     * @return string
+     * Normalise source text for fuzzy lookups (case/punctuation agnostic).
+     *
+     * Collapses whitespace, lowercases, and removes punctuation so callers can
+     * build deterministic source maps that survive minor content variations.
+     *
+     * @param string|null $source Raw source string from storage.
+     * @return string Normalised key safe for use in associative arrays.
      */
     private static function normalise_source(?string $source): string {
         if ($source === null) {
@@ -270,11 +301,15 @@ class api {
     }
     
     /**
-     * Get component filters based on page context
-     * @param string $pagetype
-     * @param \context $context
-     * @param int $courseid
-     * @return array
+     * Derive component filter patterns for the current request.
+     *
+     * Uses pagetype conventions and context level to build a list of component
+     * LIKE patterns that keep translation bundles focused on relevant strings.
+     *
+     * @param string $pagetype Moodle pagetype string (e.g. `mod-quiz-view`).
+     * @param \context $context Active context driving visibility rules.
+     * @param int $courseid Optional course influencing course-specific filters.
+     * @return array<int,string> Component wildcards to feed into SQL LIKE expressions.
      */
     private static function get_component_filters(string $pagetype, \context $context, int $courseid): array {
         $filters = ['core', 'theme_%', 'block_%', 'local_xlate'];
@@ -309,6 +344,15 @@ class api {
         return $filters;
     }
 
+    /**
+     * Convert component wildcard list into SQL fragments.
+     *
+     * Produces the WHERE clause snippet and related named parameters that can
+     * be appended to translation bundle queries.
+     *
+     * @param array<int,string> $filters Component patterns produced by {@see get_component_filters()}.
+     * @return array{0:string,1:array<string,string>} Tuple of SQL suffix and parameter map.
+     */
     private static function build_component_filter_sql(array $filters): array {
         if (empty($filters)) {
             return ['', []];
@@ -327,15 +371,38 @@ class api {
         return [$sql, $params];
     }
 
+    /**
+     * Compose a cache key for a bundle scoped to lang/context/pagetype/course.
+     *
+     * @param string $lang Language code.
+     * @param \context $context Context instance that constrains visibility.
+     * @param string $pagetype Sanitised pagetype string.
+     * @param int $courseid Course identifier (0 when global).
+     * @return string Cache key safe for use with Moodle cache API.
+     */
     private static function make_bundle_cache_key(string $lang, \context $context, string $pagetype, int $courseid): string {
         $sanitisedpagetype = preg_replace('/[^a-zA-Z0-9]/', '', $pagetype);
         return $lang . '_' . $context->id . '_' . $sanitisedpagetype . '_' . $courseid;
     }
 
+    /**
+     * Cache key prefix used to store the list of bundle cache entries per lang.
+     *
+     * @param string $lang Language code.
+     * @return string Cache key for the bundle index entry in Moodle cache.
+     */
     private static function bundle_index_cache_key(string $lang): string {
         return '__index__' . $lang;
     }
 
+    /**
+     * Track a bundle cache key in the per-language index for later invalidation.
+     *
+     * @param string $lang Language code whose index to update.
+     * @param string $cachekey Bundle cache key that was just written.
+     * @param \cache $cache Cache store instance managing bundle entries.
+     * @return void
+     */
     private static function remember_bundle_cache_key(string $lang, string $cachekey, \cache $cache): void {
         $indexkey = self::bundle_index_cache_key($lang);
         $keys = $cache->get($indexkey);
@@ -349,6 +416,14 @@ class api {
         }
     }
 
+    /**
+     * Return the current bundle version string for a language.
+     *
+     * Falls back to `dev` when no version record exists yet.
+     *
+     * @param string $lang Language code.
+     * @return string Version identifier consumed by client caches.
+     */
     public static function get_version(string $lang): string {
         global $DB;
         $rec = $DB->get_record('local_xlate_bundle', ['lang' => $lang], '*', IGNORE_MISSING);
@@ -356,10 +431,11 @@ class api {
     }
     
     /**
-     * Get translation key by component and xkey
-     * @param string $component
-     * @param string $xkey
-     * @return object|false
+     * Fetch a translation key record by component + xkey composite.
+     *
+     * @param string $component Moodle component name (e.g. `local_xlate`).
+     * @param string $xkey Stable key identifier.
+     * @return \stdClass|false Database record or false when missing.
      */
     public static function get_key_by_component_xkey(string $component, string $xkey) {
         global $DB;
@@ -367,11 +443,15 @@ class api {
     }
     
     /**
-     * Create or update a translation key
-     * @param string $component
-     * @param string $xkey  
-     * @param string $source
-     * @return int Key ID
+     * Ensure a translation key exists and return its ID.
+     *
+     * Updates the source string and mtime when the key already exists; creates
+     * a new record otherwise.
+     *
+     * @param string $component Moodle component identifier.
+     * @param string $xkey Translation key identifier.
+     * @param string $source Optional source string to store alongside the key.
+     * @return int Database ID for the key record.
      */
     public static function create_or_update_key(string $component, string $xkey, string $source = ''): int {
         global $DB;
@@ -398,11 +478,16 @@ class api {
     }
 
     /**
-     * Associate multiple keys with a course, creating keys if missing.
-     * @param array $keys Array of ['component'=>..., 'xkey'=>..., 'source'=>...]
-     * @param int $courseid
-     * @param string $context
-     * @return array Details per key: key => status ('created'|'associated'|'exists'|'error')
+     * Associate multiple translation keys with a course, creating missing keys.
+     *
+     * Processes keys in chunks to keep queries manageable, creates new key
+     * records when necessary, and inserts association rows while handling
+     * races gracefully.
+     *
+     * @param array<int,array{component?:string,xkey:string,source?:string}> $keys Keys to associate.
+     * @param int $courseid Course identifier.
+     * @param string $context Optional free-form context string stored alongside the association.
+     * @return array<string,string> Status per xkey (`created_and_associated`, `associated`, `exists`, `error`, etc.).
      */
     public static function associate_keys_with_course(array $keys, int $courseid, string $context = ''): array {
         global $DB, $USER;
@@ -493,12 +578,17 @@ class api {
     }
     
     /**
-     * Save translation for a key
-     * @param int $keyid
-     * @param string $lang
-     * @param string $text
-     * @param int $status
-     * @return int Translation ID
+     * Upsert a translation record for the given key and language.
+     *
+     * Updates timestamps/status flags on existing records and creates new
+     * rows when no match is present.
+     *
+     * @param int $keyid Foreign key for the translation key.
+     * @param string $lang Language code.
+     * @param string $text Translated text to persist.
+     * @param int $status Publication status flag (default approved).
+     * @param int $reviewed Reviewer flag (0/1).
+     * @return int Translation record ID.
      */
     public static function save_translation(int $keyid, string $lang, string $text, int $status = 1, int $reviewed = 0): int {
         global $DB;
@@ -529,13 +619,22 @@ class api {
     }
     
     /**
-     * Save key with translation in one operation
-     * @param string $component
-     * @param string $xkey
-     * @param string $source
-     * @param string $lang
-     * @param string $translation
-     * @return int Key ID
+     * Persist a translation key and translated string within a transaction.
+     *
+     * Coordinates key creation, translation upsert, optional course association,
+     * cache invalidation, and bundle version updates. Rolls back the delegated
+     * transaction when any step fails.
+     *
+     * @param string $component Moodle component identifier.
+     * @param string $xkey Translation key identifier.
+     * @param string $source Source string paired with the key.
+     * @param string $lang Language code for the translation.
+     * @param string $translation Translated text.
+     * @param int $reviewed Reviewer flag persisted on the translation row.
+     * @param int $courseid Optional course association to record.
+     * @param string $context Optional context string stored with the association.
+     * @return int Key ID for the saved translation.
+     * @throws \Throwable Propagates lower-level database exceptions for caller handling.
      */
     public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = ''): int {
         global $DB;
@@ -605,9 +704,13 @@ class api {
     }
     
     /**
-     * Generate new version hash for a language
-     * @param string $lang
-     * @return string
+     * Compute a deterministic bundle version hash for a language.
+     *
+     * Uses the maximum mtime across keys/translations to invalidate cached
+     * bundles whenever content changes.
+     *
+     * @param string $lang Language code.
+     * @return string SHA1 hash representing the latest bundle state.
      */
     public static function generate_version_hash(string $lang): string {
         global $DB;
@@ -625,9 +728,13 @@ class api {
     }
     
     /**
-     * Update bundle version for a language
-     * @param string $lang
-     * @return string New version hash
+     * Persist a new bundle version hash for the given language.
+     *
+     * Creates the row when absent and updates the timestamp for existing
+     * records.
+     *
+     * @param string $lang Language code being refreshed.
+     * @return string Newly computed version hash.
      */
     public static function update_bundle_version(string $lang): string {
         global $DB;
@@ -654,8 +761,13 @@ class api {
     }
     
     /**
-     * Invalidate bundle cache for a language
-     * @param string $lang
+     * Flush all cached bundles for a language.
+     *
+     * Uses the per-language index to remove every context-specific cache entry
+     * plus the language-level item to ensure subsequent reads rebuild bundles.
+     *
+     * @param string $lang Language whose cache entries should be removed.
+     * @return void
      */
     public static function invalidate_bundle_cache(string $lang): void {
         $cache = \cache::make('local_xlate', 'bundle');
@@ -673,8 +785,12 @@ class api {
     }
     
     /**
-     * Rebuild all bundle versions
-     * @return array Languages rebuilt
+     * Recompute bundle versions for every language with approved translations.
+     *
+     * Clears caches and updates version hashes, returning the list of affected
+     * language codes for logging or UI feedback.
+     *
+     * @return array<int,string> Languages rebuilt.
      */
     public static function rebuild_all_bundles(): array {
         global $DB;
@@ -695,11 +811,12 @@ class api {
     }
     
     /**
-     * Get all translation keys with pagination
-     * @param int $offset
-     * @param int $limit
-     * @param string $search
-     * @return array
+     * Retrieve translation keys with optional search and pagination.
+     *
+     * @param int $offset Record offset for pagination.
+     * @param int $limit Number of rows to return.
+     * @param string $search Optional search term applied across component, xkey, and source fields.
+     * @return array<int,\stdClass> List of key records including translation_count field.
      */
     public static function get_keys_paginated(int $offset = 0, int $limit = 50, string $search = ''): array {
         global $DB;
@@ -728,9 +845,10 @@ class api {
     }
     
     /**
-     * Count total translation keys
-     * @param string $search
-     * @return int
+     * Count translation keys matching an optional search term.
+     *
+     * @param string $search Optional search query applied to component/xkey/source.
+     * @return int Total record count.
      */
     public static function count_keys(string $search = ''): int {
         global $DB;

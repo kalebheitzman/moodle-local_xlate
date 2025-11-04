@@ -36,16 +36,34 @@ require_once(dirname(dirname(__DIR__)) . '/classes/mlang_migration.php');
 
 /**
  * Adhoc task wrapper to run a dry-run MLang scan and produce a JSON report.
+ *
+ * Custom data options:
+ *  - tables (string[])
+ *  - chunk (int)
+ *  - sample (int)
+ *  - discover (array) passed to discover_candidate_columns when tables omitted
+ *
+ * @package local_xlate\task
  */
 class mlang_dryrun extends adhoc_task {
     /**
      * Human-readable name for the task.
+     *
      * @return string
      */
     public function get_name() {
         return get_string('mlangdryrun', 'local_xlate');
     }
 
+    /**
+     * Execute the dry-run migration scan.
+     *
+     * Normalises custom data into migration options, auto-discovers candidate
+     * columns when none are supplied, invokes the migration helper in dry-run
+     * mode, and records the output file path in the developer log.
+     *
+     * @return void
+     */
     public function execute() {
         global $DB;
 
