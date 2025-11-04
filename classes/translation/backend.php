@@ -450,40 +450,65 @@ class backend {
 
             // Log batch-level token usage to local_xlate_token_batch.
             global $DB;
-            if (!empty($meta['usage_tokens']['total']) && is_array($results)) {
-                $now = time();
-                $tokens = (int)$meta['usage_tokens']['total'];
-                $prompt_tokens = isset($meta['usage_tokens']['prompt']) ? (int)$meta['usage_tokens']['prompt'] : null;
-                $completion_tokens = isset($meta['usage_tokens']['completion']) ? (int)$meta['usage_tokens']['completion'] : null;
+            $usage = $meta['usage_tokens'] ?? null;
+            if (is_array($usage) && (!empty($usage['prompt']) || !empty($usage['completion']) || !empty($usage['total']))) {
+                $inputtokens = isset($usage['prompt']) ? (int)$usage['prompt'] : 0;
+                $cachedtokens = isset($options['cached_input_tokens']) ? (int)$options['cached_input_tokens'] : 0;
+                $outputtokens = isset($usage['completion']) ? (int)$usage['completion'] : 0;
+                $totaltokens = (int)($usage['total'] ?? ($inputtokens + $cachedtokens + $outputtokens));
+
+                $inputrate = (float)get_config('local_xlate', 'pricing_input_per_million');
+                $cachedrate = (float)get_config('local_xlate', 'pricing_cached_input_per_million');
+                $outputrate = (float)get_config('local_xlate', 'pricing_output_per_million');
+
+                $inputcost = $inputtokens > 0 ? ($inputtokens / 1000000) * $inputrate : 0.0;
+                $cachedcost = $cachedtokens > 0 ? ($cachedtokens / 1000000) * $cachedrate : 0.0;
+                $outputcost = $outputtokens > 0 ? ($outputtokens / 1000000) * $outputrate : 0.0;
+
+                // If a caller provided explicit cost breakdown, prefer it.
+                if (!empty($options['input_cost'])) {
+                    $inputcost = (float)$options['input_cost'];
+                }
+                if (!empty($options['cached_input_cost'])) {
+                    $cachedcost = (float)$options['cached_input_cost'];
+                }
+                if (!empty($options['output_cost'])) {
+                    $outputcost = (float)$options['output_cost'];
+                }
+
+                $totalcost = $inputcost + $cachedcost + $outputcost;
+
                 $modelstr = $meta['model'] ?? '';
                 $elapsed = $meta['elapsed_ms'] ?? 0;
-                $lang = $targetlang;
+                $langvalue = is_array($targetlang) ? implode(',', $targetlang) : (string)$targetlang;
                 $batchsize = is_array($results) ? count($results) : 0;
-                $cost = null;
-                // Try to estimate cost if pricing config is available.
-                try {
-                    $pricing = include(__DIR__ . '/../../../config/pricing.php');
-                    $modelpricing = $pricing[$modelstr] ?? $pricing['gpt-4.1'] ?? null;
-                    if ($modelpricing && $prompt_tokens !== null && $completion_tokens !== null) {
-                        $cost_prompt = ($prompt_tokens / 1000.0) * ($modelpricing['prompt'] ?? 0);
-                        $cost_completion = ($completion_tokens / 1000.0) * ($modelpricing['completion'] ?? 0);
-                        $cost = $cost_prompt + $cost_completion;
+
+                $usagejobid = null;
+                if (is_array($options)) {
+                    if (array_key_exists('usage_jobid', $options)) {
+                        $usagejobid = (int)$options['usage_jobid'];
+                    } elseif (array_key_exists('jobid', $options)) {
+                        $usagejobid = (int)$options['jobid'];
                     }
-                } catch (\Throwable $e) {
-                    // If pricing config is missing or error, skip cost.
                 }
+
                 $rec = [
-                    'timecreated' => $now,
-                    'lang' => $lang,
+                    'timecreated' => time(),
+                    'lang' => $langvalue,
                     'batchsize' => $batchsize,
-                    'tokens' => $tokens,
-                    'prompt_tokens' => $prompt_tokens,
-                    'completion_tokens' => $completion_tokens,
                     'model' => $modelstr,
-                    'cost' => $cost,
+                    'input_tokens' => $inputtokens,
+                    'cached_input_tokens' => $cachedtokens,
+                    'output_tokens' => $outputtokens,
+                    'input_cost' => $inputcost,
+                    'cached_input_cost' => $cachedcost,
+                    'output_cost' => $outputcost,
+                    'total_cost' => $totalcost,
                     'response_ms' => $elapsed,
-                    'jobid' => null // Optionally set if available
+                    'jobid' => $usagejobid,
+                    'total_tokens' => $totaltokens
                 ];
+
                 try {
                     $DB->insert_record('local_xlate_token_batch', $rec, false);
                 } catch (\Exception $e) {

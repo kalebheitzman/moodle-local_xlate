@@ -56,37 +56,41 @@ if ($modelfilter !== '') {
 $wheresql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $total = $DB->count_records_select('local_xlate_token_batch', $where ? implode(' AND ', $where) : '', $params);
-$totaltokens = $DB->get_field_sql('SELECT SUM(tokens) FROM {local_xlate_token_batch} ' . $wheresql, $params);
-$totalprompt = $DB->get_field_sql('SELECT SUM(prompt_tokens) FROM {local_xlate_token_batch} ' . $wheresql, $params);
-$totalcompletion = $DB->get_field_sql('SELECT SUM(completion_tokens) FROM {local_xlate_token_batch} ' . $wheresql, $params);
-$totalcost = $DB->get_field_sql('SELECT SUM(cost) FROM {local_xlate_token_batch} ' . $wheresql, $params);
+$totals = $DB->get_record_sql('SELECT
+        SUM(input_tokens) AS input_tokens,
+        SUM(cached_input_tokens) AS cached_input_tokens,
+        SUM(output_tokens) AS output_tokens,
+        SUM(total_tokens) AS total_tokens,
+        SUM(input_cost) AS input_cost,
+        SUM(cached_input_cost) AS cached_input_cost,
+        SUM(output_cost) AS output_cost,
+        SUM(total_cost) AS total_cost
+    FROM {local_xlate_token_batch} ' . $wheresql, $params) ?: (object)[];
 
-// Load pricing table
-$pricing = include(__DIR__ . '/config/pricing.php');
-
-// Determine model for pricing (if filtered, use that; else use most common or default)
-
-$model = $modelfilter;
-if (!$model) {
-    $model = $DB->get_field_sql('SELECT model FROM {local_xlate_token_batch} WHERE model IS NOT NULL AND model != "" GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1');
-}
-$model = $model ?: 'gpt-4.1';
-$modelpricing = $pricing[$model] ?? $pricing['gpt-4.1'];
-
-// Calculate estimated costs
-
-// Use stored cost if available, else estimate
-if ($totalcost !== null && $totalcost > 0) {
-    $cost_total = $totalcost;
-    $cost_prompt = $cost_completion = null;
-} else {
-    $cost_prompt = $totalprompt ? ($totalprompt / 1000.0) * $modelpricing['prompt'] : 0;
-    $cost_completion = $totalcompletion ? ($totalcompletion / 1000.0) * $modelpricing['completion'] : 0;
-    $cost_total = $cost_prompt + $cost_completion;
-}
+$totalinputtokens = (int)($totals->input_tokens ?? 0);
+$totalcachedtokens = (int)($totals->cached_input_tokens ?? 0);
+$totaloutputtokens = (int)($totals->output_tokens ?? 0);
+$totaltokens = (int)($totals->total_tokens ?? ($totalinputtokens + $totalcachedtokens + $totaloutputtokens));
+$totalinputcost = (float)($totals->input_cost ?? 0.0);
+$totalcachedcost = (float)($totals->cached_input_cost ?? 0.0);
+$totaloutputcost = (float)($totals->output_cost ?? 0.0);
+$totalcost = (float)($totals->total_cost ?? ($totalinputcost + $totalcachedcost + $totaloutputcost));
 
 
 $usages = $DB->get_records_sql('SELECT * FROM {local_xlate_token_batch} ' . $wheresql . ' ORDER BY timecreated DESC', $params, $page * $perpage, $perpage);
+
+// Pricing config used for fallback calculations when stored cost fields are empty.
+$inputrate = (float)get_config('local_xlate', 'pricing_input_per_million');
+$cachedrate = (float)get_config('local_xlate', 'pricing_cached_input_per_million');
+$outputrate = (float)get_config('local_xlate', 'pricing_output_per_million');
+
+$hasstoredcosts = ($totalcost > 0) || ($totalinputcost > 0) || ($totalcachedcost > 0) || ($totaloutputcost > 0);
+if (!$hasstoredcosts && ($totalinputtokens || $totalcachedtokens || $totaloutputtokens)) {
+    $totalinputcost = $totalinputtokens ? ($totalinputtokens / 1000000) * $inputrate : 0.0;
+    $totalcachedcost = $totalcachedtokens ? ($totalcachedtokens / 1000000) * $cachedrate : 0.0;
+    $totaloutputcost = $totaloutputtokens ? ($totaloutputtokens / 1000000) * $outputrate : 0.0;
+    $totalcost = $totalinputcost + $totalcachedcost + $totaloutputcost;
+}
 
 // Get distinct languages and models for filter dropdowns.
 $langs = $DB->get_fieldset_sql('SELECT DISTINCT lang FROM {local_xlate_token_batch} ORDER BY lang');
@@ -102,16 +106,19 @@ echo html_writer::tag('p', 'This page shows token usage for all autotranslation 
 echo html_writer::start_tag('ul', ['class' => 'list-unstyled mb-3']);
 echo html_writer::tag('li', '<strong>Total batches:</strong> ' . (int)$total);
 echo html_writer::tag('li', '<strong>Total tokens:</strong> ' . (int)$totaltokens);
-echo html_writer::tag('li', '<strong>Total prompt tokens:</strong> ' . (int)$totalprompt);
-echo html_writer::tag('li', '<strong>Total completion tokens:</strong> ' . (int)$totalcompletion);
-if ($cost_prompt !== null) {
-    echo html_writer::tag('li', '<strong>Estimated prompt cost:</strong> $' . number_format($cost_prompt, 4));
-    echo html_writer::tag('li', '<strong>Estimated completion cost:</strong> $' . number_format($cost_completion, 4));
-}
-echo html_writer::tag('li', '<strong>Total cost:</strong> $' . number_format($cost_total, 4));
+echo html_writer::tag('li', '<strong>Input tokens:</strong> ' . (int)$totalinputtokens);
+echo html_writer::tag('li', '<strong>Cached input tokens:</strong> ' . (int)$totalcachedtokens);
+echo html_writer::tag('li', '<strong>Output tokens:</strong> ' . (int)$totaloutputtokens);
+echo html_writer::tag('li', '<strong>Total cost:</strong> $' . number_format($totalcost, 4));
+echo html_writer::tag('li', '<strong>Input cost:</strong> $' . number_format($totalinputcost, 4));
+echo html_writer::tag('li', '<strong>Cached input cost:</strong> $' . number_format($totalcachedcost, 4));
+echo html_writer::tag('li', '<strong>Output cost:</strong> $' . number_format($totaloutputcost, 4));
 echo html_writer::end_tag('ul');
-// Show pricing table link/info
-echo html_writer::div('Pricing is based on the selected model. <a href="pricing.php" target="_blank">View/edit pricing table</a>.', 'mb-3 text-muted');
+if (!$hasstoredcosts && ($totalinputtokens || $totalcachedtokens || $totaloutputtokens)) {
+    echo html_writer::div('Totals estimated using current pricing settings because stored cost data was missing.', 'mb-3 text-muted');
+} else {
+    echo html_writer::div('Costs reflect the values stored with each batch. Update pricing under Site administration > Plugins > Local plugins > Local Xlate.', 'mb-3 text-muted');
+}
 
 // Filter form
 echo html_writer::start_tag('form', ['method' => 'get', 'class' => 'form-inline mb-3']);
@@ -134,11 +141,12 @@ echo html_writer::start_tag('tr');
 echo html_writer::tag('th', 'Time');
 echo html_writer::tag('th', 'Language');
 echo html_writer::tag('th', 'Batch size');
-echo html_writer::tag('th', 'Tokens');
-echo html_writer::tag('th', 'Prompt');
-echo html_writer::tag('th', 'Completion');
+echo html_writer::tag('th', 'Input tokens');
+echo html_writer::tag('th', 'Cached tokens');
+echo html_writer::tag('th', 'Output tokens');
+echo html_writer::tag('th', 'Total tokens');
 echo html_writer::tag('th', 'Model');
-echo html_writer::tag('th', 'Cost');
+echo html_writer::tag('th', 'Total cost');
 echo html_writer::end_tag('tr');
 echo html_writer::end_tag('thead');
 echo html_writer::start_tag('tbody');
@@ -147,27 +155,32 @@ foreach ($usages as $row) {
     echo html_writer::tag('td', userdate($row->timecreated));
     echo html_writer::tag('td', s($row->lang));
     echo html_writer::tag('td', (int)$row->batchsize);
-    echo html_writer::tag('td', (int)$row->tokens);
-    echo html_writer::tag('td', isset($row->prompt_tokens) ? (int)$row->prompt_tokens : '');
-    echo html_writer::tag('td', isset($row->completion_tokens) ? (int)$row->completion_tokens : '');
-    echo html_writer::tag('td', s($row->model));
-    // Dynamically calculate cost if missing or zero
-    $costval = (isset($row->cost) && is_numeric($row->cost) && $row->cost > 0) ? $row->cost : null;
-    if ($costval === null) {
-        $pricing = include(__DIR__ . '/config/pricing.php');
-        $model = $row->model ?? 'gpt-4.1';
-        $modelpricing = $pricing[$model] ?? $pricing['gpt-4.1'] ?? null;
-        $prompt = isset($row->prompt_tokens) ? (int)$row->prompt_tokens : 0;
-        $completion = isset($row->completion_tokens) ? (int)$row->completion_tokens : 0;
-        if ($modelpricing) {
-            $cost_prompt = ($prompt / 1000.0) * ($modelpricing['prompt'] ?? 0);
-            $cost_completion = ($completion / 1000.0) * ($modelpricing['completion'] ?? 0);
-            $costval = $cost_prompt + $cost_completion;
+    $inputtokens = isset($row->input_tokens) ? (int)$row->input_tokens : (int)($row->prompt_tokens ?? 0);
+    $cachedtokens = isset($row->cached_input_tokens) ? (int)$row->cached_input_tokens : 0;
+    $outputtokens = isset($row->output_tokens) ? (int)$row->output_tokens : (int)($row->completion_tokens ?? 0);
+    $totaltokensrow = isset($row->total_tokens) ? (int)$row->total_tokens : (int)($row->tokens ?? ($inputtokens + $cachedtokens + $outputtokens));
+    $inputcost = isset($row->input_cost) ? (float)$row->input_cost : 0.0;
+    $cachedcost = isset($row->cached_input_cost) ? (float)$row->cached_input_cost : 0.0;
+    $outputcost = isset($row->output_cost) ? (float)$row->output_cost : 0.0;
+    $totalcostrow = isset($row->total_cost) ? (float)$row->total_cost : null;
+    if ($totalcostrow === null || $totalcostrow <= 0) {
+        $storedcost = isset($row->cost) ? (float)$row->cost : 0.0;
+        if ($storedcost > 0) {
+            $totalcostrow = $storedcost;
         } else {
-            $costval = 0;
+            $inputcost = $inputtokens ? ($inputtokens / 1000000) * $inputrate : 0.0;
+            $cachedcost = $cachedtokens ? ($cachedtokens / 1000000) * $cachedrate : 0.0;
+            $outputcost = $outputtokens ? ($outputtokens / 1000000) * $outputrate : 0.0;
+            $totalcostrow = $inputcost + $cachedcost + $outputcost;
         }
     }
-    echo html_writer::tag('td', '$' . number_format($costval, 5));
+
+    echo html_writer::tag('td', $inputtokens);
+    echo html_writer::tag('td', $cachedtokens);
+    echo html_writer::tag('td', $outputtokens);
+    echo html_writer::tag('td', $totaltokensrow);
+    echo html_writer::tag('td', s($row->model));
+    echo html_writer::tag('td', '$' . number_format($totalcostrow, 5));
     echo html_writer::end_tag('tr');
 }
 echo html_writer::end_tag('tbody');

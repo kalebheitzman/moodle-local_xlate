@@ -116,13 +116,26 @@ class mlang_migration {
         }
 
         // Persist report to system temp directory under local_xlate so operators can fetch it.
-        $vardir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'local_xlate';
-        if (!is_dir($vardir)) {
-            @mkdir($vardir, 0755, true);
+        global $CFG;
+
+        try {
+            $vardir = make_temp_directory('local_xlate');
+        } catch (\Throwable $e) {
+            // Fall back to Moodle's temp dir directly if helper failed.
+            debugging('[local_xlate] make_temp_directory(local_xlate) failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            $vardir = $CFG->tempdir ?? sys_get_temp_dir();
+            if (!is_string($vardir) || $vardir === '') {
+                $vardir = null;
+            }
         }
-        $filename = $vardir . DIRECTORY_SEPARATOR . 'mlang_dryrun_' . time() . '.json';
-        @file_put_contents($filename, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        $report['report_file'] = $filename;
+
+        if (!empty($vardir)) {
+            $filename = rtrim($vardir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'mlang_dryrun_' . time() . '.json';
+            @file_put_contents($filename, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $report['report_file'] = $filename;
+        } else {
+            $report['report_file'] = null;
+        }
 
         return $report;
     }

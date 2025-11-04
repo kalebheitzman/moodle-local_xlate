@@ -340,10 +340,14 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         $table->add_field('model', XMLDB_TYPE_CHAR, '64', null, null, null, null);
         $table->add_field('lang', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
         $table->add_field('batchsize', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
-        $table->add_field('prompt_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_field('completion_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
-        $table->add_field('cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, null);
+        $table->add_field('input_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('cached_input_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('output_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('total_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('input_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0');
+        $table->add_field('cached_input_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0');
+        $table->add_field('output_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0');
+        $table->add_field('total_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0');
         $table->add_field('response_ms', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
         $table->add_field('jobid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
 
@@ -360,6 +364,155 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         }
 
         upgrade_plugin_savepoint(true, 2025110307, 'local', 'xlate');
+    }
+
+    if ($oldversion < 2025110400) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_token_batch');
+
+        $fields = [
+            'input_tokens' => new xmldb_field('input_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'batchsize'),
+            'cached_input_tokens' => new xmldb_field('cached_input_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'input_tokens'),
+            'output_tokens' => new xmldb_field('output_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'cached_input_tokens'),
+            'total_tokens' => new xmldb_field('total_tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'output_tokens'),
+            'input_cost' => new xmldb_field('input_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0', 'total_tokens'),
+            'cached_input_cost' => new xmldb_field('cached_input_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0', 'input_cost'),
+            'output_cost' => new xmldb_field('output_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0', 'cached_input_cost'),
+            'total_cost' => new xmldb_field('total_cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, '0', 'output_cost')
+        ];
+
+        foreach ($fields as $name => $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                try {
+                    $dbman->add_field($table, $field);
+                } catch (\Exception $e) {
+                    debugging('[local_xlate] Failed adding field ' . $name . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+        }
+
+        // Backfill legacy data if the old aggregate columns still exist.
+        $legacytokens = new xmldb_field('tokens');
+        $legacyprompt = new xmldb_field('prompt_tokens');
+        $legacycompletion = new xmldb_field('completion_tokens');
+        $legacycost = new xmldb_field('cost');
+
+        $haslegacy = $dbman->field_exists($table, $legacytokens) ||
+            $dbman->field_exists($table, $legacyprompt) ||
+            $dbman->field_exists($table, $legacycompletion) ||
+            $dbman->field_exists($table, $legacycost);
+
+        if ($haslegacy) {
+            $selects = [
+                'id',
+                'input_tokens',
+                'cached_input_tokens',
+                'output_tokens',
+                'total_tokens',
+                'input_cost',
+                'cached_input_cost',
+                'output_cost',
+                'total_cost'
+            ];
+
+            $selects[] = $dbman->field_exists($table, $legacytokens) ? 'tokens' : '0 AS tokens';
+            $selects[] = $dbman->field_exists($table, $legacyprompt) ? 'prompt_tokens' : '0 AS prompt_tokens';
+            $selects[] = $dbman->field_exists($table, $legacycompletion) ? 'completion_tokens' : '0 AS completion_tokens';
+            $selects[] = $dbman->field_exists($table, $legacycost) ? 'cost' : '0 AS cost';
+
+            $sql = 'SELECT ' . implode(',', $selects) . ' FROM {local_xlate_token_batch}';
+            $rs = $DB->get_recordset_sql($sql);
+            foreach ($rs as $row) {
+                $inputtokens = (int)$row->input_tokens;
+                $cachedtokens = (int)$row->cached_input_tokens;
+                $outputtokens = (int)$row->output_tokens;
+                $totaltokens = (int)$row->total_tokens;
+                $inputcost = (float)$row->input_cost;
+                $cachedcost = (float)$row->cached_input_cost;
+                $outputcost = (float)$row->output_cost;
+                $totalcost = (float)$row->total_cost;
+
+                $legacyinput = isset($row->prompt_tokens) ? (int)$row->prompt_tokens : 0;
+                $legacyoutput = isset($row->completion_tokens) ? (int)$row->completion_tokens : 0;
+                $legacytotal = isset($row->tokens) ? (int)$row->tokens : 0;
+                $legacycostval = isset($row->cost) ? (float)$row->cost : 0.0;
+
+                $needsupdate = false;
+
+                if ($inputtokens === 0 && $legacyinput > 0) {
+                    $inputtokens = $legacyinput;
+                    $needsupdate = true;
+                }
+                if ($outputtokens === 0 && $legacyoutput > 0) {
+                    $outputtokens = $legacyoutput;
+                    $needsupdate = true;
+                }
+                if ($totaltokens === 0) {
+                    if ($legacytotal > 0) {
+                        $totaltokens = $legacytotal;
+                        $needsupdate = true;
+                    } else if (($inputtokens + $cachedtokens + $outputtokens) > 0) {
+                        $totaltokens = $inputtokens + $cachedtokens + $outputtokens;
+                        $needsupdate = true;
+                    }
+                }
+
+                if ($totalcost === 0.0 && $legacycostval > 0) {
+                    $totalcost = $legacycostval;
+                    $needsupdate = true;
+                }
+
+                if ($legacycostval > 0 && ($inputcost === 0.0 && $cachedcost === 0.0 && $outputcost === 0.0)) {
+                    $sumtokens = $legacyinput + $legacyoutput;
+                    if ($sumtokens > 0) {
+                        $ratio = $legacyinput / $sumtokens;
+                        $inputcost = round($legacycostval * $ratio, 6);
+                        $outputcost = round($legacycostval - $inputcost, 6);
+                    } else {
+                        $inputcost = 0.0;
+                        $outputcost = round($legacycostval, 6);
+                    }
+                    $needsupdate = true;
+                }
+
+                if ($needsupdate) {
+                    $update = (object) [
+                        'id' => $row->id,
+                        'input_tokens' => $inputtokens,
+                        'cached_input_tokens' => $cachedtokens,
+                        'output_tokens' => $outputtokens,
+                        'total_tokens' => $totaltokens,
+                        'input_cost' => $inputcost,
+                        'cached_input_cost' => $cachedcost,
+                        'output_cost' => $outputcost,
+                        'total_cost' => round($totalcost, 6)
+                    ];
+
+                    try {
+                        $DB->update_record('local_xlate_token_batch', $update);
+                    } catch (\Exception $e) {
+                        debugging('[local_xlate] Failed to backfill token batch #' . $row->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+                    }
+                }
+            }
+            $rs->close();
+
+            // Drop legacy columns now that data is migrated.
+            foreach (['tokens', 'prompt_tokens', 'completion_tokens', 'cost'] as $legacyname) {
+                $legacyfield = new xmldb_field($legacyname);
+                if ($dbman->field_exists($table, $legacyfield)) {
+                    try {
+                        $dbman->drop_field($table, $legacyfield);
+                    } catch (\Exception $e) {
+                        debugging('[local_xlate] Failed to drop legacy field ' . $legacyname . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+                    }
+                }
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2025110400, 'local', 'xlate');
     }
 
     return true;

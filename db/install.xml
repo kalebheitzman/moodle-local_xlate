@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/xlate/db" VERSION="2025102700" COMMENT="xlate" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<XMLDB PATH="local/xlate/db" VERSION="2025110400" COMMENT="xlate" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <TABLES>
     <TABLE NAME="local_xlate_key" COMMENT="canonical phrase keys">
       <FIELDS>
@@ -137,10 +137,14 @@
         <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
         <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
         <FIELD NAME="batchsize" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="prompt_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
-        <FIELD NAME="completion_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
-        <FIELD NAME="cost" TYPE="number" LENGTH="12,6" NOTNULL="false"/>
+        <FIELD NAME="input_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="cached_input_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="output_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="total_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="cached_input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="output_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="total_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
         <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
         <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="false"/>
       </FIELDS>
