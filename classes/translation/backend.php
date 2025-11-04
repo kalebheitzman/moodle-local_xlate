@@ -29,9 +29,9 @@ class backend {
         // Quick entry trace to ensure worker processes reach this method.
         try {
             $entry = json_encode(['requestid' => $requestid, 'sourcelang' => $sourcelang, 'targetlang' => $targetlang, 'items_count' => is_array($items) ? count($items) : 0], JSON_PARTIAL_OUTPUT_ON_ERROR);
-            error_log('[local_xlate] translate_batch entered: ' . $entry);
-        } catch (\Exception $e) {
-            error_log('[local_xlate] translate_batch entered (failed to json_encode): ' . $e->getMessage());
+            debugging('[local_xlate] translate_batch entered: ' . $entry, DEBUG_DEVELOPER);
+        } catch (\Throwable $e) {
+            debugging('[local_xlate] translate_batch entered (failed to json_encode): ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
 
         $model = isset($options['model']) ? $options['model'] : get_config('local_xlate', 'openai_model');
@@ -190,11 +190,7 @@ class backend {
                     'Accept: application/json',
                     'api-key: ' . $apikey,
                 ];
-                try {
-                    error_log('[local_xlate] USING AZURE API-KEY header for endpoint: ' . $endpoint);
-                } catch (\Exception $ex) {
-                    // ignore logging errors
-                }
+                debugging('[local_xlate] Using Azure api-key header for endpoint: ' . $endpoint, DEBUG_DEVELOPER);
             } else {
                 $headers = [
                     'Content-Type: application/json',
@@ -206,12 +202,8 @@ class backend {
             $postdata = json_encode($payload);
 
             // Log outgoing payload and endpoint for debugging. Do NOT log the API key.
-            try {
-                $short = (strlen($postdata) > 10000) ? substr($postdata, 0, 10000) . '...[truncated]' : $postdata;
-                error_log('[local_xlate] OUTGOING ' . $url . ' payload: ' . $short);
-            } catch (\Exception $ex) {
-                // swallow logging errors
-            }
+            $short = (strlen($postdata) > 10000) ? substr($postdata, 0, 10000) . '...[truncated]' : $postdata;
+            debugging('[local_xlate] Outgoing ' . $url . ' payload: ' . $short, DEBUG_DEVELOPER);
 
             // Set headers and options on curl instance.
             $curl->setHeader($headers);
@@ -235,18 +227,14 @@ class backend {
                     $httpcode = $curl->info['http_code'] ?? 0;
                 } catch (\Exception $e) {
                     // Curl wrapper may throw for low-level errors; capture and log then retry if possible.
-                    error_log('[local_xlate] translate_batch curl exception on attempt ' . $attempt . ': ' . $e->getMessage());
+                    debugging('[local_xlate] translate_batch curl exception on attempt ' . $attempt . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
                     $result = false;
                     $httpcode = 0;
                 }
 
                 // Log provider response for debugging (or error state)
-                try {
-                    $resshort = is_string($result) ? ((strlen($result) > 10000) ? substr($result, 0, 10000) . '...[truncated]' : $result) : '[no body]';
-                    error_log('[local_xlate] RESPONSE attempt=' . $attempt . ' httpcode=' . $httpcode . ' body: ' . $resshort);
-                } catch (\Exception $ex) {
-                    // ignore logging failures
-                }
+                $resshort = is_string($result) ? ((strlen($result) > 10000) ? substr($result, 0, 10000) . '...[truncated]' : $result) : '[no body]';
+                debugging('[local_xlate] Response attempt=' . $attempt . ' httpcode=' . $httpcode . ' body: ' . $resshort, DEBUG_DEVELOPER);
 
                 // If we got a successful HTTP response, break and process it.
                 if ($httpcode >= 200 && $httpcode < 300) {
@@ -364,7 +352,7 @@ class backend {
                     }
                 } catch (\Exception $e) {
                     // If repair fails, we'll fall back to server-side sanitization later.
-                    error_log('[local_xlate] repair attempt failed: ' . $e->getMessage());
+                    debugging('[local_xlate] repair attempt failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
                 }
             }
 
@@ -462,18 +450,14 @@ class backend {
                 try {
                     $DB->insert_record('local_xlate_token_batch', $rec, false);
                 } catch (\Exception $e) {
-                    error_log('[local_xlate] Failed to log batch token usage: ' . $e->getMessage());
+                    debugging('[local_xlate] Failed to log batch token usage: ' . $e->getMessage(), DEBUG_DEVELOPER);
                 }
             }
             return ['ok' => true, 'results' => $results, 'meta' => $meta, 'raw' => $response];
 
         } catch (\Exception $e) {
             // Make sure exceptions are visible in worker logs for debugging.
-            try {
-                error_log('[local_xlate] translate_batch EXCEPTION: ' . $e->getMessage() . '\n' . $e->getTraceAsString());
-            } catch (\Exception $ex) {
-                // swallow secondary logging errors
-            }
+            debugging('[local_xlate] translate_batch exception: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return ['ok' => false, 'errors' => ['exception' => $e->getMessage()]];
         }
     }

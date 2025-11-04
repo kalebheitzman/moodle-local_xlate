@@ -285,40 +285,6 @@ class local_xlate_external extends external_api {
      */
     public static function autotranslate($sourcelang, $targetlang, $items, $glossary = [], $options = []) {
         global $USER;
-        // Log raw incoming inputs at PHP level for easier debugging (will appear in nginx/php-fpm logs).
-        try {
-            error_log('[local_xlate] autotranslate called (raw inputs): ' . json_encode([
-                'sourcelang' => $sourcelang,
-                'targetlang' => $targetlang,
-                'items_count' => is_array($items) ? count($items) : null,
-            ], JSON_PARTIAL_OUTPUT_ON_ERROR));
-        } catch (\Exception $ex) {
-            // ignore logging failures
-        }
-        // Also append a lightweight debug record to a plugin-local log file so
-        // we can inspect incoming autotranslate calls from the browser without
-        // requiring access to php-fpm/nginx logs. This file is temporary and
-        // safe to remove after debugging.
-        try {
-            // Use the system temp directory to avoid writing files into the Moodle
-            // codebase. This keeps debug logs out of the repository and uses the
-            // OS-designated temporary area (e.g. /tmp on Linux).
-            $tmpdir = sys_get_temp_dir();
-            $logdir = rtrim($tmpdir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'local_xlate_logs';
-            if (!is_dir($logdir)) {
-                @mkdir($logdir, 0775, true);
-            }
-            $record = [
-                'ts' => time(),
-                'sourcelang' => $sourcelang,
-                'targetlang' => $targetlang,
-                'items_count' => is_array($items) ? count($items) : null,
-            ];
-            @file_put_contents($logdir . DIRECTORY_SEPARATOR . 'autotranslate_calls.log', json_encode($record) . "\n", FILE_APPEND | LOCK_EX);
-        } catch (\Exception $ex) {
-            // ignore filesystem logging failures
-        }
-
         try {
             $params = self::validate_parameters(self::autotranslate_parameters(), [
                 'sourcelang' => $sourcelang,
@@ -342,12 +308,6 @@ class local_xlate_external extends external_api {
                 $dump = 'Failed to json_encode inputs: ' . $ex->getMessage();
             }
             debugging('[local_xlate] autotranslate parameter validation failed: ' . $e->getMessage() . ' inputs=' . $dump, DEBUG_DEVELOPER);
-            // Also write to PHP error log so it's always captured in nginx/php-fpm logs
-            try {
-                error_log('[local_xlate] autotranslate parameter validation failed: ' . $e->getMessage() . ' inputs=' . $dump);
-            } catch (\Exception $ex) {
-                // swallow logging errors
-            }
             // Rethrow so the external API returns the same invalid parameter error to the client.
             throw $e;
         }
