@@ -529,6 +529,11 @@ if (!empty($keys)) {
                 $trval = $translation ? $translation->text : '';
                 // Use textarea if the SOURCE is long or multiline
                 $usesource = (strlen($key->source) > 80 || strpos($key->source, "\n") !== false);
+                // List of standard RTL language codes.
+                $rtl_langs = ['ar', 'he', 'fa', 'ur', 'ps', 'syr', 'dv', 'yi'];
+                $rtl = in_array($langcode, $rtl_langs);
+                $dir = $rtl ? 'rtl' : 'ltr';
+                $align = $rtl ? 'right' : 'left';
                 if ($usesource) {
                     // Guess rows: number of lines in source, or based on length, min 3, max 8
                     $sourcelines = max(1, substr_count($key->source, "\n") + 1);
@@ -537,7 +542,9 @@ if (!empty($keys)) {
                         'name' => 'translation',
                         'class' => 'form-control',
                         'rows' => $rows,
-                        'placeholder' => 'Enter translation...'
+                        'placeholder' => 'Enter translation...',
+                        'dir' => $dir,
+                        'style' => 'text-align:' . $align
                     ]);
                 } else {
                     echo html_writer::empty_tag('input', [
@@ -545,7 +552,9 @@ if (!empty($keys)) {
                         'name' => 'translation',
                         'value' => $trval,
                         'class' => 'form-control',
-                        'placeholder' => 'Enter translation...'
+                        'placeholder' => 'Enter translation...',
+                        'dir' => $dir,
+                        'style' => 'text-align:' . $align
                     ]);
                 }
                 echo html_writer::end_div();
