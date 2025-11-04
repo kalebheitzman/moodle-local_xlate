@@ -521,7 +521,11 @@ if (!empty($keys)) {
     echo html_writer::start_div('row align-items-center mb-2');
     // Label column (same as translation label col-md-2)
     echo html_writer::start_div('col-md-2 d-flex align-items-center');
-    echo html_writer::tag('label', 'Source (' . $sitelangname . ' ' . $sitelang . ')', ['class' => 'fw-bold mb-0']);
+    $sourcelabel = $sitelangname;
+    if (strpos($sourcelabel, '(' . $sitelang . ')') === false) {
+        $sourcelabel .= ' (' . $sitelang . ')';
+    }
+    echo html_writer::tag('label', 'Source (' . $sourcelabel . ')', ['class' => 'fw-bold mb-0']);
     echo html_writer::end_div();
     // Source text column (same as translation input col-md-6)
     echo html_writer::start_div('col-md-6 d-flex align-items-center');
@@ -548,7 +552,11 @@ if (!empty($keys)) {
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'target_lang', 'value' => $langcode]);
                 echo html_writer::start_div('row align-items-center');
                 echo html_writer::start_div('col-md-2');
-                echo html_writer::tag('label', $installedlangs[$langcode] . ' (' . $langcode . ')');
+                $targetlabel = $installedlangs[$langcode];
+                if (strpos($targetlabel, '(' . $langcode . ')') === false) {
+                    $targetlabel .= ' (' . $langcode . ')';
+                }
+                echo html_writer::tag('label', $targetlabel);
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-6');
                 $trval = $translation ? $translation->text : '';
