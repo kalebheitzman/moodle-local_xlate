@@ -117,13 +117,13 @@ if ($hassiteconfig) {
         $settings->add(new admin_setting_configtextarea('local_xlate/capture_selectors',
             get_string('capture_selectors', 'local_xlate'),
             get_string('capture_selectors_desc', 'local_xlate'),
-            "#region-main\n#page-content\n.main-content\n#page-wrapper\n.format-topics", PARAM_TEXT));
+            ".drawer\n#page", PARAM_TEXT));
 
         // Exclude selectors (exclude patterns)
         $settings->add(new admin_setting_configtextarea('local_xlate/exclude_selectors',
             get_string('exclude_selectors', 'local_xlate'),
             get_string('exclude_selectors_desc', 'local_xlate'),
-            ".accesshide\n.visually-hidden\n.hidden\n.sr-only\n.activity-dates *", PARAM_TEXT));
+            ".discussion-list\n.discussionname\n.forum-post-container\n.journaluserentrywrapper", PARAM_TEXT));
     }
 
     $ADMIN->add('localplugins', $settings);
