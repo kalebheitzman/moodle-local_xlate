@@ -423,7 +423,7 @@ class backend {
                 ];
             }
 
-            // Log token usage for each translated item, including prompt and completion tokens if available.
+            // Log batch-level token usage to local_xlate_token_batch.
             global $DB;
             if (!empty($meta['usage_tokens']['total']) && is_array($results)) {
                 $now = time();
@@ -433,25 +433,36 @@ class backend {
                 $modelstr = $meta['model'] ?? '';
                 $elapsed = $meta['elapsed_ms'] ?? 0;
                 $lang = $targetlang;
-                foreach ($results as $r) {
-                    if (!empty($r['id'])) {
-                        $rec = [
-                            'timecreated' => $now,
-                            'lang' => $lang,
-                            'xkey' => $r['id'],
-                            'tokens' => $tokens,
-                            'prompt_tokens' => $prompt_tokens,
-                            'completion_tokens' => $completion_tokens,
-                            'model' => $modelstr,
-                            'response_ms' => $elapsed
-                        ];
-                        try {
-                            $DB->insert_record('local_xlate_token_usage', $rec, false);
-                        } catch (\Exception $e) {
-                            // Log but do not fail translation if token logging fails.
-                            error_log('[local_xlate] Failed to log token usage: ' . $e->getMessage());
-                        }
+                $batchsize = is_array($results) ? count($results) : 0;
+                $cost = null;
+                // Try to estimate cost if pricing config is available.
+                try {
+                    $pricing = include(__DIR__ . '/../../../config/pricing.php');
+                    $modelpricing = $pricing[$modelstr] ?? $pricing['gpt-4.1'] ?? null;
+                    if ($modelpricing && $prompt_tokens !== null && $completion_tokens !== null) {
+                        $cost_prompt = ($prompt_tokens / 1000.0) * ($modelpricing['prompt'] ?? 0);
+                        $cost_completion = ($completion_tokens / 1000.0) * ($modelpricing['completion'] ?? 0);
+                        $cost = $cost_prompt + $cost_completion;
                     }
+                } catch (\Throwable $e) {
+                    // If pricing config is missing or error, skip cost.
+                }
+                $rec = [
+                    'timecreated' => $now,
+                    'lang' => $lang,
+                    'batchsize' => $batchsize,
+                    'tokens' => $tokens,
+                    'prompt_tokens' => $prompt_tokens,
+                    'completion_tokens' => $completion_tokens,
+                    'model' => $modelstr,
+                    'cost' => $cost,
+                    'response_ms' => $elapsed,
+                    'jobid' => null // Optionally set if available
+                ];
+                try {
+                    $DB->insert_record('local_xlate_token_batch', $rec, false);
+                } catch (\Exception $e) {
+                    error_log('[local_xlate] Failed to log batch token usage: ' . $e->getMessage());
                 }
             }
             return ['ok' => true, 'results' => $results, 'meta' => $meta, 'raw' => $response];

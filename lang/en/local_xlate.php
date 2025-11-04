@@ -85,6 +85,8 @@ $string['glossary_add_button'] = 'Add Translations';
 $string['glossary_bulk_saved'] = '{$a} glossary translations added';
 $string['admin_manage_translations'] = 'Xlate: Manage Translations';
 $string['admin_manage_glossary'] = 'Xlate: Manage Glossary';
+$string['admin_usage'] = 'Xlate: Usage';
+
 // Settings UI strings
 $string['settings_intro'] = 'Core configuration for the Xlate plugin.';
 $string['autotranslate_heading'] = 'Autotranslation (OpenAI)';

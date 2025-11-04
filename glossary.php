@@ -72,9 +72,11 @@ $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 
 $PAGE->set_url(new moodle_url('/local/xlate/glossary.php', ['page' => $page, 'perpage' => $perpage, 'search' => $search]));
+
 $PAGE->set_context(context_system::instance());
-$PAGE->set_pagelayout('admin');
-$PAGE->set_title(get_string('glossary', 'local_xlate'));
+// $PAGE->set_pagelayout('admin');
+$PAGE->set_title(get_string('admin_manage_glossary', 'local_xlate'));
+$PAGE->set_heading(get_string('admin_manage_glossary', 'local_xlate'));
 
 require_capability('local/xlate:manage', $PAGE->context);
 
@@ -125,7 +127,8 @@ if ($action === 'bulk_add' && confirm_sesskey()) {
 
 // Page header
 echo $OUTPUT->header();
-echo $OUTPUT->heading(get_string('glossary', 'local_xlate'));
+require_once(__DIR__ . '/admin_nav.php');
+local_xlate_render_admin_nav('glossary');
 
 // Search and pagination form (top)
 echo html_writer::start_div('card mb-4');

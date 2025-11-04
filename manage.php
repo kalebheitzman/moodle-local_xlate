@@ -161,9 +161,9 @@ $PAGE->set_url(new moodle_url('/local/xlate/manage.php', [
     'courseid' => $filter_courseid
 ]));
 $PAGE->set_context($pagecontext);
-$PAGE->set_pagelayout('admin');
-$PAGE->set_title(get_string('manage_translations', 'local_xlate'));
-$PAGE->set_heading(get_string('manage_translations', 'local_xlate'));
+// $PAGE->set_pagelayout('admin');
+$PAGE->set_title(get_string('admin_manage_translations', 'local_xlate'));
+$PAGE->set_heading(get_string('admin_manage_translations', 'local_xlate'));
 
 if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
@@ -206,7 +206,9 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
 }
 
 echo $OUTPUT->header();
-echo $OUTPUT->heading(get_string('manage_translations', 'local_xlate'));
+require_once(__DIR__ . '/admin_nav.php');
+local_xlate_render_admin_nav('manage');
+// echo $OUTPUT->heading(get_string('manage_translations', 'local_xlate'));
 
 // (Autotranslate controls are rendered below inside a styled card.)
 

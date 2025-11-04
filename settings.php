@@ -101,5 +101,12 @@ if ($hassiteconfig) {
             new moodle_url('/local/xlate/glossary.php'),
             'local/xlate:manage'
         ));
+
+        $ADMIN->add('localplugins', new admin_externalpage(
+            'local_xlate_usage',
+            get_string('admin_usage', 'local_xlate'),
+            new moodle_url('/local/xlate/usage.php'),
+            'local/xlate:manage'
+        ));
     }
 }

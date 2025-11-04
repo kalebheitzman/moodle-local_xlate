@@ -146,4 +146,26 @@
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
       </KEYS>
     </TABLE>
+    <TABLE NAME="local_xlate_token_batch" COMMENT="Tracks token usage for each batch autotranslation request">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
+        <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
+        <FIELD NAME="batchsize" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="tokens" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="prompt_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="completion_tokens" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="cost" TYPE="decimal" LENGTH="12,6" NOTNULL="false"/>
+        <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_timecreated" UNIQUE="false" FIELDS="timecreated"/>
+        <INDEX NAME="idx_lang" UNIQUE="false" FIELDS="lang"/>
+      </INDEXES>
+    </TABLE>
 </XMLDB>

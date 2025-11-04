@@ -347,5 +347,41 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025110305, 'local', 'xlate');
     }
 
+        // Add local_xlate_token_batch table for batch-level token usage logging
+    if ($oldversion < 2025110307) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+
+        // Define table local_xlate_token_batch to be added.
+        $table = new xmldb_table('local_xlate_token_batch');
+
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('model', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('lang', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('batchsize', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('tokens', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('prompt_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('completion_tokens', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+    $table->add_field('cost', XMLDB_TYPE_NUMBER, '12,6', null, null, null, null);
+        $table->add_field('response_ms', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('jobid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+
+        // Add keys
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        // Add indexes
+        $table->add_index('idx_timecreated', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        $table->add_index('idx_lang', XMLDB_INDEX_NOTUNIQUE, ['lang']);
+
+        // Conditionally launch create table
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2025110307, 'local', 'xlate');
+    }
+
     return true;
 }
