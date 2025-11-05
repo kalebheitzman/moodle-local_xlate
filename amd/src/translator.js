@@ -25,6 +25,9 @@ define(['core/ajax'], function (Ajax) {
   var processedElements = new WeakSet();
   var lastProcessTime = 0;
   var processThrottle = 250;
+  var pendingTranslationKeys = new Set();
+  var requestedTranslationKeys = new Set();
+  var missingFetchTimer = null;
   /* Translator namespace to expose public API while keeping internal helpers private. */
   var Translator = {};
   Translator.utils = {};
@@ -172,6 +175,17 @@ define(['core/ajax'], function (Ajax) {
   }
   Translator.utils.isTranslatableText = isTranslatableText;
   Translator.utils.simpleHash = simpleHash;
+
+  /**
+   * Determine whether a translation map already contains a key.
+   * @param {Object<string,string>} map - Translation lookup table.
+   * @param {string} key - Structural key to check.
+   * @returns {boolean} True when the key exists in the map.
+   */
+  function hasTranslation(map, key) {
+    return !!(map && Object.prototype.hasOwnProperty.call(map, key));
+  }
+  Translator.utils.hasTranslation = hasTranslation;
 
   /**
    * Generate translation key from element structure + direct text (ignoring children)
@@ -527,7 +541,11 @@ define(['core/ajax'], function (Ajax) {
           if (isCapture) {
             saveToDatabase(element, directText, 'text', textKey, map); // Step 2: SAVE (skip if in map)
           } else if (map) {
-            translateElement(element, 'text', map); // Step 3: TRANSLATE
+            if (hasTranslation(map, textKey)) {
+              translateElement(element, 'text', map); // Step 3: TRANSLATE
+            } else {
+              queueMissingTranslation(textKey);
+            }
           }
         }
       }
@@ -547,7 +565,11 @@ define(['core/ajax'], function (Ajax) {
             if (isCapture) {
               saveToDatabase(element, value, attr, attrKey, map); // Step 2: SAVE (skip if in map)
             } else if (map) {
-              translateElement(element, attr, map); // Step 3: TRANSLATE
+              if (hasTranslation(map, attrKey)) {
+                translateElement(element, attr, map); // Step 3: TRANSLATE
+              } else {
+                queueMissingTranslation(attrKey);
+              }
             }
           }
         }
@@ -555,6 +577,126 @@ define(['core/ajax'], function (Ajax) {
     });
   }
   Translator.dom.collectKeysFromElement = collectKeysFromElement;
+
+  /**
+   * Debounced trigger that batches pending keys and requests translations.
+   * @returns {void}
+   */
+  function scheduleMissingFetch() {
+    if (missingFetchTimer !== null) {
+      return;
+    }
+    missingFetchTimer = window.setTimeout(function () {
+      missingFetchTimer = null;
+      if (!pendingTranslationKeys || pendingTranslationKeys.size === 0) {
+        return;
+      }
+      var keys = [];
+      pendingTranslationKeys.forEach(function (k) {
+        keys.push(k);
+      });
+      pendingTranslationKeys.clear();
+      fetchMissingTranslations(keys);
+    }, 200);
+  }
+
+  /**
+   * Request translations for keys discovered after the initial bundle load.
+   * @param {Array<string>} keys - Structural keys requiring translations.
+   * @returns {void}
+   */
+  function fetchMissingTranslations(keys) {
+    if (!keys || !keys.length) {
+      return;
+    }
+    if (!window.__XLATE__ || window.__XLATE__.isCapture) {
+      return;
+    }
+
+    var bundleUrl = window.__XLATE__.bundleUrl || '';
+    if (!bundleUrl) {
+      return;
+    }
+
+    fetch(bundleUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: keys })
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        var map = window.__XLATE__.map || {};
+        var translations = (data && data.translations) ? data.translations : data;
+        if (!translations || typeof translations !== 'object') {
+          keys.forEach(function (k) {
+            requestedTranslationKeys.add(k);
+          });
+          return;
+        }
+
+        var updated = false;
+        Object.keys(translations).forEach(function (k) {
+          var value = translations[k];
+          if (!Object.prototype.hasOwnProperty.call(map, k) || map[k] !== value) {
+            map[k] = value;
+            updated = true;
+          }
+        });
+
+        if (updated) {
+          window.__XLATE__.map = map;
+
+          if (window.__XLATE__.cacheKey) {
+            try {
+              var cached = localStorage.getItem(window.__XLATE__.cacheKey);
+              if (cached) {
+                var cachedMap = JSON.parse(cached);
+                if (cachedMap && typeof cachedMap === 'object') {
+                  Object.keys(translations).forEach(function (k) {
+                    cachedMap[k] = translations[k];
+                  });
+                  localStorage.setItem(window.__XLATE__.cacheKey, JSON.stringify(cachedMap));
+                }
+              }
+            } catch (e) {
+              // Ignore cache sync errors.
+            }
+          }
+
+          processedElements = new WeakSet();
+          walk(document.body, map, false);
+        }
+
+        keys.forEach(function (k) {
+          requestedTranslationKeys.add(k);
+        });
+      })
+      .catch(function (err) {
+        keys.forEach(function (k) {
+          requestedTranslationKeys.delete(k);
+        });
+        xlateDebug('[XLATE] Missing translation fetch failed', err);
+      });
+  }
+
+  /**
+   * Queue a translation key for deferred fetching if it is not already pending.
+   * @param {string} key - Structural key needing translation.
+   * @returns {void}
+   */
+  function queueMissingTranslation(key) {
+    if (!key || pendingTranslationKeys.has(key) || requestedTranslationKeys.has(key)) {
+      return;
+    }
+    if (!window.__XLATE__ || window.__XLATE__.isCapture) {
+      return;
+    }
+    pendingTranslationKeys.add(key);
+    scheduleMissingFetch();
+  }
   Translator.dom.processElement = processElement;
 
   // ============================================================================
@@ -761,7 +903,10 @@ define(['core/ajax'], function (Ajax) {
       lang: config.lang,
       siteLang: config.siteLang,
       map: {},
-      sourceMap: {}
+      sourceMap: {},
+      bundleUrl: config.bundleurl || '',
+      version: config.version || '',
+      cacheKey: ''
     };
 
     /**
@@ -771,6 +916,7 @@ define(['core/ajax'], function (Ajax) {
     var currentLang = config.lang;
     var siteLang = config.siteLang;
     var isCapture = (currentLang === siteLang);
+    window.__XLATE__.isCapture = isCapture;
 
     // Detect course id exposed by server-side hook or fallback to M.cfg
     var courseId = null;
@@ -907,6 +1053,7 @@ define(['core/ajax'], function (Ajax) {
       }
 
       var k = 'xlate:' + config.lang + ':' + config.version + ':keys:' + keys.length;
+      window.__XLATE__.cacheKey = k;
       var cached = null;
       try {
         cached = localStorage.getItem(k);
