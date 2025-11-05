@@ -99,25 +99,45 @@ class api {
             $params = array_merge($params, $componentparams);
         }
 
-        $coursejoin = '';
         $coursewhere = '';
         if ($courseid > 0) {
-            $coursejoin = " LEFT JOIN {local_xlate_key_course} kc ON kc.keyid = k.id";
-            $coursewhere = " AND (kc.courseid = :courseid OR kc.courseid IS NULL)";
+            $coursewhere = " AND (NOT EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id)
+                                   OR EXISTS (SELECT 1 FROM {local_xlate_key_course} kc2 WHERE kc2.keyid = k.id AND kc2.courseid = :courseid))";
             $params['courseid'] = $courseid;
         }
 
-    $sql = "SELECT k.xkey, t.text
-          FROM {local_xlate_key} k
-          JOIN {local_xlate_tr} t ON t.keyid = k.id
-          $coursejoin
-         WHERE t.lang = :lang AND t.status = 1 AND k.xkey $insql$componentsql$coursewhere";
+        // Resolve translation ids separately so each get_records_sql call keeps a unique key column.
+        $sql = "SELECT k.id, k.xkey,
+                       (SELECT MIN(t2.id)
+                          FROM {local_xlate_tr} t2
+                         WHERE t2.keyid = k.id AND t2.lang = :lang AND t2.status = 1) AS firsttrid
+                  FROM {local_xlate_key} k
+                 WHERE k.xkey $insql$componentsql$coursewhere";
 
         $recs = $DB->get_records_sql($sql, $params);
 
         $map = [];
-        foreach ($recs as $r) {
-            $map[$r->xkey] = $r->text;
+        if (empty($recs)) {
+            return $map;
+        }
+
+        $trids = [];
+        foreach ($recs as $rec) {
+            if (!empty($rec->firsttrid)) {
+                $trids[] = (int)$rec->firsttrid;
+            }
+        }
+
+        if (!empty($trids)) {
+            list($trsql, $trparams) = $DB->get_in_or_equal($trids, SQL_PARAMS_NAMED, 'tr');
+            $sql = "SELECT t.id, k.xkey, t.text
+                      FROM {local_xlate_tr} t
+                      JOIN {local_xlate_key} k ON k.id = t.keyid
+                     WHERE t.id $trsql";
+            $translations = $DB->get_records_sql($sql, $trparams);
+            foreach ($translations as $row) {
+                $map[$row->xkey] = $row->text;
+            }
         }
 
         return $map;
@@ -138,13 +158,13 @@ class api {
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
 
-    $translations = self::get_keys_bundle($lang, $keys);
+        $translations = self::get_keys_bundle($lang, $keys);
 
         // Build sourceMap for the returned keys
         $sourceMap = [];
         if (!empty($keys)) {
             list($insql, $inparams) = $DB->get_in_or_equal($keys, SQL_PARAMS_NAMED, 'k');
-            $sql = "SELECT k.xkey, k.source FROM {local_xlate_key} k WHERE k.xkey $insql";
+            $sql = "SELECT k.id, k.xkey, k.source FROM {local_xlate_key} k WHERE k.xkey $insql";
             $recs = $DB->get_records_sql($sql, $inparams);
             foreach ($recs as $r) {
                 $normalized = self::normalise_source($r->source ?? '');
@@ -231,7 +251,6 @@ class api {
         }
         
         list($componentsql, $componentparams) = self::build_component_filter_sql($component_filters);
-        $coursejoin = '';
         $coursewhere = '';
         $params = ['lang' => $lang];
 
@@ -240,15 +259,14 @@ class api {
         }
 
         if ($courseid > 0) {
-            $coursejoin = " LEFT JOIN {local_xlate_key_course} kc ON kc.keyid = k.id";
-            $coursewhere = " AND (kc.courseid = :courseid OR kc.courseid IS NULL)";
+            $coursewhere = " AND (NOT EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id)
+                                   OR EXISTS (SELECT 1 FROM {local_xlate_key_course} kc2 WHERE kc2.keyid = k.id AND kc2.courseid = :courseid))";
             $params['courseid'] = $courseid;
         }
 
-        $sql = "SELECT k.xkey, k.source, t.text, k.component
+    $sql = "SELECT k.id, k.xkey, k.source, t.text, k.component
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
-                  $coursejoin
                  WHERE t.lang = :lang AND t.status = 1 $componentsql $coursewhere";
         
         $recs = $DB->get_records_sql($sql, $params);
