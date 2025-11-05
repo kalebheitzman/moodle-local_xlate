@@ -459,19 +459,11 @@ define(['core/ajax'], function (Ajax) {
     // Do not skip elements just because they already have key attributes;
     // we rely on processedElements to prevent duplicate work.
 
-    // Admin paths
+    // Admin paths stay blocked to avoid capturing config screens where translators do not run.
     var currentPath = window.location.pathname || '';
     var adminPaths = ['/admin/', '/local/xlate/', '/course/modedit.php'];
     for (var p = 0; p < adminPaths.length; p++) {
       if (currentPath.indexOf(adminPaths[p]) === 0) {
-        return true;
-      }
-    }
-
-    // Admin selectors
-    var adminSelectors = ['.navbar', '.navigation', '.breadcrumb', '.drawer', '.tooltip'];
-    for (var s = 0; s < adminSelectors.length; s++) {
-      if (element.closest(adminSelectors[s])) {
         return true;
       }
     }
