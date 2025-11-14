@@ -63,7 +63,7 @@ try {
      */
     $result = \local_xlate\translation\backend::translate_batch(
         $data['requestid'] ?? uniqid('rb_'),
-        $data['sourcelang'] ?? 'en',
+        $data['sourcelang'] ?? $CFG->lang,
         $data['targetlang'] ?? '',
         $data['items'] ?? [],
         $data['glossary'] ?? [],

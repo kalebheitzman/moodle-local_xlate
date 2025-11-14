@@ -61,7 +61,7 @@ $task = new \local_xlate\task\translate_batch_task();
  */
 $customdata = (object)[
     'requestid' => uniqid('rb_'),
-    'sourcelang' => 'en',
+    'sourcelang' => $CFG->lang,
     'targetlang' => ['de'],
     'items' => $items,
     'glossary' => [],

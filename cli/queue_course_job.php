@@ -58,6 +58,14 @@ if (!$courseid) {
     exit(1);
 }
 
+// Get course source language from custom fields
+$coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($courseid);
+if (!$coursesourcelang) {
+    echo "Error: Course $courseid has no xlate source language configured.\n";
+    echo "Please configure source and target languages in the course settings.\n";
+    exit(1);
+}
+
 // Count keys
 $total = $DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
 
@@ -76,7 +84,7 @@ $record->batchsize = $batchsize;
 $options = [
     'batchsize' => $batchsize,
     'targetlang' => $targetlangs,
-    'sourcelang' => 'en'
+    'sourcelang' => $coursesourcelang
 ];
 $record->options = json_encode($options);
 $record->lastid = 0;

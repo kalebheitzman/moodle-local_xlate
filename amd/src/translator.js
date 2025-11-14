@@ -28,6 +28,8 @@ define(['core/ajax'], function (Ajax) {
   var pendingTranslationKeys = new Set();
   var requestedTranslationKeys = new Set();
   var missingFetchTimer = null;
+  var indicatorStylesAdded = false;
+  var toggleButton = null;
   /* Translator namespace to expose public API while keeping internal helpers private. */
   var Translator = {};
   Translator.utils = {};
@@ -56,6 +58,7 @@ define(['core/ajax'], function (Ajax) {
       }
     }
   }
+
   /* eslint-enable no-console */
 
   // ============================================================================
@@ -63,9 +66,9 @@ define(['core/ajax'], function (Ajax) {
   // ============================================================================
 
   /**
-   * Collect meaningful class names from element
-   * @param {Element} element - The element to collect classes from
-   * @returns {string} Comma-separated class names
+   * Collect relevant CSS classes to contribute to structural hash context.
+   * @param {Element} element - Element whose classes will be analyzed.
+   * @returns {string} Comma-separated class list used for hashing.
    */
   function collectContextClasses(element) {
     if (!element || !element.classList) {
@@ -76,7 +79,6 @@ define(['core/ajax'], function (Ajax) {
       'active', 'show', 'hide', 'hidden', 'collapsed', 'expanded',
       'd-flex', 'd-none', 'd-block', 'sr-only', 'visually-hidden'
     ];
-
     var classes = [];
     Array.prototype.forEach.call(element.classList, function (cls) {
       if (cls && cls.length > 2 && blacklist.indexOf(cls) === -1 &&
@@ -89,9 +91,9 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Collect all data-* attributes from element (excluding data-xlate- attributes).
-   * @param {Element} element - The element to collect attributes from
-   * @returns {string} Comma-separated attribute values
+   * Collect all non-XLATE data-* attribute values for hashing context.
+   * @param {Element} element - Element to inspect.
+   * @returns {string} Comma-separated attribute values.
    */
   function collectDataAttributes(element) {
     if (!element || !element.attributes) {
@@ -186,6 +188,219 @@ define(['core/ajax'], function (Ajax) {
     return !!(map && Object.prototype.hasOwnProperty.call(map, key));
   }
   Translator.utils.hasTranslation = hasTranslation;
+
+  /**
+   * Obtain direct child text content (excluding descendants) from an element.
+   * @param {Element} element - Target element.
+   * @returns {string} Direct text content.
+   */
+  function getDirectText(element) {
+    if (!element) {
+      return '';
+    }
+    var directText = '';
+    for (var i = 0; i < element.childNodes.length; i++) {
+      var node = element.childNodes[i];
+      if (node.nodeType === 3) {
+        directText += node.textContent;
+      }
+    }
+    return directText;
+  }
+
+  /**
+   * Persist the original value for an element so toggles can restore it later.
+   * @param {Element} element - Element being translated.
+   * @param {string} type - Translation type (`text` or attribute name).
+   * @returns {void}
+   */
+  function storeOriginalValue(element, type) {
+    if (!element) {
+      return;
+    }
+    var attrType = type === 'text' ? 'content' : type;
+    var dataAttr = 'data-xlate-original-' + attrType;
+    if (element.hasAttribute(dataAttr)) {
+      return;
+    }
+    var original = '';
+    if (type === 'text') {
+      original = getDirectText(element);
+    } else {
+      original = element.getAttribute(type) || '';
+    }
+    element.setAttribute(dataAttr, original);
+  }
+
+  /**
+   * Restore the previously stored original value for an element.
+   * @param {Element} element - Element to restore.
+   * @param {string} type - Translation type (`text` or attribute name).
+   * @returns {void}
+   */
+  function restoreOriginalValue(element, type) {
+    if (!element) {
+      return;
+    }
+    var attrType = type === 'text' ? 'content' : type;
+    var dataAttr = 'data-xlate-original-' + attrType;
+    if (!element.hasAttribute(dataAttr)) {
+      return;
+    }
+    var original = element.getAttribute(dataAttr) || '';
+    if (type === 'text') {
+      element.textContent = original;
+    } else {
+      element.setAttribute(type, original);
+    }
+  }
+
+  /**
+   * Determine whether translations should currently be displayed.
+   * @returns {boolean} True when translation overlay is enabled.
+   */
+  function shouldShowTranslations() {
+    if (!window.__XLATE__) {
+      return true;
+    }
+    return window.__XLATE__.showTranslations !== false;
+  }
+
+  /**
+   * Check if a translation key has been human-reviewed.
+   * @param {string} key - Structural translation key.
+   * @returns {boolean} True when the key is marked reviewed.
+   */
+  function isKeyReviewed(key) {
+    if (!window.__XLATE__ || !window.__XLATE__.reviewMap) {
+      return true;
+    }
+    var flag = window.__XLATE__.reviewMap[key];
+    return flag === 1 || flag === '1' || flag === true;
+  }
+
+  /**
+   * Toggle the inline auto-translation indicator for a given element.
+   * @param {Element} element - Host element for the indicator.
+   * @param {string} key - Translation key (used for state tracking).
+   * @param {boolean} show - Whether to display the indicator.
+   * @returns {void}
+   */
+  function toggleAutoIndicator(element, key, show) {
+    if (!element || typeof element !== 'object') {
+      return;
+    }
+    if (!show) {
+      if (element.__xlateIndicator && element.__xlateIndicator.remove) {
+        element.__xlateIndicator.remove();
+      }
+      element.__xlateIndicator = null;
+      return;
+    }
+
+    if (element.__xlateIndicator) {
+      return;
+    }
+
+    ensureIndicatorStyles();
+
+    var indicator = document.createElement('span');
+    indicator.className = 'xlate-auto-indicator icon fa fa-globe text-muted';
+    indicator.setAttribute('role', 'img');
+    indicator.setAttribute('aria-label', 'AI translated');
+    indicator.setAttribute('title', 'AI translated');
+    indicator.setAttribute('data-xlate-indicator', key || '');
+
+    if (typeof element.appendChild === 'function') {
+      element.appendChild(indicator);
+    }
+
+    element.__xlateIndicator = indicator;
+  }
+
+  /**
+   * Inject the inline styles required for indicators and toggle control.
+   * @returns {void}
+   */
+  function ensureIndicatorStyles() {
+    if (indicatorStylesAdded) {
+      return;
+    }
+    indicatorStylesAdded = true;
+    var style = document.createElement('style');
+    style.setAttribute('data-xlate-style', 'indicator');
+    style.textContent = '' +
+      '.xlate-auto-indicator {' +
+      '  display:inline-flex;' +
+      '  align-items:center;' +
+      '  font-size:0.75em;' +
+      '  margin-left:0.35em;' +
+      '  opacity:0.75;' +
+      '}' +
+      '.xlate-auto-toggle {' +
+      '  position:fixed;' +
+      '  right:1rem;' +
+      '  bottom:1rem;' +
+      '  z-index:1040;' +
+      '}' +
+      '.xlate-auto-toggle .icon {' +
+      '  margin-right:0.35em;' +
+      '}';
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Update the toggle button label to reflect current mode.
+   * @returns {void}
+   */
+  function updateToggleButtonLabel() {
+    if (!toggleButton) {
+      return;
+    }
+    var enabled = shouldShowTranslations();
+    var label = enabled ? 'Hide AI translations' : 'Show AI translations';
+    toggleButton.innerHTML = '<span class="icon fa fa-language" aria-hidden="true"></span>' + label;
+    toggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    toggleButton.setAttribute('title', label);
+  }
+
+  /**
+   * Handle user toggling AI translation display.
+   * @param {Event} e - Click event instance.
+   * @returns {void}
+   */
+  function handleToggleClick(e) {
+    if (e) {
+      e.preventDefault();
+    }
+    if (!window.__XLATE__) {
+      return;
+    }
+    window.__XLATE__.showTranslations = !shouldShowTranslations();
+    updateToggleButtonLabel();
+    processedElements = new WeakSet();
+    walk(document.body, window.__XLATE__.map || {}, false);
+  }
+
+  /**
+   * Ensure the floating toggle control is present for translation mode.
+   * @returns {void}
+   */
+  function ensureToggleControl() {
+    if (!window.__XLATE__ || window.__XLATE__.isCapture) {
+      return;
+    }
+    ensureIndicatorStyles();
+    if (toggleButton) {
+      return;
+    }
+    toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'btn btn-light btn-sm xlate-auto-toggle';
+    toggleButton.addEventListener('click', handleToggleClick);
+    document.body.appendChild(toggleButton);
+    updateToggleButtonLabel();
+  }
 
   /**
    * Generate translation key from element structure + direct text (ignoring children)
@@ -296,14 +511,37 @@ define(['core/ajax'], function (Ajax) {
    */
   function translateElement(element, type, map) {
     var key = getKeyFromAttributes(element, type);
-    if (!key || !map[key]) {
+    if (!key) {
+      return;
+    }
+
+    storeOriginalValue(element, type);
+
+    if (!shouldShowTranslations()) {
+      restoreOriginalValue(element, type);
+      if (type === 'text') {
+        toggleAutoIndicator(element, key, false);
+      }
+      return;
+    }
+
+    if (!map || !hasTranslation(map, key)) {
+      if (type === 'text') {
+        toggleAutoIndicator(element, key, false);
+      }
+      return;
+    }
+
+    var value = map[key];
+    if (typeof value !== 'string') {
       return;
     }
 
     if (type === 'text') {
-      element.textContent = map[key];
+      element.textContent = value;
+      toggleAutoIndicator(element, key, !isKeyReviewed(key));
     } else {
-      element.setAttribute(type, map[key]);
+      element.setAttribute(type, value);
     }
   }
   /**
@@ -419,6 +657,10 @@ define(['core/ajax'], function (Ajax) {
           window.__XLATE__.map = {};
         }
         window.__XLATE__.map[key] = text;
+        if (!window.__XLATE__.reviewMap) {
+          window.__XLATE__.reviewMap = {};
+        }
+        window.__XLATE__.reviewMap[key] = 1;
       }
       return true;
     }).catch(function () {
@@ -509,6 +751,49 @@ define(['core/ajax'], function (Ajax) {
     }
   }
   /**
+   * Process a candidate value for translation or capture.
+   * @param {Element} element - Element being processed.
+   * @param {string} value - Source text or attribute value.
+   * @param {string} attrName - Attribute name ('text' for text nodes).
+   * @param {boolean} tagOnly - Whether we are in tag-only mode.
+   * @param {boolean} isCapture - Whether capture mode is active.
+   * @param {Object} map - Translation map.
+   * @returns {void}
+   */
+  function processCandidateValue(element, value, attrName, tagOnly, isCapture, map) {
+    if (!value || !isTranslatableText(value)) {
+      return;
+    }
+
+    var key = generateKey(element, value, attrName);
+    if (!key) {
+      return;
+    }
+
+    setKeyAttribute(element, attrName, key);
+
+    if (tagOnly) {
+      return;
+    }
+
+    if (isCapture) {
+      saveToDatabase(element, value, attrName, key, map);
+      return;
+    }
+
+    if (!map) {
+      return;
+    }
+
+    if (hasTranslation(map, key)) {
+      translateElement(element, attrName, map);
+      return;
+    }
+
+    queueMissingTranslation(key);
+  }
+
+  /**
    * Process a single DOM element: tag, then optionally save or translate.
    * @param {Element} element - Element to process
    * @param {Object} map - Translation map
@@ -533,23 +818,7 @@ define(['core/ajax'], function (Ajax) {
       }
     }
     directText = directText.trim();
-    if (directText && isTranslatableText(directText)) {
-      var textKey = generateKey(element, directText, 'text');
-      if (textKey) {
-        setKeyAttribute(element, 'text', textKey); // Step 1: TAG
-        if (!tagOnly) {
-          if (isCapture) {
-            saveToDatabase(element, directText, 'text', textKey, map); // Step 2: SAVE (skip if in map)
-          } else if (map) {
-            if (hasTranslation(map, textKey)) {
-              translateElement(element, 'text', map); // Step 3: TRANSLATE
-            } else {
-              queueMissingTranslation(textKey);
-            }
-          }
-        }
-      }
-    }
+    processCandidateValue(element, directText, 'text', tagOnly, isCapture, map);
 
     // Process attributes
     ATTRIBUTE_TYPES.forEach(function (attr) {
@@ -557,23 +826,7 @@ define(['core/ajax'], function (Ajax) {
         return;
       }
       var value = element.getAttribute(attr).trim();
-      if (value && isTranslatableText(value)) {
-        var attrKey = generateKey(element, value, attr);
-        if (attrKey) {
-          setKeyAttribute(element, attr, attrKey); // Step 1: TAG
-          if (!tagOnly) {
-            if (isCapture) {
-              saveToDatabase(element, value, attr, attrKey, map); // Step 2: SAVE (skip if in map)
-            } else if (map) {
-              if (hasTranslation(map, attrKey)) {
-                translateElement(element, attr, map); // Step 3: TRANSLATE
-              } else {
-                queueMissingTranslation(attrKey);
-              }
-            }
-          }
-        }
-      }
+      processCandidateValue(element, value, attr, tagOnly, isCapture, map);
     });
   }
   Translator.dom.collectKeysFromElement = collectKeysFromElement;
@@ -598,6 +851,117 @@ define(['core/ajax'], function (Ajax) {
       pendingTranslationKeys.clear();
       fetchMissingTranslations(keys);
     }, 200);
+  }
+
+  /**
+   * Mark keys as requested to avoid duplicate fetching.
+   * @param {Array<string>} keys - Keys to record.
+   * @returns {void}
+   */
+  function markKeysAsRequested(keys) {
+    keys.forEach(function (k) {
+      requestedTranslationKeys.add(k);
+    });
+  }
+
+  /**
+   * Remove keys from requested set after a failed fetch.
+   * @param {Array<string>} keys - Keys to remove.
+   * @returns {void}
+   */
+  function unmarkRequestedKeys(keys) {
+    keys.forEach(function (k) {
+      requestedTranslationKeys.delete(k);
+    });
+  }
+
+  /**
+   * Merge new translations into the provided map.
+   * @param {Object} map - Existing translation map.
+   * @param {Object} translations - Incoming translations.
+   * @returns {boolean} True when at least one entry changed.
+   */
+  function mergeTranslationsIntoMap(map, translations) {
+    var updated = false;
+    Object.keys(translations).forEach(function (k) {
+      var value = translations[k];
+      if (!Object.prototype.hasOwnProperty.call(map, k) || map[k] !== value) {
+        map[k] = value;
+        updated = true;
+      }
+    });
+    return updated;
+  }
+
+  /**
+   * Ensure the global review map exists and merge incoming flags.
+   * @param {Object|null} reviewUpdates - Incoming review flags.
+   * @returns {boolean} True when any review flag changed.
+   */
+  function applyReviewUpdates(reviewUpdates) {
+    if (!reviewUpdates || typeof reviewUpdates !== 'object') {
+      return false;
+    }
+
+    if (!window.__XLATE__.reviewMap) {
+      window.__XLATE__.reviewMap = {};
+    }
+
+    var reviewChanged = false;
+    Object.keys(reviewUpdates).forEach(function (k) {
+      var incoming = reviewUpdates[k];
+      if (window.__XLATE__.reviewMap[k] !== incoming) {
+        reviewChanged = true;
+      }
+      window.__XLATE__.reviewMap[k] = incoming;
+    });
+
+    return reviewChanged;
+  }
+
+  /**
+   * Persist the latest translations and review map to local storage cache.
+   * @param {Object} translations - Newly received translations.
+   * @returns {void}
+   */
+  function syncCacheWithLatest(translations) {
+    if (!window.__XLATE__.cacheKey) {
+      return;
+    }
+
+    try {
+      var cached = localStorage.getItem(window.__XLATE__.cacheKey);
+      var cachedPayload = cached ? JSON.parse(cached) : null;
+      var cachedTranslations;
+      var cachedReviewed;
+
+      if (cachedPayload && typeof cachedPayload === 'object' && cachedPayload.translations) {
+        cachedTranslations = cachedPayload.translations;
+        cachedReviewed = cachedPayload.reviewed || {};
+      } else if (cachedPayload && typeof cachedPayload === 'object' && !Array.isArray(cachedPayload)) {
+        cachedTranslations = cachedPayload;
+        cachedReviewed = {};
+      } else {
+        cachedTranslations = {};
+        cachedReviewed = {};
+      }
+
+      Object.keys(translations).forEach(function (k) {
+        cachedTranslations[k] = translations[k];
+      });
+
+      var reviewMap = window.__XLATE__.reviewMap || {};
+      Object.keys(reviewMap).forEach(function (k) {
+        cachedReviewed[k] = reviewMap[k];
+      });
+
+      localStorage.setItem(window.__XLATE__.cacheKey, JSON.stringify({
+        translations: cachedTranslations,
+        reviewed: cachedReviewed
+      }));
+    } catch (e) {
+      // Ignore cache sync errors.
+    }
   }
 
   /**
@@ -631,54 +995,28 @@ define(['core/ajax'], function (Ajax) {
         var map = window.__XLATE__.map || {};
         var translations = (data && data.translations) ? data.translations : data;
         if (!translations || typeof translations !== 'object') {
-          keys.forEach(function (k) {
-            requestedTranslationKeys.add(k);
-          });
-          return;
+          markKeysAsRequested(keys);
+          return null;
         }
 
-        var updated = false;
-        Object.keys(translations).forEach(function (k) {
-          var value = translations[k];
-          if (!Object.prototype.hasOwnProperty.call(map, k) || map[k] !== value) {
-            map[k] = value;
-            updated = true;
-          }
-        });
+        var updated = mergeTranslationsIntoMap(map, translations);
+        var reviewChanged = applyReviewUpdates(data && data.reviewed ? data.reviewed : null);
 
-        if (updated) {
+        if (updated || reviewChanged) {
           window.__XLATE__.map = map;
-
-          if (window.__XLATE__.cacheKey) {
-            try {
-              var cached = localStorage.getItem(window.__XLATE__.cacheKey);
-              if (cached) {
-                var cachedMap = JSON.parse(cached);
-                if (cachedMap && typeof cachedMap === 'object') {
-                  Object.keys(translations).forEach(function (k) {
-                    cachedMap[k] = translations[k];
-                  });
-                  localStorage.setItem(window.__XLATE__.cacheKey, JSON.stringify(cachedMap));
-                }
-              }
-            } catch (e) {
-              // Ignore cache sync errors.
-            }
-          }
+          syncCacheWithLatest(translations);
 
           processedElements = new WeakSet();
           walk(document.body, map, false);
         }
 
-        keys.forEach(function (k) {
-          requestedTranslationKeys.add(k);
-        });
+        markKeysAsRequested(keys);
+        return null;
       })
       .catch(function (err) {
-        keys.forEach(function (k) {
-          requestedTranslationKeys.delete(k);
-        });
+        unmarkRequestedKeys(keys);
         xlateDebug('[XLATE] Missing translation fetch failed', err);
+        return null;
       });
   }
 
@@ -766,16 +1104,28 @@ define(['core/ajax'], function (Ajax) {
   function run(map) {
     try {
       walk(document.body, map || {});
+      if (window.__XLATE__ && !window.__XLATE__.isCapture) {
+        ensureToggleControl();
+      }
 
       // Fallback: periodic refreshes to catch late-injected content
       setTimeout(function () {
         walk(document.body, map || {});
+        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
+          ensureToggleControl();
+        }
       }, 1000);
       setTimeout(function () {
         walk(document.body, map || {});
+        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
+          ensureToggleControl();
+        }
       }, 3000);
       setTimeout(function () {
         walk(document.body, map || {});
+        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
+          ensureToggleControl();
+        }
       }, 6000);
 
       var mo = new MutationObserver(function (muts) {
@@ -797,6 +1147,9 @@ define(['core/ajax'], function (Ajax) {
               lastProcessTime = now;
               setTimeout(function () {
                 walk(document.body, map || {});
+                if (window.__XLATE__ && !window.__XLATE__.isCapture) {
+                  ensureToggleControl();
+                }
               }, 100);
             }
           }, true);
@@ -875,9 +1228,271 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * Create the base XLATE state object from configuration.
+   * @param {TranslatorConfig} config - Translator configuration.
+   * @returns {Object} Base state object.
+   */
+  function createXlateState(config) {
+    var state = {
+      lang: config.lang,
+      siteLang: config.siteLang,
+      captureSourceLang: config.captureSourceLang || config.siteLang,
+      map: {},
+      sourceMap: {},
+      reviewMap: {},
+      bundleUrl: config.bundleurl || '',
+      version: config.version || '',
+      cacheKey: ''
+    };
+
+    // Use captureSourceLang (course's configured source) if available, otherwise fall back to siteLang
+    state.isCapture = (config.lang === state.captureSourceLang);
+    return state;
+  }
+
+  /**
+   * Resolve the active course id exposed to the page, if any.
+   * @returns {number|null} Course id or null when unavailable.
+   */
+  function resolveCourseId() {
+    if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+      return window.XLATE_COURSEID;
+    }
+
+    if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
+      return M.cfg.courseid;
+    }
+
+    return null;
+  }
+
+  /**
+   * Associate keys with a course when the backend provides association metadata.
+   * @param {Array<string>} keys - Keys collected from DOM.
+   * @param {Object} keyDetails - Per-key detail map.
+   * @param {Object} associations - Associations returned from bundle.
+   * @param {number|null} courseId - Course id when available.
+   * @returns {void}
+   */
+  function associateKeysWithCourse(keys, keyDetails, associations, courseId) {
+    if (!courseId || !associations || typeof associations !== 'object') {
+      return;
+    }
+
+    var toAssociate = [];
+    for (var ti = 0; ti < keys.length; ti++) {
+      var key = keys[ti];
+      if (!associations[key]) {
+        var detail = keyDetails[key] || null;
+        if (detail) {
+          toAssociate.push({
+            component: detail.component,
+            key: key,
+            source: detail.source || ''
+          });
+        }
+      }
+    }
+
+    if (!toAssociate.length) {
+      return;
+    }
+
+    xlateDebug('[XLATE] Associating', toAssociate.length, 'keys with course', courseId);
+    try {
+      Ajax.call([{
+        methodname: 'local_xlate_associate_keys',
+        args: {
+          keys: toAssociate,
+          courseid: courseId,
+          context: ''
+        }
+      }]);
+    } catch (e) {
+      xlateDebug('[XLATE] Bulk-associate exception', e);
+    }
+  }
+
+  /**
+   * Hydrate cached translations for translation mode.
+   * @param {string} cacheKey - Cache key identifier.
+   * @returns {{translations:Object, reviewed:Object}|null} Cached payload when available.
+   */
+  function readCachedBundle(cacheKey) {
+    if (!cacheKey) {
+      return null;
+    }
+
+    try {
+      var cached = localStorage.getItem(cacheKey);
+      if (!cached) {
+        return null;
+      }
+      var payload = JSON.parse(cached);
+      if (!payload || typeof payload !== 'object') {
+        return null;
+      }
+
+      if (payload.translations && typeof payload.translations === 'object') {
+        return {
+          translations: payload.translations,
+          reviewed: payload.reviewed || {}
+        };
+      }
+
+      if (!Array.isArray(payload)) {
+        return {
+          translations: payload,
+          reviewed: {}
+        };
+      }
+    } catch (e) {
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle capture-mode initialization logic.
+   * @param {TranslatorConfig} config - Translator configuration.
+   * @param {number|null} courseId - Active course id, if any.
+   * @returns {void}
+   */
+  function initCaptureMode(config, courseId) {
+    xlateDebug('[XLATE] Capture mode - starting tag-only pass');
+    processedElements = new WeakSet();
+    walk(document.body, {}, true);
+
+    var collected = collectKeySetAndDetails(document);
+    var keySetCap = collected.keySet;
+    var keyDetails = collected.keyDetails;
+    var keysCap = Object.keys(keySetCap);
+
+    xlateDebug('[XLATE] Collected', keysCap.length, 'keys from DOM');
+
+    if (!keysCap.length) {
+      xlateDebug('[XLATE] No keys found, skipping bundle fetch');
+      run({});
+      return;
+    }
+
+    xlateDebug('[XLATE] Fetching bundle to check existing keys...');
+    fetch(config.bundleurl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: keysCap })
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (map) {
+        var translations = (map && map.translations) ? map.translations : map;
+        var sourceMap = (map && map.sourceMap) ? map.sourceMap : {};
+        var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+        var associations = (map && map.associations) ? map.associations : {};
+        if (!translations || typeof translations !== 'object') {
+          translations = {};
+        }
+        window.__XLATE__.map = translations;
+        window.__XLATE__.sourceMap = sourceMap;
+        window.__XLATE__.reviewMap = reviewMap;
+
+        var existingCount = Object.keys(translations).length;
+        xlateDebug('[XLATE] Bundle returned', existingCount, 'existing translations');
+
+        associateKeysWithCourse(keysCap, keyDetails, associations, courseId);
+
+        processedElements = new WeakSet();
+        walk(document.body, translations, false);
+        run(translations);
+        return true;
+      })
+      .catch(function (err) {
+        xlateDebug('[XLATE] Bundle fetch failed:', err);
+        processedElements = new WeakSet();
+        walk(document.body, {}, false);
+        run({});
+      });
+  }
+
+  /**
+   * Handle translation-mode initialization logic.
+   * @param {TranslatorConfig} config - Translator configuration.
+   * @returns {void}
+   */
+  function initTranslationMode(config) {
+    xlateDebug('[XLATE] Translation mode - starting tag-only pass');
+    try {
+      processedElements = new WeakSet();
+      walk(document.body, {}, true);
+
+      var keySet = {};
+      var all = document.querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) {
+        collectKeysFromElement(all[i], keySet);
+      }
+      var keys = Object.keys(keySet);
+
+      if (!keys.length) {
+        run({});
+        return;
+      }
+
+      var cacheKey = 'xlate:' + config.lang + ':' + config.version + ':keys:' + keys.length;
+      window.__XLATE__.cacheKey = cacheKey;
+
+      var cachedPayload = readCachedBundle(cacheKey);
+      if (cachedPayload) {
+        window.__XLATE__.map = cachedPayload.translations;
+        window.__XLATE__.reviewMap = cachedPayload.reviewed;
+        processedElements = new WeakSet();
+        run(cachedPayload.translations);
+      }
+
+      fetch(config.bundleurl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: keys })
+      })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (map) {
+          var translations = (map && map.translations) ? map.translations : map;
+          var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+          if (!translations || typeof translations !== 'object') {
+            translations = {};
+          }
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              translations: translations,
+              reviewed: reviewMap
+            }));
+          } catch (e) {
+            // Ignore
+          }
+          window.__XLATE__.map = translations;
+          window.__XLATE__.reviewMap = reviewMap;
+          processedElements = new WeakSet();
+          run(translations);
+          return true;
+        })
+        .catch(function () {
+          run({});
+        });
+    } catch (err) {
+      run({});
+    }
+  }
+
+  /**
    * @typedef {Object} TranslatorConfig
    * @property {string} lang Current page language code.
    * @property {string} siteLang Site default language used for capture mode.
+   * @property {string} [captureSourceLang] Course-specific source language for capture (falls back to siteLang if not set).
    * @property {string} bundleurl REST endpoint returning translation bundles.
    * @property {string} version Bundle version hash used for cache busting.
    * @property {boolean} isEditing True when Moodle editing mode is active.
@@ -897,221 +1512,25 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
-    // No autodetect config: auto-detection is always enabled.
+    window.__XLATE__ = createXlateState(config);
 
-    window.__XLATE__ = {
-      lang: config.lang,
-      siteLang: config.siteLang,
-      map: {},
-      sourceMap: {},
-      bundleUrl: config.bundleurl || '',
-      version: config.version || '',
-      cacheKey: ''
-    };
-
-    /**
-     * Process bundle data
-     * @param {Object} bundleData - The bundle data
-     */
-    var currentLang = config.lang;
-    var siteLang = config.siteLang;
-    var isCapture = (currentLang === siteLang);
-    window.__XLATE__.isCapture = isCapture;
-
-    // Detect course id exposed by server-side hook or fallback to M.cfg
-    var courseId = null;
-    if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
-      courseId = window.XLATE_COURSEID;
-    } else if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
-      courseId = M.cfg.courseid;
-    }
-
+    var courseId = resolveCourseId();
     xlateDebug('[XLATE] Initializing:', {
-      currentLang: currentLang,
-      siteLang: siteLang,
-      isCapture: isCapture,
+      currentLang: config.lang,
+      siteLang: config.siteLang,
+      captureSourceLang: config.captureSourceLang || config.siteLang,
+      isCapture: window.__XLATE__.isCapture,
       courseId: courseId
     });
-    // Auto-detect enabled by default (autoDetectEnabled removed)
 
-    // In capture mode: fetch bundle first to check existing keys, then tag + save only new ones
-    if (isCapture) {
-      xlateDebug('[XLATE] Capture mode - starting tag-only pass');
-      processedElements = new WeakSet();
-      // Tag-only first pass to generate keys
-      walk(document.body, {}, true);
-
-      // Collect all tagged keys and record a first-seen component+source for each key
-      var collected = collectKeySetAndDetails(document);
-      var keySetCap = collected.keySet;
-      var keyDetails = collected.keyDetails;
-      var keysCap = Object.keys(keySetCap);
-
-      xlateDebug('[XLATE] Collected', keysCap.length, 'keys from DOM');
-
-      if (keysCap.length === 0) {
-        xlateDebug('[XLATE] No keys found, skipping bundle fetch');
-        run({});
-        return;
-      }
-
-      xlateDebug('[XLATE] Fetching bundle to check existing keys...');
-      // Fetch existing translations for these keys
-      fetch(config.bundleurl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: keysCap })
-      })
-        .then(function (response) {
-          return response.json();
-        })
-        .then(function (map) {
-          var translations = (map && map.translations) ? map.translations : map;
-          var sourceMap = (map && map.sourceMap) ? map.sourceMap : {};
-          var associations = (map && map.associations) ? map.associations : {};
-          if (!translations || typeof translations !== 'object') {
-            translations = {};
-          }
-          window.__XLATE__.map = translations;
-          window.__XLATE__.sourceMap = sourceMap;
-
-          var existingCount = Object.keys(translations).length;
-          xlateDebug('[XLATE] Bundle returned', existingCount, 'existing translations');
-
-          // If the server returned per-key association information and we have a page-level
-          // course id, bulk-associate any keys that are not yet associated for this course.
-          // The server may only return associations to authorized users.
-          if (courseId && associations && typeof associations === 'object') {
-            var toAssociate = [];
-            for (var ti = 0; ti < keysCap.length; ti++) {
-              var k = keysCap[ti];
-              if (!associations[k]) {
-                var detail = keyDetails[k] || null;
-                if (detail) {
-                  toAssociate.push({
-                    component: detail.component,
-                    key: k,
-                    source: detail.source || ''
-                  });
-                }
-              }
-            }
-            if (toAssociate.length) {
-              xlateDebug('[XLATE] Associating', toAssociate.length, 'keys with course', courseId);
-              try {
-                // Fire-and-forget: we don't need to block the UI on association results.
-                Ajax.call([{
-                  methodname: 'local_xlate_associate_keys',
-                  args: {
-                    keys: toAssociate,
-                    courseid: courseId,
-                    context: ''
-                  }
-                }]);
-              } catch (e) {
-                xlateDebug('[XLATE] Bulk-associate exception', e);
-              }
-            }
-          }
-
-          // Now walk again to save only keys NOT in the bundle
-          processedElements = new WeakSet();
-          walk(document.body, translations, false);
-          run(translations);
-          return true;
-        })
-        .catch(function (err) {
-          xlateDebug('[XLATE] Bundle fetch failed:', err);
-          // If bundle fetch fails, save everything
-          processedElements = new WeakSet();
-          walk(document.body, {}, false);
-          run({});
-        });
+    if (window.__XLATE__.isCapture) {
+      initCaptureMode(config, courseId);
       return;
     }
 
-    xlateDebug('[XLATE] Translation mode - starting tag-only pass');
-    // Translation mode: pre-tag, collect keys, request filtered bundle, then translate
-    try {
-      // Pre-tag only
-      processedElements = new WeakSet();
-      walk(document.body, {}, true);
-
-      // Collect tagged keys from DOM
-      var keySet = {};
-      var all = document.querySelectorAll('*');
-      for (var i = 0; i < all.length; i++) {
-        collectKeysFromElement(all[i], keySet);
-      }
-      var keys = Object.keys(keySet);
-
-      // Short-circuit if no keys
-      if (keys.length === 0) {
-        run({});
-        return;
-      }
-
-      var k = 'xlate:' + config.lang + ':' + config.version + ':keys:' + keys.length;
-      window.__XLATE__.cacheKey = k;
-      var cached = null;
-      try {
-        cached = localStorage.getItem(k);
-      } catch (e) {
-        // Ignore
-      }
-      if (cached) {
-        try {
-          var cachedMap = JSON.parse(cached);
-          if (cachedMap && typeof cachedMap === 'object') {
-            window.__XLATE__.map = cachedMap;
-            processedElements = new WeakSet();
-            run(cachedMap);
-          }
-        } catch (e) {
-          // Ignore
-        }
-      }
-
-      fetch(config.bundleurl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: keys })
-      })
-        .then(function (response) {
-          return response.json();
-        })
-        .then(function (map) {
-          // Accept either flat map or legacy wrapper
-          var translations = (map && map.translations) ? map.translations : map;
-          if (!translations || typeof translations !== 'object') {
-            translations = {};
-          }
-          try {
-            localStorage.setItem(k, JSON.stringify(translations));
-          } catch (e) {
-            // Ignore
-          }
-          window.__XLATE__.map = translations;
-          processedElements = new WeakSet();
-          run(translations);
-          return true;
-        })
-        .catch(function () {
-          run({});
-        });
-    } catch (err) {
-      run({});
-    }
+    initTranslationMode(config);
   }
   Translator.api.init = init;
-
-  /**
-   * Enable or disable auto-detect
-   * @param {boolean} enabled - Whether to enable auto-detect
-   */
-
 
   Translator.run = run;
   Translator.init = init;

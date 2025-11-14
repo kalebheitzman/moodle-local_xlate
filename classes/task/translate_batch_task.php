@@ -66,7 +66,7 @@ class translate_batch_task extends adhoc_task {
      * @return void
      */
     public function execute() {
-        global $DB;
+        global $DB, $CFG;
 
         $data = $this->get_custom_data();
         if (empty($data) || !is_object($data)) {
@@ -75,7 +75,7 @@ class translate_batch_task extends adhoc_task {
 
         // Expected custom data: requestid, sourcelang, targetlang, items (array), glossary (array), options (array)
         $requestid = $data->requestid ?? uniqid('rb_');
-        $sourcelang = $data->sourcelang ?? 'en';
+        $sourcelang = $data->sourcelang ?? $CFG->lang;
         $targetlang = $data->targetlang ?? '';
         $items = $data->items ?? [];
         $glossary = $data->glossary ?? [];

@@ -237,19 +237,33 @@ local_xlate_render_admin_nav('manage');
 
 // (Autotranslate controls are rendered below inside a styled card.)
 
-// Get enabled languages
+// Get enabled languages and normalize formatting/duplicates so ordering remains predictable.
 $enabledlangs = get_config('local_xlate', 'enabled_languages');
-$enabledlangsarray = empty($enabledlangs) ? ['en'] : explode(',', $enabledlangs);
+if (!empty($enabledlangs)) {
+    $enabledlangsarray = array_values(array_filter(array_map('trim', explode(',', $enabledlangs)), function($value) {
+        return $value !== '';
+    }));
+    $enabledlangsarray = array_values(array_unique($enabledlangsarray));
+} else {
+    $enabledlangsarray = ['en'];
+}
 $installedlangs = get_string_manager()->get_list_of_translations();
 
 // Site language info (used for labels and to exclude from target options).
 $sitelang = $CFG->lang;
 $sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
 
-// Default target: pick the first enabled language that is not the site language, if any.
+// For course-filtered view, check if course has a configured source language
+$coursesourcelang = null;
+if ($filter_courseid > 0) {
+    $coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($filter_courseid);
+}
+$displaysourcelang = $coursesourcelang ?: $sitelang;
+
+// Default target: pick the first enabled language that is not the display source language, if any.
 $defaulttarget = '';
 foreach ($enabledlangsarray as $candidate) {
-    if ($candidate !== $sitelang) {
+    if ($candidate !== $displaysourcelang) {
         $defaulttarget = $candidate;
         break;
     }
@@ -269,14 +283,14 @@ if ($filter_courseid > 0) {
     echo html_writer::tag('label', get_string('autotranslate_target', 'local_xlate'), ['class' => 'me-3 mb-2 d-block']);
     $options = [];
     foreach ($enabledlangsarray as $langcode) {
-        if ($langcode === $sitelang) {
+        if ($langcode === $displaysourcelang) {
             continue;
         }
         $options[$langcode] = isset($installedlangs[$langcode]) ? $installedlangs[$langcode] . ' (' . $langcode . ')' : $langcode;
     }
     if (empty($options)) {
-        // If no non-site enabled languages, include site language as fallback.
-        $options[$sitelang] = $sitelangname . ' (' . $sitelang . ')';
+        // If no enabled languages other than source, include source as fallback.
+        $options[$displaysourcelang] = isset($installedlangs[$displaysourcelang]) ? $installedlangs[$displaysourcelang] . ' (' . $displaysourcelang . ')' : $displaysourcelang;
     }
 
     // Render inline checkboxes
@@ -516,109 +530,124 @@ if (!empty($keys)) {
         
         echo html_writer::start_div('card-body');
     // Show source text in a row styled like the translation fields
+    // Use course-specific source language if course filter is active
     $sitelang = $CFG->lang;
-    $sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
-    echo html_writer::start_div('row align-items-center mb-2');
-    // Label column (same as translation label col-md-2)
-    echo html_writer::start_div('col-md-2 d-flex align-items-center');
-    $sourcelabel = $sitelangname;
-    if (strpos($sourcelabel, '(' . $sitelang . ')') === false) {
-        $sourcelabel .= ' (' . $sitelang . ')';
+    $displaysourcelang = $sitelang;
+    if ($filter_courseid > 0) {
+        $coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($filter_courseid);
+        if ($coursesourcelang) {
+            $displaysourcelang = $coursesourcelang;
+        }
     }
-    echo html_writer::tag('label', 'Source (' . $sourcelabel . ')', ['class' => 'fw-bold mb-0']);
-    echo html_writer::end_div();
-    // Source text column (same as translation input col-md-6)
-    echo html_writer::start_div('col-md-6 d-flex align-items-center');
-    echo html_writer::div(s($key->source), 'form-control-plaintext mb-0');
-    echo html_writer::end_div();
-    // Empty columns for checkbox and button (col-md-2 each)
-    echo html_writer::start_div('col-md-2');
-    echo html_writer::end_div();
-    echo html_writer::start_div('col-md-2');
-    echo html_writer::end_div();
-    echo html_writer::end_div();
+    $orderedlangs = $enabledlangsarray;
+    if (!in_array($displaysourcelang, $orderedlangs, true)) {
+        $orderedlangs[] = $displaysourcelang;
+    }
         
-        // Show translations for each enabled language except the site language
-        foreach ($enabledlangsarray as $langcode) {
-            if ($langcode === $sitelang) {
+        // Show translations for all enabled languages (source row appears first and is disabled)
+        foreach ($orderedlangs as $langcode) {
+            if (!isset($installedlangs[$langcode])) {
                 continue;
             }
-            if (isset($installedlangs[$langcode])) {
-                $translation = $DB->get_record('local_xlate_tr', ['keyid' => $key->id, 'lang' => $langcode]);
+
+            $is_source = ($langcode === $displaysourcelang);
+            $translation = $DB->get_record('local_xlate_tr', ['keyid' => $key->id, 'lang' => $langcode]);
+            $label = $installedlangs[$langcode];
+            if (strpos($label, '(' . $langcode . ')') === false) {
+                $label .= ' (' . $langcode . ')';
+            }
+
+            $usesource = (strlen($key->source) > 80 || strpos($key->source, "\n") !== false);
+            $rtl_langs = ['ar', 'he', 'fa', 'ur', 'ps', 'syr', 'dv', 'yi'];
+            $rtl = in_array($langcode, $rtl_langs);
+            $dir = $rtl ? 'rtl' : 'ltr';
+            $align = $rtl ? 'right' : 'left';
+
+            if ($is_source) {
+                echo html_writer::start_div('row align-items-center mb-2');
+            } else {
                 echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url, 'class' => 'mb-2']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save_translation']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'target_lang', 'value' => $langcode]);
                 echo html_writer::start_div('row align-items-center');
-                echo html_writer::start_div('col-md-2');
-                $targetlabel = $installedlangs[$langcode];
-                if (strpos($targetlabel, '(' . $langcode . ')') === false) {
-                    $targetlabel .= ' (' . $langcode . ')';
-                }
-                echo html_writer::tag('label', $targetlabel);
-                echo html_writer::end_div();
-                echo html_writer::start_div('col-md-6');
-                $trval = $translation ? $translation->text : '';
-                // Use textarea if the SOURCE is long or multiline
-                $usesource = (strlen($key->source) > 80 || strpos($key->source, "\n") !== false);
-                // List of standard RTL language codes.
-                $rtl_langs = ['ar', 'he', 'fa', 'ur', 'ps', 'syr', 'dv', 'yi'];
-                $rtl = in_array($langcode, $rtl_langs);
-                $dir = $rtl ? 'rtl' : 'ltr';
-                $align = $rtl ? 'right' : 'left';
-                if ($usesource) {
-                    // Guess rows: number of lines in source, or based on length, min 3, max 8
-                    $sourcelines = max(1, substr_count($key->source, "\n") + 1);
-                    $rows = max(3, min(8, $sourcelines, ceil(strlen($key->source)/80)));
-                    echo html_writer::tag('textarea', s($trval), [
-                        'name' => 'translation',
-                        'class' => 'form-control',
-                        'rows' => $rows,
-                        'placeholder' => 'Enter translation...',
-                        'dir' => $dir,
-                        'style' => 'text-align:' . $align
-                    ]);
+            }
+
+            echo html_writer::start_div('col-md-2');
+            $labelformat = $is_source ? html_writer::tag('strong', $label) : $label;
+            echo html_writer::tag('label', $labelformat);
+            echo html_writer::end_div();
+
+            echo html_writer::start_div('col-md-6');
+            $displayval = $is_source ? $key->source : ($translation ? $translation->text : '');
+            if ($usesource) {
+                $sourcelines = max(1, substr_count($key->source, "\n") + 1);
+                $rows = max(3, min(8, $sourcelines, ceil(strlen($key->source)/80)));
+                $textarea_attrs = [
+                    'name' => 'translation',
+                    'class' => 'form-control',
+                    'rows' => $rows,
+                    'dir' => $dir,
+                    'style' => 'text-align:' . $align
+                ];
+                if ($is_source) {
+                    $textarea_attrs['readonly'] = 'readonly';
+                    $textarea_attrs['disabled'] = 'disabled';
+                    $textarea_attrs['style'] .= '; background-color: #e9ecef;';
                 } else {
-                    echo html_writer::empty_tag('input', [
-                        'type' => 'text',
-                        'name' => 'translation',
-                        'value' => $trval,
-                        'class' => 'form-control',
-                        'placeholder' => 'Enter translation...',
-                        'dir' => $dir,
-                        'style' => 'text-align:' . $align
-                    ]);
+                    $textarea_attrs['placeholder'] = 'Enter translation...';
                 }
+                echo html_writer::tag('textarea', s($displayval), $textarea_attrs);
+            } else {
+                $input_attrs = [
+                    'name' => 'translation',
+                    'type' => 'text',
+                    'class' => 'form-control',
+                    'dir' => $dir,
+                    'style' => 'text-align:' . $align
+                ];
+                if ($is_source) {
+                    $input_attrs['value'] = $displayval;
+                    $input_attrs['readonly'] = 'readonly';
+                    $input_attrs['disabled'] = 'disabled';
+                    // $input_attrs['style'] .= '; background-color: #e9ecef;';
+                } else {
+                    $input_attrs['value'] = $displayval;
+                    $input_attrs['placeholder'] = 'Enter translation...';
+                }
+                echo html_writer::empty_tag('input', $input_attrs);
+            }
+            echo html_writer::end_div();
+
+            if ($is_source) {
+                echo html_writer::div('', 'col-md-1 d-flex align-items-center text-muted small');
+                echo html_writer::div('', 'col-md-1 d-flex align-items-center text-muted small');
+                echo html_writer::div('', 'col-md-2 d-flex align-items-center text-muted small');
                 echo html_writer::end_div();
-                // Active checkbox (compact)
+            } else {
                 echo html_writer::start_div('col-md-1 d-flex align-items-center');
                 $checked = $translation && $translation->status ? true : false;
-                echo html_writer::tag('label', 
-                    html_writer::empty_tag('input', [
-                        'type' => 'checkbox',
-                        'name' => 'status',
-                        'value' => '1',
-                        'checked' => $checked ? 'checked' : null,
-                        'class' => 'me-1'
-                    ]) . ' ' . get_string('active', 'local_xlate'),
-                    ['class' => 'form-check-label mb-0 text-nowrap small']
-                );
+                $active_input = html_writer::empty_tag('input', [
+                    'type' => 'checkbox',
+                    'name' => 'status',
+                    'value' => '1',
+                    'checked' => $checked ? 'checked' : null,
+                    'class' => 'me-1'
+                ]);
+                echo html_writer::tag('label', $active_input . ' ' . get_string('active', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
 
-                // Reviewed checkbox (compact)
                 echo html_writer::start_div('col-md-1 d-flex align-items-center');
                 $rchecked = $translation && isset($translation->reviewed) && $translation->reviewed ? true : false;
-                echo html_writer::tag('label', 
-                    html_writer::empty_tag('input', [
-                        'type' => 'checkbox',
-                        'name' => 'reviewed',
-                        'value' => '1',
-                        'checked' => $rchecked ? 'checked' : null,
-                        'class' => 'me-1'
-                    ]) . ' ' . get_string('reviewed', 'local_xlate'),
-                    ['class' => 'form-check-label mb-0 text-nowrap small']
-                );
+                $review_input = html_writer::empty_tag('input', [
+                    'type' => 'checkbox',
+                    'name' => 'reviewed',
+                    'value' => '1',
+                    'checked' => $rchecked ? 'checked' : null,
+                    'class' => 'me-1'
+                ]);
+                echo html_writer::tag('label', $review_input . ' ' . get_string('reviewed', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-2');
                 echo html_writer::tag('button', get_string('save_translation', 'local_xlate'), [

@@ -130,16 +130,31 @@ class translate_course_task extends adhoc_task {
             $lastProcessedId = max($lastProcessedId, (int)$rec->kc_id);
         }
 
-        // Determine source and target languages from options or sensible defaults.
-        $sourcelang = isset($options['sourcelang']) ? (string)$options['sourcelang'] : 'en';
-        $targetlangs = [];
-        if (!empty($options['targetlangs']) && is_array($options['targetlangs'])) {
+        // Determine source and target languages from course custom fields first, then fall back to options.
+        $config = \local_xlate\customfield_helper::get_course_config((int)$job->courseid);
+        
+        if ($config === null) {
+            // Course has no xlate configuration - skip translation
+            mtrace("Course {$job->courseid} has no xlate language configuration. Marking job complete.");
+            $job->status = 'complete';
+            $job->mtime = time();
+            $DB->update_record('local_xlate_course_job', $job);
+            return;
+        }
+        
+        $sourcelang = $config['source'];
+        $targetlangs = $config['targets'];
+        
+        // Fall back to options if custom fields don't provide targets
+        if (empty($targetlangs) && !empty($options['targetlangs']) && is_array($options['targetlangs'])) {
             $targetlangs = $options['targetlangs'];
-        } elseif (!empty($options['targetlang'])) {
+        } elseif (empty($targetlangs) && !empty($options['targetlang'])) {
             $targetlangs = is_array($options['targetlang']) ? $options['targetlang'] : [$options['targetlang']];
         }
+        
         if (empty($targetlangs)) {
-            // Nothing to translate for this job; mark complete.
+            // No target languages configured - nothing to translate
+            mtrace("Course {$job->courseid} has no target languages configured. Marking job complete.");
             $job->status = 'complete';
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);

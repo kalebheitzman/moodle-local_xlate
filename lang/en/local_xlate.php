@@ -90,6 +90,12 @@ $string['admin_manage_translations'] = 'Xlate: Manage Translations';
 $string['admin_manage_glossary'] = 'Xlate: Manage Glossary';
 $string['admin_usage'] = 'Xlate: Usage';
 
+// Course custom fields
+$string['xlate_course_source_lang'] = 'Xlate: Source Language';
+$string['xlate_course_source_lang_help'] = 'The primary language for content in this course.';
+$string['xlate_course_target_langs'] = 'Xlate: Target Languages';
+$string['xlate_course_target_langs_help'] = 'Select which languages this course should be translated into.';
+
 // Settings UI strings
 $string['settings_intro'] = 'Core configuration for the Xlate plugin.';
 $string['autotranslate_heading'] = 'Autotranslation (OpenAI)';

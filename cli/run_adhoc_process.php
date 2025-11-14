@@ -75,7 +75,7 @@ if (empty($raw) || !is_array($raw)) {
 }
 
 $requestid = $raw['requestid'] ?? uniqid('rb_');
-$sourcelang = $raw['sourcelang'] ?? 'en';
+$sourcelang = $raw['sourcelang'] ?? $CFG->lang;
 $targetlang = $raw['targetlang'] ?? '';
 $items = $raw['items'] ?? [];
 $glossary = $raw['glossary'] ?? [];

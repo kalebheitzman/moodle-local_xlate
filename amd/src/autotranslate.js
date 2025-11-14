@@ -88,44 +88,9 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                         return;
                     }
 
-                    // Determine targets same as the key-based autotranslate flow
-                    var targets = [];
-                    var checked = document.querySelectorAll('input[name="local_xlate_target[]"]:checked');
-                    if (checked && checked.length) {
-                        for (var ci = 0; ci < checked.length; ci++) {
-                            var val = checked[ci].value || '';
-                            if (val) {
-                                targets.push(val.toString().trim());
-                            }
-                        }
-                    } else {
-                        var targetEl = document.getElementById('local_xlate_target');
-                        if (targetEl) {
-                            if (targetEl.multiple) {
-                                for (var si = 0; si < targetEl.options.length; si++) {
-                                    if (targetEl.options[si].selected) {
-                                        targets.push((targetEl.options[si].value || '').toString().trim());
-                                    }
-                                }
-                            } else {
-                                var v = targetEl.value || '';
-                                if (v) { targets.push(v.toString().trim()); }
-                            }
-                        } else {
-                            var targetcfg = (config && config.defaulttarget) ? config.defaulttarget : '';
-                            targets = Array.isArray(targetcfg) ? targetcfg : [targetcfg];
-                        }
-                    }
-
-                    if (!targets.length) {
-                        notification.alert('No target languages selected for course autotranslate.');
-                        return;
-                    }
-
+                    // Options for the job (backend will validate course custom fields)
                     var options = {
-                        batchsize: (config && config.batchsize) ? config.batchsize : 50,
-                        targetlang: targets,
-                        sourcelang: config && config.sourcelang ? config.sourcelang : 'en'
+                        batchsize: (config && config.batchsize) ? config.batchsize : 50
                     };
 
                     var call = Ajax.call([{
@@ -145,7 +110,17 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                         // Start polling job progress
                         startCoursePolling(res.jobid);
                     }).catch(function (err) {
-                        notification.alert('Error enqueuing course job: ' + (err && err.message ? err.message : String(err)));
+                        var msg = 'Error enqueuing course job';
+                        if (err && err.message) {
+                            msg += ': ' + err.message;
+                        } else if (err && err.error) {
+                            msg += ': ' + err.error;
+                        }
+                        // Add hint about course settings if it looks like a config error
+                        if (msg.toLowerCase().indexOf('language') !== -1 || msg.toLowerCase().indexOf('configuration') !== -1) {
+                            msg += '\n\nPlease configure source and target languages in the course settings (Xlate section).';
+                        }
+                        notification.alert(msg);
                     });
                 });
             }

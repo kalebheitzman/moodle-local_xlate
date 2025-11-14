@@ -117,8 +117,9 @@ class api {
         $recs = $DB->get_records_sql($sql, $params);
 
         $map = [];
+        $reviewedmap = [];
         if (empty($recs)) {
-            return $map;
+            return ['translations' => $map, 'reviewed' => $reviewedmap];
         }
 
         $trids = [];
@@ -130,17 +131,18 @@ class api {
 
         if (!empty($trids)) {
             list($trsql, $trparams) = $DB->get_in_or_equal($trids, SQL_PARAMS_NAMED, 'tr');
-            $sql = "SELECT t.id, k.xkey, t.text
+            $sql = "SELECT t.id, k.xkey, t.text, t.reviewed
                       FROM {local_xlate_tr} t
                       JOIN {local_xlate_key} k ON k.id = t.keyid
                      WHERE t.id $trsql";
             $translations = $DB->get_records_sql($sql, $trparams);
             foreach ($translations as $row) {
                 $map[$row->xkey] = $row->text;
+                $reviewedmap[$row->xkey] = (int)$row->reviewed;
             }
         }
 
-        return $map;
+        return ['translations' => $map, 'reviewed' => $reviewedmap];
     }
 
     /**
@@ -158,7 +160,9 @@ class api {
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
 
-        $translations = self::get_keys_bundle($lang, $keys);
+        $bundle = self::get_keys_bundle($lang, $keys);
+        $translations = $bundle['translations'];
+        $reviewedmap = $bundle['reviewed'];
 
         // Build sourceMap for the returned keys
         $sourceMap = [];
@@ -174,7 +178,7 @@ class api {
             }
         }
 
-        $result = ['translations' => $translations, 'sourceMap' => $sourceMap];
+    $result = ['translations' => $translations, 'sourceMap' => $sourceMap, 'reviewed' => $reviewedmap];
 
         // If courseid present, compute associations map
         if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
@@ -264,20 +268,21 @@ class api {
             $params['courseid'] = $courseid;
         }
 
-    $sql = "SELECT k.id, k.xkey, k.source, t.text, k.component
+    $sql = "SELECT k.id, k.xkey, k.source, t.text, k.component, t.reviewed
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
                  WHERE t.lang = :lang AND t.status = 1 $componentsql $coursewhere";
         
         $recs = $DB->get_records_sql($sql, $params);
         
-        $bundle = ['translations' => [], 'sourceMap' => []];
+    $bundle = ['translations' => [], 'sourceMap' => [], 'reviewed' => []];
         foreach ($recs as $r) {
             $bundle['translations'][$r->xkey] = $r->text;
             $normalized = self::normalise_source($r->source ?? '');
             if ($normalized !== '' && !isset($bundle['sourceMap'][$normalized])) {
                 $bundle['sourceMap'][$normalized] = $r->xkey;
             }
+            $bundle['reviewed'][$r->xkey] = (int)$r->reviewed;
         }
         
         // Cache for shorter time due to context sensitivity

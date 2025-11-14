@@ -294,8 +294,9 @@ class local_xlate_external extends external_api {
      * @return external_function_parameters Parameter schema covering items/glossary/options.
      */
     public static function autotranslate_parameters() {
+        global $CFG;
         return new external_function_parameters([
-            'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, 'en'),
+            'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, $CFG->lang),
             // Accept either a single target language string or an array of target languages.
             'targetlang' => new external_multiple_structure(
                 new external_value(PARAM_TEXT, 'Target language code'),
@@ -423,6 +424,7 @@ class local_xlate_external extends external_api {
      * @return external_function_parameters Parameter schema covering course id and options.
      */
     public static function autotranslate_course_enqueue_parameters() {
+        global $CFG;
         return new external_function_parameters([
             'courseid' => new external_value(PARAM_INT, 'Course id'),
             // Options may include batchsize, targetlang (string or array) and sourcelang.
@@ -432,7 +434,7 @@ class local_xlate_external extends external_api {
                     new external_value(PARAM_TEXT, 'Target language code'),
                     'Target languages', VALUE_OPTIONAL
                 ),
-                'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, 'en')
+                'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, $CFG->lang)
             ], 'Options', VALUE_DEFAULT, [])
         ]);
     }
@@ -460,6 +462,16 @@ class local_xlate_external extends external_api {
         self::validate_context($context);
         require_capability('local/xlate:manage', $context);
 
+        // Check if course has xlate language configuration
+        $config = \local_xlate\customfield_helper::get_course_config((int)$params['courseid']);
+        if ($config === null) {
+            throw new \moodle_exception('Course has no xlate language configuration. Please set source and target languages in course settings.');
+        }
+
+        if (empty($config['targets'])) {
+            throw new \moodle_exception('Course has no target languages configured. Please select at least one target language in course settings.');
+        }
+
         // Count total keys associated with the course
         $total = 0;
         try {
@@ -468,6 +480,11 @@ class local_xlate_external extends external_api {
             $total = 0;
         }
 
+        // Merge course config into options
+        $merged_options = $params['options'] ?: [];
+        $merged_options['sourcelang'] = $config['source'];
+        $merged_options['targetlangs'] = $config['targets'];
+
         $record = new \stdClass();
         $record->courseid = (int)$params['courseid'];
         $record->userid = isset($USER->id) ? (int)$USER->id : 0;
@@ -475,7 +492,7 @@ class local_xlate_external extends external_api {
         $record->total = (int)$total;
         $record->processed = 0;
         $record->batchsize = isset($params['options']['batchsize']) ? (int)$params['options']['batchsize'] : 50;
-        $record->options = !empty($params['options']) ? json_encode($params['options']) : null;
+        $record->options = json_encode($merged_options);
         $record->lastid = 0;
         $record->ctime = time();
         $record->mtime = time();
