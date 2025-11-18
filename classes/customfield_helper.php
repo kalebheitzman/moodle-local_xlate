@@ -31,6 +31,13 @@ defined('MOODLE_INTERNAL') || die();
  */
 class customfield_helper {
     /**
+     * Cached list of installed languages keyed by lang code.
+     *
+     * @var array<string,string>
+     */
+    protected static $installedlangs = [];
+
+    /**
      * Create or update xlate custom fields category and fields.
      *
      * @return void
@@ -108,7 +115,7 @@ class customfield_helper {
         }
 
         // Get installed languages
-        $installedlangs = get_string_manager()->get_list_of_translations();
+        $installedlangs = self::get_installed_languages();
         $options = [];
         foreach ($installedlangs as $code => $name) {
             $options[] = $name;
@@ -147,7 +154,7 @@ class customfield_helper {
         global $DB;
 
         // Get installed languages
-        $installedlangs = get_string_manager()->get_list_of_translations();
+        $installedlangs = self::get_installed_languages();
         
         // Create a checkbox field for each installed language
         $sortorder = 2;
@@ -202,12 +209,17 @@ class customfield_helper {
         
         $handler = \core_customfield\handler::get_handler('core_course', 'course');
         $datas = $handler->get_instance_data($courseid);
+        $installedlangs = self::get_installed_languages();
         
         foreach ($datas as $data) {
             if ($data->get_field()->get('shortname') === 'xlate_source_lang') {
-                $value = $data->get_value();
-                // Return null if empty (not configured)
-                return !empty($value) ? $value : null;
+                $value = trim((string)$data->get_value());
+                if ($value === '') {
+                    return null;
+                }
+
+                $normalized = self::normalize_lang_value($value, $installedlangs);
+                return $normalized ?? $value;
             }
         }
         
@@ -260,6 +272,124 @@ class customfield_helper {
             }
         }
         
-        return $targetlangs;
+        return array_values(array_unique($targetlangs));
+    }
+
+    /**
+     * Return enabled language codes from plugin config intersected with installed languages.
+     *
+     * @return array<int,string>
+     */
+    public static function get_enabled_language_codes(): array {
+        global $CFG;
+
+        $configured = get_config('local_xlate', 'enabled_languages');
+        $raw = [];
+        if (!empty($configured)) {
+            $raw = array_map('trim', explode(',', $configured));
+            $raw = array_filter($raw, static function($value) {
+                return $value !== '';
+            });
+        }
+
+        $installed = self::get_installed_languages();
+        $filtered = array_values(array_filter($raw, static function($code) use ($installed) {
+            return isset($installed[$code]);
+        }));
+
+        if (empty($filtered)) {
+            // Fallback to site language to ensure we always have at least one entry.
+            $filtered = [$CFG->lang];
+        }
+
+        return array_values(array_unique($filtered));
+    }
+
+    /**
+     * Resolve effective source/target languages for a course (or globally when courseid is 0).
+     *
+     * @param int|null $courseid
+     * @return array{source:string,targets:array<int,string>,enabled:array<int,string>}
+     */
+    public static function resolve_languages(?int $courseid = null): array {
+        global $CFG;
+
+        $enabled = self::get_enabled_language_codes();
+        $installed = self::get_installed_languages();
+        $source = null;
+        if (!empty($courseid)) {
+            $source = self::get_course_source_lang((int)$courseid);
+        }
+
+        if ($source === null || !isset($installed[$source])) {
+            $source = $CFG->lang;
+        }
+
+        if (!in_array($source, $enabled, true)) {
+            array_unshift($enabled, $source);
+            $enabled = array_values(array_unique($enabled));
+        }
+
+        $targets = [];
+        if (!empty($courseid)) {
+            $targets = array_values(array_intersect(self::get_course_target_langs((int)$courseid), $enabled));
+        }
+
+        if (empty($targets)) {
+            $targets = array_values(array_filter($enabled, static function($lang) use ($source) {
+                return $lang !== $source;
+            }));
+        }
+
+        return [
+            'source' => $source,
+            'targets' => $targets,
+            'enabled' => $enabled,
+        ];
+    }
+
+    /**
+     * Cached installed language list.
+     *
+     * @return array<string,string>
+     */
+    protected static function get_installed_languages(): array {
+        if (empty(self::$installedlangs)) {
+            self::$installedlangs = get_string_manager()->get_list_of_translations();
+        }
+
+        return self::$installedlangs;
+    }
+
+    /**
+     * Normalize a stored custom field value to a Moodle language code.
+     *
+     * @param string $value Raw stored value from the custom field.
+     * @param array<string,string> $installedlangs Map of langcode => name.
+     * @return string|null
+     */
+    protected static function normalize_lang_value(string $value, array $installedlangs): ?string {
+        if ($value === '') {
+            return null;
+        }
+
+        if (isset($installedlangs[$value])) {
+            return $value;
+        }
+
+        foreach ($installedlangs as $code => $name) {
+            if (strcasecmp($name, $value) === 0) {
+                return $code;
+            }
+        }
+
+        if (preg_match('/\(([a-z]{2,10}(?:_[a-z]{2})?)\)\s*$/i', $value, $matches)) {
+            $candidate = strtolower($matches[1]);
+            if (isset($installedlangs[$candidate])) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

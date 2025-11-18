@@ -237,40 +237,12 @@ local_xlate_render_admin_nav('manage');
 
 // (Autotranslate controls are rendered below inside a styled card.)
 
-// Get enabled languages and normalize formatting/duplicates so ordering remains predictable.
-$enabledlangs = get_config('local_xlate', 'enabled_languages');
-if (!empty($enabledlangs)) {
-    $enabledlangsarray = array_values(array_filter(array_map('trim', explode(',', $enabledlangs)), function($value) {
-        return $value !== '';
-    }));
-    $enabledlangsarray = array_values(array_unique($enabledlangsarray));
-} else {
-    $enabledlangsarray = ['en'];
-}
+// Determine enabled/source/target languages using the custom field helper.
 $installedlangs = get_string_manager()->get_list_of_translations();
-
-// Site language info (used for labels and to exclude from target options).
-$sitelang = $CFG->lang;
-$sitelangname = isset($installedlangs[$sitelang]) ? $installedlangs[$sitelang] : $sitelang;
-
-// For course-filtered view, check if course has a configured source language
-$coursesourcelang = null;
-if ($filter_courseid > 0) {
-    $coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($filter_courseid);
-}
-$displaysourcelang = $coursesourcelang ?: $sitelang;
-
-// Default target: pick the first enabled language that is not the display source language, if any.
-$defaulttarget = '';
-foreach ($enabledlangsarray as $candidate) {
-    if ($candidate !== $displaysourcelang) {
-        $defaulttarget = $candidate;
-        break;
-    }
-}
-
-// Pre-select default target(s). Support either a single string or an array.
-$selectedtargets = is_array($defaulttarget) ? $defaulttarget : ($defaulttarget ? [$defaulttarget] : []);
+$langconfig = \local_xlate\customfield_helper::resolve_languages($filter_courseid > 0 ? $filter_courseid : null);
+$enabledlangsarray = $langconfig['enabled'];
+$displaysourcelang = $langconfig['source'];
+$selectedtargets = $langconfig['targets'];
 // Show the autotranslate card only when a course filter is active so that
 // course-scoped autotranslate can run against the specified course.
 if ($filter_courseid > 0) {
@@ -288,28 +260,26 @@ if ($filter_courseid > 0) {
         }
         $options[$langcode] = isset($installedlangs[$langcode]) ? $installedlangs[$langcode] . ' (' . $langcode . ')' : $langcode;
     }
-    if (empty($options)) {
-        // If no enabled languages other than source, include source as fallback.
-        $options[$displaysourcelang] = isset($installedlangs[$displaysourcelang]) ? $installedlangs[$displaysourcelang] . ' (' . $displaysourcelang . ')' : $displaysourcelang;
-    }
-
-    // Render inline checkboxes
     echo html_writer::start_div('d-flex flex-wrap gap-2', ['id' => 'local_xlate_target_container']);
-    foreach ($options as $langcode => $label) {
-        $id = 'local_xlate_target_' . $langcode;
-        $checked = in_array($langcode, $selectedtargets) ? 'checked' : null;
-        // form-check form-check-inline for compact horizontal layout
-        echo html_writer::start_div('form-check form-check-inline');
-        echo html_writer::empty_tag('input', [
-            'type' => 'checkbox',
-            'name' => 'local_xlate_target[]',
-            'id' => $id,
-            'value' => $langcode,
-            'class' => 'form-check-input',
-            'checked' => $checked
-        ]);
-        echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
-        echo html_writer::end_div();
+    if (empty($options)) {
+        echo html_writer::div(get_string('autotranslate_no_targets', 'local_xlate'), 'text-muted small');
+    } else {
+        foreach ($options as $langcode => $label) {
+            $id = 'local_xlate_target_' . $langcode;
+            $checked = in_array($langcode, $selectedtargets) ? 'checked' : null;
+            // form-check form-check-inline for compact horizontal layout
+            echo html_writer::start_div('form-check form-check-inline');
+            echo html_writer::empty_tag('input', [
+                'type' => 'checkbox',
+                'name' => 'local_xlate_target[]',
+                'id' => $id,
+                'value' => $langcode,
+                'class' => 'form-check-input',
+                'checked' => $checked
+            ]);
+            echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
+            echo html_writer::end_div();
+        }
     }
     echo html_writer::end_div();
 
@@ -529,16 +499,7 @@ if (!empty($keys)) {
         echo html_writer::end_div();
         
         echo html_writer::start_div('card-body');
-    // Show source text in a row styled like the translation fields
-    // Use course-specific source language if course filter is active
-    $sitelang = $CFG->lang;
-    $displaysourcelang = $sitelang;
-    if ($filter_courseid > 0) {
-        $coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($filter_courseid);
-        if ($coursesourcelang) {
-            $displaysourcelang = $coursesourcelang;
-        }
-    }
+    // Show source text in a row styled like the translation fields.
     $orderedlangs = $enabledlangsarray;
     if (!in_array($displaysourcelang, $orderedlangs, true)) {
         $orderedlangs[] = $displaysourcelang;
@@ -704,8 +665,10 @@ $amdconfig = [
     'defaulttarget' => $selectedtargets,
     'courseid' => isset($course->id) ? $course->id : 0,
     'bundleurl' => (new moodle_url('/local/xlate/bundle.php'))->out(false),
-    'lang' => $PAGE->course ? ($PAGE->course->lang ?? $CFG->lang) : $CFG->lang,
-    'siteLang' => $CFG->lang
+    'lang' => current_language(),
+    'sourceLang' => $displaysourcelang,
+    'targetLangs' => $selectedtargets,
+    'enabledLangs' => $enabledlangsarray
 ];
 
 // If there's an active course autotranslate job for this course, pass its id

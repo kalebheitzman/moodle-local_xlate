@@ -3,8 +3,8 @@
 //
 // WORKFLOW:
 // 1. Tag element with data-xlate-key-{type} FIRST (always)
-// 2. If currentLang === siteLang: Save to DB (capture mode)
-// 3. If currentLang !== siteLang: Translate using bundle
+// 2. If currentLang === sourceLang: Save to DB (capture mode)
+// 3. If currentLang !== sourceLang: Translate using bundle
 /**
  * AMD module that detects, captures, and renders Local Xlate translations.
  *
@@ -500,7 +500,7 @@ define(['core/ajax'], function (Ajax) {
   Translator.attrs.getKeyFromAttributes = getKeyFromAttributes;
 
   // ============================================================================
-  // TRANSLATION (Step 3: currentLang !== siteLang)
+  // TRANSLATION (Step 3: currentLang !== sourceLang)
   // ============================================================================
 
   /**
@@ -554,7 +554,7 @@ define(['core/ajax'], function (Ajax) {
   Translator.capture.translateElement = translateElement;
 
   // ============================================================================
-  // CAPTURE (Step 2: currentLang === siteLang)
+  // CAPTURE (Step 2: currentLang === sourceLang)
   // ============================================================================
 
   /**
@@ -634,8 +634,9 @@ define(['core/ajax'], function (Ajax) {
     }
 
     var curLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
-    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
-    var reviewedFlag = (curLang === siteLang) ? 1 : 0;
+    var sourceLang = (window.__XLATE__ && window.__XLATE__.sourceLang) ||
+      (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
+    var reviewedFlag = (curLang === sourceLang) ? 1 : 0;
 
     Ajax.call([{
       methodname: 'local_xlate_save_key',
@@ -645,8 +646,8 @@ define(['core/ajax'], function (Ajax) {
         source: text,
         lang: curLang,
         translation: text,
-        // If the current page language equals the site default language, mark
-        // captured source strings as reviewed (human-authored in site language).
+        // If the current page language equals the configured source, mark
+        // captured source strings as reviewed (human-authored content).
         reviewed: reviewedFlag,
         courseid: pageCourseId,
         context: component
@@ -806,8 +807,9 @@ define(['core/ajax'], function (Ajax) {
     processedElements.add(element);
 
     var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
-    var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
-    var isCapture = (currentLang === siteLang);
+    var sourceLang = (window.__XLATE__ && window.__XLATE__.sourceLang) ||
+      (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
+    var isCapture = (currentLang === sourceLang);
 
     // For block-level elements, capture innerHTML to preserve inline tags
     var blockTags = ['p', 'li', 'td', 'th', 'blockquote', 'dt', 'dd', 'figcaption'];
@@ -1241,10 +1243,16 @@ define(['core/ajax'], function (Ajax) {
    * @returns {Object} Base state object.
    */
   function createXlateState(config) {
+    var resolvedSourceLang = config.sourceLang || config.captureSourceLang || config.lang || 'en';
+    var targetLangs = Array.isArray(config.targetLangs) ? config.targetLangs : [];
+    var enabledLangs = Array.isArray(config.enabledLangs) ? config.enabledLangs : [];
+
     var state = {
       lang: config.lang,
-      siteLang: config.siteLang,
-      captureSourceLang: config.captureSourceLang || config.siteLang,
+      sourceLang: resolvedSourceLang,
+      captureSourceLang: config.captureSourceLang || resolvedSourceLang,
+      targetLangs: targetLangs,
+      enabledLangs: enabledLangs,
       map: {},
       sourceMap: {},
       reviewMap: {},
@@ -1253,8 +1261,8 @@ define(['core/ajax'], function (Ajax) {
       cacheKey: ''
     };
 
-    // Use captureSourceLang (course's configured source) if available, otherwise fall back to siteLang
     state.isCapture = (config.lang === state.captureSourceLang);
+    state.isTargetLang = !state.targetLangs.length || state.targetLangs.indexOf(config.lang) !== -1;
     return state;
   }
 
@@ -1499,8 +1507,10 @@ define(['core/ajax'], function (Ajax) {
   /**
    * @typedef {Object} TranslatorConfig
    * @property {string} lang Current page language code.
-   * @property {string} siteLang Site default language used for capture mode.
-   * @property {string} [captureSourceLang] Course-specific source language for capture (falls back to siteLang if not set).
+  * @property {string} sourceLang Base source language for the request (course or site default).
+  * @property {Array<string>} [targetLangs] Target languages configured for this course.
+  * @property {Array<string>} [enabledLangs] Enabled languages available site-wide.
+  * @property {string} [captureSourceLang] Course-specific source language for capture (falls back to sourceLang if not set).
    * @property {string} bundleurl REST endpoint returning translation bundles.
    * @property {string} version Bundle version hash used for cache busting.
    * @property {boolean} isEditing True when Moodle editing mode is active.
@@ -1525,14 +1535,22 @@ define(['core/ajax'], function (Ajax) {
     var courseId = resolveCourseId();
     xlateDebug('[XLATE] Initializing:', {
       currentLang: config.lang,
-      siteLang: config.siteLang,
-      captureSourceLang: config.captureSourceLang || config.siteLang,
+      sourceLang: window.__XLATE__.sourceLang,
+      captureSourceLang: window.__XLATE__.captureSourceLang,
+      targetLangs: window.__XLATE__.targetLangs,
       isCapture: window.__XLATE__.isCapture,
+      isTargetLang: window.__XLATE__.isTargetLang,
       courseId: courseId
     });
 
     if (window.__XLATE__.isCapture) {
       initCaptureMode(config, courseId);
+      return;
+    }
+
+    if (!window.__XLATE__.isTargetLang) {
+      xlateDebug('[XLATE] Current language is not a configured target; skipping translation runtime.');
+      document.documentElement.classList.remove('xlate-loading');
       return;
     }
 

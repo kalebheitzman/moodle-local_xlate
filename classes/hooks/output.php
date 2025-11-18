@@ -105,18 +105,14 @@ class output {
         }
 
         $lang = current_language();
-        $site_lang = get_config('core', 'lang') ?: 'en'; // Site's default language
+        $langconfig = \local_xlate\customfield_helper::resolve_languages($courseid ?: null);
+        $source_lang = $langconfig['source'];
+        $target_langs = $langconfig['targets'];
+        $enabled_langs = $langconfig['enabled'];
+        $capture_source_lang = $source_lang;
         $version = \local_xlate\local\api::get_version($lang);
         $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
         $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) ? 'true' : 'false';
-
-        // Get course-specific source language from custom fields if available
-        $course_source_lang = null;
-        if ($courseid > 0) {
-            $course_source_lang = \local_xlate\customfield_helper::get_course_source_lang($courseid);
-        }
-        // Use course source lang if set, otherwise fall back to site lang
-        $capture_source_lang = $course_source_lang ?: $site_lang;
 
         // Output capture/exclude selectors as global JS variables
         $capture_selectors = get_config('local_xlate', 'capture_selectors');
@@ -137,18 +133,19 @@ class output {
     function initTranslator() {
         // Debug: log initialization details so we can verify course id is available to the client.
         if (typeof console !== 'undefined' && typeof console.debug === 'function') {
-            console.debug('XLATE Initializing', { lang: %s, siteLang: %s, captureSourceLang: %s, version: %s, autodetect: %s, isEditing: %s, courseid: %s });
+            console.debug('XLATE Initializing', { lang: %s, sourceLang: %s, targetLangs: %s, captureSourceLang: %s, version: %s, autodetect: %s, isEditing: %s, courseid: %s });
         }
 
         if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
             require(['local_xlate/translator'], function(translator){
                 translator.init({
                     lang: %s,
-                    siteLang: %s,
+                    sourceLang: %s,
                     captureSourceLang: %s,
+                    targetLangs: %s,
+                    enabledLangs: %s,
                     version: %s,
                     autodetect: %s,
-                    loadBundleOnSiteLang: true,
                     isEditing: %s,
                     bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
                 });
@@ -168,7 +165,8 @@ class output {
 })();
 </script>",
             json_encode($lang),
-            json_encode($site_lang),
+            json_encode($source_lang),
+            json_encode($target_langs),
             json_encode($capture_source_lang),
             json_encode($version),
             $autodetect,
@@ -177,8 +175,9 @@ class output {
 
             /* init() params */
             json_encode($lang),
-            json_encode($site_lang),
             json_encode($capture_source_lang),
+            json_encode($target_langs),
+            json_encode($enabled_langs),
             json_encode($version),
             $autodetect,
             $isediting,

@@ -102,6 +102,7 @@ $string['autotranslate_heading'] = 'Autotranslation (OpenAI)';
 $string['autotranslate_enable'] = 'Enable Autotranslation';
 $string['autotranslate_enable_desc'] = 'If enabled, Xlate may call the configured OpenAI endpoint to propose translated text for capture and management flows.';
 $string['autotranslate_target'] = 'Autotranslate target language';
+$string['autotranslate_no_targets'] = 'No target languages are available. Update the course Xlate settings or enable additional languages.';
 $string['autotranslate'] = 'Autotranslate';
 $string['openai_endpoint'] = 'OpenAI API endpoint';
 $string['openai_endpoint_desc'] = 'The HTTP endpoint to call for model completions. Use this to point to a proxy or self-hosted endpoint if needed.';
