@@ -105,14 +105,22 @@ class output {
         }
 
         $lang = current_language();
+        if ($courseid > 0) {
+            // Require an explicit course source language before running the translator.
+            $courseconfig = \local_xlate\customfield_helper::get_course_config($courseid);
+            if ($courseconfig === null || empty($courseconfig['source'])) {
+                return;
+            }
+        }
+
         $langconfig = \local_xlate\customfield_helper::resolve_languages($courseid ?: null);
         $source_lang = $langconfig['source'];
         $target_langs = $langconfig['targets'];
         $enabled_langs = $langconfig['enabled'];
         $capture_source_lang = $source_lang;
         $version = \local_xlate\local\api::get_version($lang);
-        $autodetect = get_config('local_xlate', 'autodetect') ? 'true' : 'false';
-        $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) ? 'true' : 'false';
+        $autodetect = (bool)get_config('local_xlate', 'autodetect');
+        $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing());
 
         // Output capture/exclude selectors as global JS variables
         $capture_selectors = get_config('local_xlate', 'capture_selectors');
@@ -127,67 +135,57 @@ class output {
             . '</script>';
         $hook->add_html($selectors_script);
 
-        $script = sprintf(
-            "<script>
-(function(){
-    function initTranslator() {
-        // Debug: log initialization details so we can verify course id is available to the client.
-        if (typeof console !== 'undefined' && typeof console.debug === 'function') {
-            console.debug('XLATE Initializing', { lang: %s, sourceLang: %s, targetLangs: %s, captureSourceLang: %s, version: %s, autodetect: %s, isEditing: %s, courseid: %s });
-        }
+        $debugcontext = [
+            'lang' => $lang,
+            'sourceLang' => $source_lang,
+            'targetLangs' => $target_langs,
+            'captureSourceLang' => $capture_source_lang,
+            'version' => $version,
+            'autodetect' => $autodetect,
+            'isEditing' => $isediting,
+            'courseid' => $courseid,
+        ];
 
-        if(typeof require !== 'undefined' && typeof M !== 'undefined' && M.cfg){
-            require(['local_xlate/translator'], function(translator){
-                translator.init({
-                    lang: %s,
-                    sourceLang: %s,
-                    captureSourceLang: %s,
-                    targetLangs: %s,
-                    enabledLangs: %s,
-                    version: %s,
-                    autodetect: %s,
-                    isEditing: %s,
-                    bundleurl: M.cfg.wwwroot + '/local/xlate/bundle.php?lang=' + encodeURIComponent(%s) + '&contextid=' + encodeURIComponent(%s) + '&pagetype=' + encodeURIComponent(%s) + '&courseid=' + encodeURIComponent(%s)
-                });
-            });
-        } else {
-            // RequireJS not ready yet, wait a bit
-            setTimeout(initTranslator, 100);
-        }
-    }
+        $bundleurl = new \moodle_url('/local/xlate/bundle.php', [
+            'lang' => $lang,
+            'contextid' => $contextid,
+            'pagetype' => $pagetype,
+            'courseid' => $courseid,
+        ]);
 
-    // Wait for DOM to be ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initTranslator);
-    } else {
-        initTranslator();
-    }
-})();
-</script>",
-            json_encode($lang),
-            json_encode($source_lang),
-            json_encode($target_langs),
-            json_encode($capture_source_lang),
-            json_encode($version),
-            $autodetect,
-            $isediting,
-            json_encode($courseid),
+        $initconfig = [
+            'lang' => $lang,
+            'sourceLang' => $source_lang,
+            'captureSourceLang' => $capture_source_lang,
+            'targetLangs' => $target_langs,
+            'enabledLangs' => $enabled_langs,
+            'version' => $version,
+            'autodetect' => $autodetect,
+            'isEditing' => $isediting,
+            'bundleurl' => $bundleurl->out(false),
+        ];
 
-            /* init() params */
-            json_encode($lang),
-            json_encode($capture_source_lang),
-            json_encode($target_langs),
-            json_encode($enabled_langs),
-            json_encode($version),
-            $autodetect,
-            $isediting,
-
-            /* bundleurl params */
-            json_encode($lang),
-            json_encode($contextid),
-            json_encode($pagetype),
-            json_encode($courseid)
-        );
+        $script = '<script>'
+            . '(function(){'
+            . 'function initTranslator() {'
+            . 'if (typeof console !== "undefined" && typeof console.debug === "function") {'
+            . 'console.debug(' . json_encode('XLATE Initializing') . ', ' . json_encode($debugcontext, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ');'
+            . '}'
+            . 'if (typeof require !== "undefined" && typeof M !== "undefined" && M.cfg) {'
+            . 'require(["local_xlate/translator"], function(translator) {'
+            . 'translator.init(' . json_encode($initconfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ');'
+            . '});'
+            . '} else {'
+            . 'setTimeout(initTranslator, 100);'
+            . '}'
+            . '}'
+            . 'if (document.readyState === "loading") {'
+            . 'document.addEventListener("DOMContentLoaded", initTranslator);'
+            . '} else {'
+            . 'initTranslator();'
+            . '}'
+            . '})();'
+            . '</script>';
         $hook->add_html($script);
         // Debug marker
         $hook->add_html('<!-- XLATE BODY HOOK FIRED -->');
