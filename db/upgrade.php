@@ -516,10 +516,10 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
     }
 
     // Setup Xlate custom fields using Moodle's built-in custom fields API
-    if ($oldversion < 2025111400) {
+    if ($oldversion < 2025111705) {
         \local_xlate\customfield_helper::setup_customfields();
 
-        upgrade_plugin_savepoint(true, 2025111400, 'local', 'xlate');
+        upgrade_plugin_savepoint(true, 2025111705, 'local', 'xlate');
     }
 
     return true;
