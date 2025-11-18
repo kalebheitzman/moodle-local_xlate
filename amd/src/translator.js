@@ -809,16 +809,24 @@ define(['core/ajax'], function (Ajax) {
     var siteLang = (window.__XLATE__ && window.__XLATE__.siteLang) || 'en';
     var isCapture = (currentLang === siteLang);
 
-    // Process text content: only if direct text (excluding children) is non-empty
-    var directText = '';
-    for (var i = 0; i < element.childNodes.length; i++) {
-      var node = element.childNodes[i];
-      if (node.nodeType === 3) { // TEXT_NODE
-        directText += node.textContent;
+    // For block-level elements, capture innerHTML to preserve inline tags
+    var blockTags = ['p', 'li', 'td', 'th', 'blockquote', 'dt', 'dd', 'figcaption'];
+    var tag = element.tagName ? element.tagName.toLowerCase() : '';
+    var sourceText;
+    if (blockTags.indexOf(tag) !== -1) {
+      sourceText = element.innerHTML.trim();
+    } else {
+      // Fallback: direct text only for inline/other elements
+      sourceText = '';
+      for (var i = 0; i < element.childNodes.length; i++) {
+        var node = element.childNodes[i];
+        if (node.nodeType === 3) { // TEXT_NODE
+          sourceText += node.textContent;
+        }
       }
+      sourceText = sourceText.trim();
     }
-    directText = directText.trim();
-    processCandidateValue(element, directText, 'text', tagOnly, isCapture, map);
+    processCandidateValue(element, sourceText, 'text', tagOnly, isCapture, map);
 
     // Process attributes
     ATTRIBUTE_TYPES.forEach(function (attr) {
