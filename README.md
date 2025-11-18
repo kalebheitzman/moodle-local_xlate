@@ -25,6 +25,9 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - **Automatic DOM translation**: Elements marked with `data-xlate` attributes –
 	or captured automatically – are translated on load, on MutationObserver
 	events, and after user interactions that add new DOM nodes. The translator uses a MutationObserver to handle dynamic content.
+- **Inline markup-safe capture**: Text extraction now preserves inline markup
+	such as `<a>`, `<strong>`, `<em>`, and `<span>` so translation prompts keep
+	their original structure instead of flattening to plain text.
 - **Optional auto-capture**: When browsing in the site’s default language with
 	the `local/xlate:manage` capability, the plugin records new strings (text,
 	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
@@ -143,6 +146,9 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 - With auto-detect enabled the translator captures user-facing strings,
 	generates stable, structure-based 12-character keys, and stores them
 	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
+- Inline HTML (links, emphasis, etc.) is preserved when capture runs so prompts
+	sent to translators or the autotranslate backend always reflect the source DOM
+	structure.
 - For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, which only requires the user to be logged in. This allows ordinary users browsing the site to populate source strings while keeping write access to translations restricted to site managers.
 
 Role and capabilities
@@ -170,6 +176,17 @@ Notes about glossary and ordering
 	(empty object when no keys exist for the language). You can POST a list of keys to this endpoint for page-specific bundles.
 - In the browser console check `window.__XLATE__` to see the active language,
 	site default language, and in-memory translation map.
+
+## CLI Utilities
+
+- **Truncate captured data safely**: `cli/truncate_xlate_tables.php` accepts
+	`--dry-run` to preview affected tables before truncating all `local_xlate_*`
+	data sets (keys, translations, bundles, glossary, etc.). Run with:
+	```bash
+	sudo -u www-data php local/xlate/cli/truncate_xlate_tables.php --dry-run
+	```
+	Remove `--dry-run` only when you are ready to wipe captured data in a dev/test
+	environment.
 
 ## Scheduled Autotranslation (new)
 

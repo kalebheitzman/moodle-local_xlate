@@ -58,6 +58,9 @@ DB (local_xlate_key + local_xlate_tr)
 - Captured text includes text nodes plus `placeholder`, `title`, `alt`, and `aria-label`
   attributes. Stable keys combine detected component, element type, normalized
   text, and a short hash. See `KEY_GENERATION.md` for full details.
+- Inline markup from the DOM (anchor tags, emphasis, spans, etc.) is preserved
+  when creating the captured string so translation prompts keep semantic hints
+  instead of reducing everything to plain text.
 - Successful capture updates Moodle DB, bumps the bundle version, and invalidates
   caches so subsequent requests fetch fresh bundles.
 
@@ -181,6 +184,13 @@ external integrations.
    ```bash
    php admin/cli/purge_caches.php
    ```
+4. **Reset captured data (dev/test only)** with the helper CLI script:
+  ```bash
+  sudo -u www-data php local/xlate/cli/truncate_xlate_tables.php --dry-run
+  ```
+  Review the dry-run output before removing the flag; the script truncates all
+  `local_xlate_*` tables and is intended strictly for safe resets in
+  non-production environments.
 4. **Versioning**: bump `version.php` and add steps to `db/upgrade.php` whenever
    schema or behaviour changes demand it.
 5. **Code style**: follow Moodle PHP guidelines; AMD modules stay ES5-compatible
