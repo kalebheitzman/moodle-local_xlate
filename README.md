@@ -38,6 +38,41 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
   Local plugins → Xlate`. Use the **Xlate: Manage Translations** page to manage captured keys and the **Xlate: Manage Glossary** page to maintain the language glossary.
 - **Per-course language control**: Each course exposes an “Xlate source language” select plus per-language target checkboxes under Course custom fields. Translator assets, CLI jobs, and scheduled tasks only run when a course declares a source language, preventing accidental activation on unconfigured courses.
 
+## System Diagram
+
+```
+		       Plugin settings / course custom fields
+		       +-------------------------------------+
+		       |  Xlate source select + target boxes |
+		       +------------------+------------------+
+					  |
+					  v
++----------------+       +-------------------------------+       +-------------------------------+
+ Moodle pages    +-----> | hooks/output.php (gates by    | ----> | AMD translator (DOM translate |
+ (viewer/edit)   |       | enable + course config)       |       | + optional capture)           |
++----------------+       +-------------------+-----------+       +---------------+---------------+
+	^                                   |                                   |
+	|                                   v                                   |
+	|                +--------------------------------------+               |
+	|                | local_xlate\local\api (bundles,      |<--------------+
+	|                | cache, web services)                 |
+	|                +--------------------+-----------------+
+	|                                     |
+	|                                     v
+	|                +--------------------------------------+          CLI / Tasks / Backend
+	|                | DB tables: local_xlate_key/tr/bundle |<---------+---------------------+
+	|                +--------------------------------------+          | autotranslate_missing|
+	|                                                                   | translate_course     |
+	|                                                                   | autotranslate_dryrun |
+	+-------------------------------------------------------------------+ list_translatable... |
+									    | queue_course_job ... |
+									    +----------+----------+
+										       |
+										       v
+									    translation/backend.php
+									    (OpenAI-compatible API)
+```
+
 ## Installation
 1. Copy this folder to `moodle/local/xlate` (or extract the release archive
 	 there).
@@ -181,15 +216,11 @@ Notes about glossary and ordering
 
 ## CLI Utilities
 
-- **Truncate captured data safely**: `cli/truncate_xlate_tables.php` accepts
-	`--dry-run` to preview affected tables before truncating all `local_xlate_*`
-	data sets (keys, translations, bundles, glossary, etc.). Run with:
-	```bash
-	sudo -u www-data php local/xlate/cli/truncate_xlate_tables.php --dry-run
-	```
-	Remove `--dry-run` only when you are ready to wipe captured data in a dev/test
-	environment.
-- **Scheduled autotranslation dry run**: `cli/autotranslate_dryrun.php` mirrors the scheduled task query logic, listing each course’s source language, target set, and number of missing keys (optionally sample keys with `--showmissing`). Helpful for sanity checks before running the real task or debugging skipped courses.
+- **List translatable courses**: `cli/list_translatable_courses.php` prints every course that has both a source language and at least one target selected, making it easy to spot classes that still need configuration.
+- **Scheduled autotranslation dry run**: `cli/autotranslate_dryrun.php` mirrors the scheduled task logic, showing each course’s source language, target set, and count of missing keys (add `--showmissing` for samples, `--courseid=<id>` or `--limit=<n>` to narrow the output).
+- **Repair course custom fields**: `cli/sync_source_language_indices.php` realigns stored select indices with the current option order, and `cli/recreate_customfields.php` drops/rebuilds the entire Xlate category if you need a clean slate.
+- **Queue and inspect course jobs**: `cli/queue_course_job.php` seeds `local_xlate_course_job` + its adhoc task for a specific course. Pair it with `cli/inspect_job.php`, `cli/show_new_translations.php`, `cli/list_adhoc.php`, or `cli/run_adhoc_process.php` to debug queued work.
+- **Reset captured data safely**: `cli/truncate_xlate_tables.php` accepts `--dry-run` to preview which `local_xlate_*` tables would be truncated before wiping data in a dev/test environment.
 
 ## Scheduled Autotranslation (new)
 

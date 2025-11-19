@@ -18,12 +18,7 @@ Keys are generated as 12-character base36 hashes from a composite string of tag 
 
 See the end of this section for a full example and testing steps.
 
-## 1. Purpose & Flow
-`local_xlate` brings LocalizeJS-style client translations to Moodle 5+. The
-plugin injects a bootloader, serves immutable JSON bundles, and runs an AMD
-module that translates DOM nodes (and can capture new strings) without touching
-core or theme code. Each translated element receives a stable `data-xlate-key`
-attribute so minor source edits do not invalidate translations. Keys are 12-character hashes based on element structure, class, region, and text (see `KEY_GENERATION.md`).
+### High-level runtime flow
 
 ```
 DB (local_xlate_key + local_xlate_tr)
@@ -46,6 +41,15 @@ DB (local_xlate_key + local_xlate_tr)
   text when enabled. If the page is in edit mode (`isEditing` flag from PHP), all capture and tagging logic is skipped and a console message is logged.
 - **Server APIs** (`classes/local/api.php`, `classes/external.php`) provide CRUD,
   cache invalidation, and web services consumed by the AMD module and admin UI.
+
+### Course language configuration & gating
+
+- `classes/customfield_helper.php` provisions the **Xlate** course customfield category with a select (`xlate_source_lang`) and one checkbox per installed language (`xlate_target_<code>`). The helper also provides `get_course_config()` so every runtime component can resolve source/target languages consistently.
+- CLI helpers:
+  - `cli/recreate_customfields.php` recreates the category/fields when you need a clean slate (for example, after changing the default option order).
+  - `cli/sync_source_language_indices.php` repairs existing data when the select option order changes by mapping stored integers back to real locale codes.
+  - `cli/list_translatable_courses.php` and `cli/autotranslate_dryrun.php` surface per-course configuration so you can confirm which courses are ready for automation.
+- Runtime gating happens in `classes/hooks/output.php` and every task/CLI that calls `customfield_helper::get_course_config()`: if a course has no source language configured, the translator hooks, scheduled task, adhoc jobs, and CLI utilities all skip it automatically.
 
 ## 3. Automatic Capture (AMD Module)
 - Guard rails:
@@ -135,11 +139,15 @@ Code notes:
 
 - Class: `local_xlate\task\autotranslate_missing_task`
 - Registered in `db/tasks.php`, runs nightly by default.
-- Iterates all translation keys and enabled languages, batching requests (default: 20 keys per batch) to avoid DB/API overload.
+- Iterates every course that has an Xlate source language configured, derives the effective target list (either the course-level checkboxes or the enabled-language list minus the source), and batches missing keys per course/target (default batch size: 20) to avoid DB/API overload.
 - Only fills in missing translations; never overwrites existing ones.
 - Controlled by the `autotranslate_task_enabled` setting.
 - Logs progress and errors via `mtrace()`.
 - Can be triggered manually via CLI or from the scheduled tasks UI.
+- Debug/preview tooling:
+  - `cli/autotranslate_dryrun.php` shows which courses/targets would run and how many keys remain (optionally printing sample keys with `--showmissing`).
+  - `cli/list_translatable_courses.php` prints the ready-to-run course matrix.
+  - `cli/queue_course_job.php`, `cli/inspect_job.php`, `cli/show_new_translations.php`, and `cli/run_adhoc_process.php` help enqueue, inspect, and replay course-specific adhoc jobs.
 
 ### Token Usage Logging
   Every autotranslation batch logs token usage to the `local_xlate_token_batch` table (see `db/install.xml`).
@@ -329,14 +337,17 @@ local/xlate/
 │       ├── translate_batch_task.php
 │       └── translate_course_task.php
 ├── cli/
-│   ├── mlang_migrate.php            # CLI migration runner
-│   ├── check_translations.php
+│   ├── autotranslate_dryrun.php     # Preview scheduled-task inputs
 │   ├── inspect_job.php
 │   ├── list_adhoc.php
+│   ├── list_translatable_courses.php
+│   ├── mlang_migrate.php            # CLI migration runner
 │   ├── queue_course_job.php
-│   ├── queue_task.php
+│   ├── recreate_customfields.php
 │   ├── run_adhoc_process.php
-│   └── show_new_translations.php
+│   ├── show_new_translations.php
+│   ├── sync_source_language_indices.php
+│   └── truncate_xlate_tables.php
 ├── db/
 │   ├── access.php
 │   ├── caches.php
