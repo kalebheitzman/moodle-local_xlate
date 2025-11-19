@@ -113,17 +113,92 @@ if ($hassiteconfig) {
             $langchoices));
 
 
-        // Capture area selectors (include patterns)
+        // Capture area selectors (include patterns).
+        $capturedefaults = [
+            '#page-content',
+            '.course-content',
+            '.course-content [data-region="activity-card"]',
+            '.course-content [data-region="activity-information"]',
+            '.course-content [data-region="completion-info"]',
+            '.course-content [data-region="text"]',
+            '.course-content .instancename',
+            '.course-content .activity-subtitle',
+            '[data-region="activity-card"] .card-text',
+            '.course-content .summary .no-overflow',
+        ];
+        $capturedefaultstring = implode("\n", $capturedefaults);
         $settings->add(new admin_setting_configtextarea('local_xlate/capture_selectors',
             get_string('capture_selectors', 'local_xlate'),
             get_string('capture_selectors_desc', 'local_xlate'),
-            ".drawer\n#page", PARAM_TEXT));
+            $capturedefaultstring, PARAM_TEXT));
 
-        // Exclude selectors (exclude patterns)
+        // Exclude selectors (exclude patterns).
+        $excludedefaults = [
+            '.path-admin',
+            '.pagelayout-admin',
+            '.pagelayout-maintenance',
+            '.path-mod-forum',
+            '.forum-post-container',
+            '.discussion-list',
+            '[data-region="discussion-list-item"]',
+            '[data-region="post"]',
+            '.navbar',
+            '.primary-navigation',
+            '.secondary-navigation',
+            '.nav-drawer',
+            '.drawer',
+            '.drawer-header',
+            '.drawer-toggles',
+            '.courseindex',
+            '.fixed-drawer',
+            '.breadcrumb',
+            '.page-context-header',
+            '.page-footer',
+            '.toast-wrapper',
+            '.toast',
+            '.alert',
+            '.badge',
+            '._jswarning',
+            '.popover-region',
+            '.popover-region-container',
+            '.popover-region-toggle',
+            '.moodle-actionmenu',
+            '.dropdown-menu',
+            '[role="menu"]',
+            '[role="dialog"]',
+        ];
+        $excludedefaultstring = implode("\n", $excludedefaults);
         $settings->add(new admin_setting_configtextarea('local_xlate/exclude_selectors',
             get_string('exclude_selectors', 'local_xlate'),
             get_string('exclude_selectors_desc', 'local_xlate'),
-            "#page-header\n#page-footer\n.secondary-navigation\n.nav-drawer\n.navbar\n.page-context-header\n.page-footer\n.breadcrumb\n.drawer-toggles\n.drawer-header\n.discussion-list\n.discussionname\n.forum-post-container\n.journaluserentrywrapper\n.path-mod-forum\n.path-admin\n.usermenu\n._jswarning\n.toast\n.alert\n.badge", PARAM_TEXT));
+            $excludedefaultstring, PARAM_TEXT));
+
+        $pathexcludes = [
+            '/admin/',
+            '/local/xlate/',
+            '/course/edit.php',
+            '/course/editsection.php',
+            '/course/modedit.php',
+            '/course/mod.php',
+            '/course/modsection.php',
+            '/grade/edit/',
+            '/backup/',
+            '/restore/',
+            '/report/',
+            '/user/edit.php',
+            '/user/editadvanced.php',
+            '/user/preferences.php',
+            '/question/edit.php',
+            '/cohort/edit.php',
+            '/badges/edit.php',
+            '/enrol/',
+        ];
+        $pathexcludedefault = implode("\n", $pathexcludes);
+
+        $settings->add(new admin_setting_configtextarea('local_xlate/excluded_paths',
+            get_string('excluded_paths', 'local_xlate'),
+            get_string('excluded_paths_desc', 'local_xlate'),
+            $pathexcludedefault, PARAM_TEXT));
     }
 
     $ADMIN->add('localplugins', $settings);

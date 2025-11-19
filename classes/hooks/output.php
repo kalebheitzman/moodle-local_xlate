@@ -50,12 +50,11 @@ class output {
      * @return void
      */
     public static function before_head(Head $hook): void {
-        if (!get_config('local_xlate', 'enable')) { 
-            return; 
+        if (!get_config('local_xlate', 'enable')) {
+            return;
         }
-        
-        // Don't inject on admin pages - they should use Moodle language strings
-        if (self::is_admin_path()) {
+
+        if (self::should_skip_page()) {
             return;
         }
         
@@ -75,12 +74,11 @@ class output {
      * @return void
      */
     public static function before_body(Body $hook): void {
-        if (!get_config('local_xlate', 'enable')) { 
-            return; 
+        if (!get_config('local_xlate', 'enable')) {
+            return;
         }
-        
-        // Don't inject on admin pages - they should use Moodle language strings
-        if (self::is_admin_path()) {
+
+        if (self::should_skip_page()) {
             return;
         }
         
@@ -192,48 +190,97 @@ class output {
     }
 
     /**
-     * Determine whether the current request targets an admin or editing path.
+     * Determine whether the current request targets an admin/editing context.
      *
      * @return bool True when translation injection should be skipped.
      */
-    private static function is_admin_path(): bool {
+    private static function should_skip_page(): bool {
         global $PAGE;
-        
-        $url = $PAGE->url->get_path();
-        
-        // Admin paths that should use Moodle language strings
-        $admin_paths = [
-            '/admin/',
-            '/local/xlate/',
-            '/course/modedit.php',
-            '/grade/edit/',
-            '/backup/',
-            '/restore/',
-            '/user/editadvanced.php',
-            '/user/preferences.php',
-            '/my/indexsys.php',
-            '/badges/edit.php',
-            '/cohort/edit.php',
-            '/question/edit.php'
-        ];
-        
-        foreach ($admin_paths as $path) {
-            if (strpos($url, $path) === 0) {
+
+        if (!isset($PAGE) || empty($PAGE->url)) {
+            return true;
+        }
+
+        // Skip obvious admin/maintenance layouts before any path checks.
+        $blockedlayouts = ['admin', 'maintenance', 'popup', 'report', 'coursecategory'];
+        if (!empty($PAGE->pagelayout) && in_array($PAGE->pagelayout, $blockedlayouts, true)) {
+            return true;
+        }
+
+        $path = $PAGE->url->get_path();
+        $blockedpaths = self::get_excluded_paths();
+        foreach ($blockedpaths as $prefix) {
+            if ($prefix !== '' && strpos($path, $prefix) === 0) {
                 return true;
             }
         }
-        
-        // Check for editing mode
-        if ($PAGE->user_is_editing()) {
+
+        // Skip when the viewer is in editing mode or explicitly toggles editing.
+        if (method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) {
             return true;
         }
-        
-        // Check page context for admin areas
-        $context = $PAGE->context;
-        if ($context->contextlevel == CONTEXT_SYSTEM && $PAGE->pagetype !== 'site-index') {
+        if (optional_param('edit', 0, PARAM_BOOL)) {
             return true;
         }
-        
+
+        // Avoid translating non-front-page system context screens.
+        $context = $PAGE->context ?? null;
+        if ($context && $context->contextlevel == CONTEXT_SYSTEM && $PAGE->pagetype !== 'site-index') {
+            return true;
+        }
+
         return false;
+    }
+
+    /**
+     * Resolve the configured URL prefixes that should skip translator injection.
+     */
+    private static function get_excluded_paths(): array {
+        $configured = get_config('local_xlate', 'excluded_paths');
+        $paths = [];
+        if (!empty($configured)) {
+            $paths = preg_split('/\r?\n/', $configured, -1, PREG_SPLIT_NO_EMPTY);
+        }
+        if (empty($paths)) {
+            $paths = self::default_excluded_paths();
+        }
+        $normalized = [];
+        foreach ($paths as $path) {
+            $path = trim($path);
+            if ($path === '') {
+                continue;
+            }
+            if ($path[0] !== '/') {
+                $path = '/' . ltrim($path, '/');
+            }
+            $normalized[] = rtrim($path);
+        }
+        return array_unique($normalized);
+    }
+
+    /**
+     * Built-in safety list applied when the admin config is empty.
+     */
+    private static function default_excluded_paths(): array {
+        return [
+            '/admin/',
+            '/local/xlate/',
+            '/course/edit.php',
+            '/course/editsection.php',
+            '/course/modedit.php',
+            '/course/mod.php',
+            '/course/modsection.php',
+            '/grade/edit/',
+            '/backup/',
+            '/restore/',
+            '/report/',
+            '/user/edit.php',
+            '/user/editadvanced.php',
+            '/user/preferences.php',
+            '/question/edit.php',
+            '/cohort/edit.php',
+            '/badges/edit.php',
+            '/enrol/',
+        ];
     }
 }

@@ -37,6 +37,7 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
   enter translations, and rebuild bundles from `Site administration → Plugins →
   Local plugins → Xlate`. Use the **Xlate: Manage Translations** page to manage captured keys and the **Xlate: Manage Glossary** page to maintain the language glossary.
 - **Per-course language control**: Each course exposes an “Xlate source language” select plus per-language target checkboxes under Course custom fields. Translator assets, CLI jobs, and scheduled tasks only run when a course declares a source language, preventing accidental activation on unconfigured courses.
+- **Administrative guardrails**: The bootloader automatically skips admin, maintenance, and edit-mode pages using pagelayout checks plus a configurable list of path prefixes, so translation/capture assets never run on sensitive workflows.
 
 ## System Diagram
 
@@ -166,6 +167,7 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 	translations.
 6b. Use the **Xlate: Manage Glossary** button (under the same Local plugins → Xlate area) to add or edit glossary entries that influence automated and manual translations.
 6c. Configure each course’s Xlate custom fields (source select + target checkboxes). When a course lacks a source language, the translator bootstrap, CLI scripts, and scheduled tasks automatically skip it.
+6d. Review **Exclude path prefixes** if you need to add more admin-only routes (one per line). Pages matching these prefixes never load the translator.
 
 7. Autotranslation (OpenAI)
 	 - The plugin includes an admin area to configure an OpenAI-compatible endpoint for optional autotranslation suggestions. Settings are under **Site administration → Plugins → Local plugins → Xlate**. Options include:

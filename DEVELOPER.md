@@ -107,6 +107,7 @@ versioning flow.
   - `cli/sync_source_language_indices.php` repairs existing data when the select option order changes by mapping stored integers back to real locale codes.
   - `cli/list_translatable_courses.php` and `cli/autotranslate_dryrun.php` surface per-course configuration so you can confirm which courses are ready for automation.
 - Runtime gating happens in `classes/hooks/output.php` and every task/CLI that calls `customfield_helper::get_course_config()`: if a course has no source language configured, the translator hooks, scheduled task, adhoc jobs, and CLI utilities all skip it automatically.
+- Administrative guardrails live in the same hook: if `$PAGE->pagelayout` is `admin/maintenance/report`, the user toggles editing, or the path matches the configurable `excluded_paths` list (newline-delimited prefixes under plugin settings), no CSS/JS is injected. The default deny list covers `/admin/`, edit forms (`/course/modedit.php`, `/course/edit.php`, etc.), grade edit screens, user profile editors, and other staff-only workflows.
 
 ## 3. Automatic Capture (AMD Module)
 - Guard rails:
@@ -153,6 +154,7 @@ versioning flow.
 - `enabled_languages`: list used for coverage reporting within `manage.php`.
 - `component_mapping`: newline-delimited hints that nudge component detection for
   captured strings.
+- `excluded_paths`: newline-delimited path prefixes (e.g. `/admin/`, `/course/modedit.php`) that force the translator to stay disabled on those routes.
  - “Manage Translations” button links to `/local/xlate/manage.php` (requires
    `local/xlate:manage` or `local/xlate:managecourse` when scoped to a course). The admin area also exposes `/local/xlate/glossary.php` (labelled "Xlate: Manage Glossary") for managing glossary entries; it is protected by `local/xlate:manage` by default.
 

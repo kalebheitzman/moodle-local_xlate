@@ -125,3 +125,5 @@ $string['capture_selectors'] = 'Capture area selectors';
 $string['capture_selectors_desc'] = 'Only text within elements matching these CSS selectors will be captured for translation. One selector per line. Leave blank to capture everything.';
 $string['exclude_selectors'] = 'Exclude selectors';
 $string['exclude_selectors_desc'] = 'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.';
+$string['excluded_paths'] = 'Exclude path prefixes';
+$string['excluded_paths_desc'] = 'Requests whose paths begin with one of these prefixes will never load the translator (useful for administrative or edit-only pages). One prefix per line.';
