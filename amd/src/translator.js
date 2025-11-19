@@ -30,6 +30,26 @@ define(['core/ajax'], function (Ajax) {
   var missingFetchTimer = null;
   var indicatorStylesAdded = false;
   var toggleButton = null;
+  var ALLOWED_INLINE_TAGS = {
+    'a': ['href', 'title', 'target', 'rel'],
+    'abbr': ['title'],
+    'b': [],
+    'br': [],
+    'cite': [],
+    'code': [],
+    'em': [],
+    'i': [],
+    'kbd': [],
+    'mark': [],
+    'q': [],
+    's': [],
+    'small': [],
+    'span': ['class'],
+    'strong': [],
+    'sub': [],
+    'sup': [],
+    'u': []
+  };
   /* Translator namespace to expose public API while keeping internal helpers private. */
   var Translator = {};
   Translator.utils = {};
@@ -38,6 +58,135 @@ define(['core/ajax'], function (Ajax) {
   Translator.capture = {};
   Translator.dom = {};
   Translator.api = {};
+
+  /**
+   * Determine if a URL value is safe for href/src attributes.
+   * @param {string} url - Candidate URL.
+   * @returns {boolean} True when URL uses an allowed scheme.
+   */
+  function isSafeUrl(url) {
+    if (!url) {
+      return false;
+    }
+    var trimmed = url.trim();
+    if (!trimmed) {
+      return false;
+    }
+    if (trimmed[0] === '#') {
+      return true;
+    }
+    var lower = trimmed.toLowerCase();
+    var unsafePattern = /^(?:\s*(?:javascript|data)\s*:)/;
+    if (unsafePattern.test(lower)) {
+      return false;
+    }
+    var allowedPattern = /^(https?:|mailto:|tel:)/;
+    return allowedPattern.test(lower);
+  }
+
+  /**
+   * Remove a node while keeping its children in place.
+   * @param {Element} element - Node to unwrap.
+   * @returns {void}
+   */
+  function unwrapElement(element) {
+    if (!element || !element.parentNode) {
+      return;
+    }
+    var parent = element.parentNode;
+    while (element.firstChild) {
+      parent.insertBefore(element.firstChild, element);
+    }
+    parent.removeChild(element);
+  }
+
+  /**
+   * Sanitize attributes on an element to the allowed list for that tag.
+   * @param {Element} element - Target element.
+   * @param {Array<string>} allowedAttrs - Whitelisted attribute names.
+   * @returns {void}
+   */
+  function sanitizeAttributes(element, allowedAttrs) {
+    if (!element || !element.attributes) {
+      return;
+    }
+    var attrs = Array.prototype.slice.call(element.attributes);
+    attrs.forEach(function (attr) {
+      var name = attr.name.toLowerCase();
+      if (allowedAttrs.indexOf(name) === -1) {
+        element.removeAttribute(attr.name);
+        return;
+      }
+      if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value || '')) {
+        element.removeAttribute(attr.name);
+        return;
+      }
+      if (name === 'target' && attr.value !== '_blank') {
+        element.removeAttribute(attr.name);
+        return;
+      }
+      if (name === 'target' && attr.value === '_blank') {
+        element.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+  }
+
+  /**
+   * Recursively sanitize HTML nodes to a safe inline subset.
+   * @param {Node} root - Root node to sanitize.
+   * @returns {void}
+   */
+  function sanitizeNode(root) {
+    if (!root || !root.childNodes) {
+      return;
+    }
+    var children = Array.prototype.slice.call(root.childNodes);
+    children.forEach(function (child) {
+      if (child.nodeType === 1) {
+        var tag = child.tagName.toLowerCase();
+        if (!Object.prototype.hasOwnProperty.call(ALLOWED_INLINE_TAGS, tag)) {
+          sanitizeNode(child);
+          unwrapElement(child);
+          return;
+        }
+        sanitizeAttributes(child, ALLOWED_INLINE_TAGS[tag]);
+        sanitizeNode(child);
+        return;
+      }
+      if (child.nodeType !== 3) {
+        child.parentNode.removeChild(child);
+      }
+    });
+  }
+
+  /**
+   * Sanitize translated HTML before injecting into the DOM.
+   * @param {string} value - Raw translation string.
+   * @param {string} targetTag - Tag name of the host element.
+   * @returns {string} Sanitized HTML safe for innerHTML.
+   */
+  function sanitizeTranslationHtml(value, targetTag) {
+    if (!value) {
+      return '';
+    }
+    var container = document.createElement('div');
+    container.innerHTML = value;
+    sanitizeNode(container);
+
+    // When translators wrap the same tag (e.g. <p> inside <p>), unwrap it.
+    if (targetTag && container.childNodes.length === 1) {
+      var firstChild = container.childNodes[0];
+      if (firstChild.nodeType === 1 && firstChild.tagName.toLowerCase() === targetTag && firstChild.childNodes.length) {
+        var unwrap = document.createElement('div');
+        while (firstChild.firstChild) {
+          unwrap.appendChild(firstChild.firstChild);
+        }
+        return unwrap.innerHTML;
+      }
+    }
+
+    return container.innerHTML;
+  }
 
   /**
    * Wrapper for debug logging which only emits when server-side debug is enabled.
@@ -194,20 +343,6 @@ define(['core/ajax'], function (Ajax) {
    * @param {Element} element - Target element.
    * @returns {string} Direct text content.
    */
-  function getDirectText(element) {
-    if (!element) {
-      return '';
-    }
-    var directText = '';
-    for (var i = 0; i < element.childNodes.length; i++) {
-      var node = element.childNodes[i];
-      if (node.nodeType === 3) {
-        directText += node.textContent;
-      }
-    }
-    return directText;
-  }
-
   /**
    * Persist the original value for an element so toggles can restore it later.
    * @param {Element} element - Element being translated.
@@ -225,7 +360,7 @@ define(['core/ajax'], function (Ajax) {
     }
     var original = '';
     if (type === 'text') {
-      original = getDirectText(element);
+      original = element.innerHTML;
     } else {
       original = element.getAttribute(type) || '';
     }
@@ -249,7 +384,7 @@ define(['core/ajax'], function (Ajax) {
     }
     var original = element.getAttribute(dataAttr) || '';
     if (type === 'text') {
-      element.textContent = original;
+      element.innerHTML = original;
     } else {
       element.setAttribute(type, original);
     }
@@ -538,7 +673,9 @@ define(['core/ajax'], function (Ajax) {
     }
 
     if (type === 'text') {
-      element.textContent = value;
+      var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
+      var sanitized = sanitizeTranslationHtml(value, hostTag);
+      element.innerHTML = sanitized;
       toggleAutoIndicator(element, key, !isKeyReviewed(key));
     } else {
       element.setAttribute(type, value);

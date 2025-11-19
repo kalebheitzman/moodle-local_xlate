@@ -122,7 +122,11 @@ versioning flow.
   text, and a short hash. See `KEY_GENERATION.md` for full details.
 - Inline markup from the DOM (anchor tags, emphasis, spans, etc.) is preserved
   when creating the captured string so translation prompts keep semantic hints
-  instead of reducing everything to plain text.
+  instead of reducing everything to plain text. When applying translations in
+  non-source languages the AMD module sanitizes translator-supplied HTML
+  against a curated inline-tag whitelist (links, emphasis, spans, code, etc.)
+  and strips unknown tags/unsafe attributes before calling `innerHTML`, keeping
+  the promise of markup fidelity without risking script injection.
 - Successful capture updates Moodle DB, bumps the bundle version, and invalidates
   caches so subsequent requests fetch fresh bundles.
 

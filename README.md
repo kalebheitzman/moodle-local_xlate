@@ -25,9 +25,11 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - **Automatic DOM translation**: Elements marked with `data-xlate` attributes –
 	or captured automatically – are translated on load, on MutationObserver
 	events, and after user interactions that add new DOM nodes. The translator uses a MutationObserver to handle dynamic content.
-- **Inline markup-safe capture**: Text extraction now preserves inline markup
-	such as `<a>`, `<strong>`, `<em>`, and `<span>` so translation prompts keep
-	their original structure instead of flattening to plain text.
+- **Inline markup-safe capture/render**: Text extraction preserves inline
+	markup such as `<a>`, `<strong>`, `<em>`, and `<span>` and translations are
+	re-applied via a sanitised inline-tag whitelist so rendered output keeps the
+	original structure without exposing XSS vectors. Unsupported tags/attributes
+	are stripped automatically.
 - **Optional auto-capture**: When browsing in the site’s default language with
 	the `local/xlate:manage` capability, the plugin records new strings (text,
 	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
@@ -187,7 +189,10 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
 - Inline HTML (links, emphasis, etc.) is preserved when capture runs so prompts
 	sent to translators or the autotranslate backend always reflect the source DOM
-	structure.
+	structure. When translations are rendered back into the DOM the client module
+	sanitizes the HTML against a safe inline whitelist (`a`, `strong`, `em`,
+	`span`, etc.) so inline styling survives without introducing executable markup
+	or unsafe URLs.
 - For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, which only requires the user to be logged in. This allows ordinary users browsing the site to populate source strings while keeping write access to translations restricted to site managers.
 
 Role and capabilities
