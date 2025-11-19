@@ -36,6 +36,7 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - **Translation management UI**: Admins can review automatically captured keys,
   enter translations, and rebuild bundles from `Site administration → Plugins →
   Local plugins → Xlate`. Use the **Xlate: Manage Translations** page to manage captured keys and the **Xlate: Manage Glossary** page to maintain the language glossary.
+- **Per-course language control**: Each course exposes an “Xlate source language” select plus per-language target checkboxes under Course custom fields. Translator assets, CLI jobs, and scheduled tasks only run when a course declares a source language, preventing accidental activation on unconfigured courses.
 
 ## Installation
 1. Copy this folder to `moodle/local/xlate` (or extract the release archive
@@ -129,6 +130,7 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 6. Use the **Manage Translations** button to review captured keys and provide
 	translations.
 6b. Use the **Xlate: Manage Glossary** button (under the same Local plugins → Xlate area) to add or edit glossary entries that influence automated and manual translations.
+6c. Configure each course’s Xlate custom fields (source select + target checkboxes). When a course lacks a source language, the translator bootstrap, CLI scripts, and scheduled tasks automatically skip it.
 
 7. Autotranslation (OpenAI)
 	 - The plugin includes an admin area to configure an OpenAI-compatible endpoint for optional autotranslation suggestions. Settings are under **Site administration → Plugins → Local plugins → Xlate**. Options include:
@@ -187,6 +189,7 @@ Notes about glossary and ordering
 	```
 	Remove `--dry-run` only when you are ready to wipe captured data in a dev/test
 	environment.
+- **Scheduled autotranslation dry run**: `cli/autotranslate_dryrun.php` mirrors the scheduled task query logic, listing each course’s source language, target set, and number of missing keys (optionally sample keys with `--showmissing`). Helpful for sanity checks before running the real task or debugging skipped courses.
 
 ## Scheduled Autotranslation (new)
 
@@ -198,6 +201,12 @@ This plugin now includes a scheduled task to automatically generate translations
 	sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\autotranslate_missing_task'
 	```
 - Progress and errors are logged to the scheduled task log.
+- Every execution resolves each course’s configured source language and prunes target languages to those explicitly selected (or inferred from the enabled-language list minus the source). Courses with no source language are skipped automatically, matching the runtime gating behavior.
+- Preview what would run without calling the backend using the CLI dry run:
+	```bash
+	sudo -u www-data php local/xlate/cli/autotranslate_dryrun.php --showmissing
+	```
+	Add `--courseid=<id>` to focus on a single course or `--limit=<n>` to reduce output.
 
 ## Token Usage Tracking
 

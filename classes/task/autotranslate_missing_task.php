@@ -67,70 +67,142 @@ class autotranslate_missing_task extends scheduled_task {
             return;
         }
         mtrace('Starting autotranslate_missing_task...');
-        $enabledlangs = get_config('local_xlate', 'enabled_languages');
-        $enabledlangs = $enabledlangs ? explode(',', $enabledlangs) : [];
-        if (empty($enabledlangs)) {
-            mtrace('No enabled languages.');
+        $courseids = $DB->get_fieldset_sql("SELECT DISTINCT courseid FROM {local_xlate_key_course}");
+        if (empty($courseids)) {
+            mtrace('No course associations found; nothing to autotranslate.');
             return;
         }
-        $keys = $DB->get_records_menu('local_xlate_key', null, '', 'id,xkey');
-        if (empty($keys)) {
-            mtrace('No translation keys found.');
-            return;
-        }
+
         $batchsize = 20;
-        foreach ($enabledlangs as $lang) {
-            $lang = trim($lang);
-            if ($lang === '') continue;
-            // Find all keyids missing a translation for this language.
-            $sql = "SELECT k.id, k.xkey, k.source FROM {local_xlate_key} k
-                    LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = ?
-                    WHERE t.id IS NULL";
-            $missing = $DB->get_records_sql($sql, [$lang]);
-            if (empty($missing)) {
-                mtrace("All keys translated for $lang");
+        foreach ($courseids as $courseid) {
+            $courseid = (int)$courseid;
+            if ($courseid <= 0) {
                 continue;
             }
-            mtrace("Autotranslating ".count($missing)." keys for $lang...");
-            $chunks = array_chunk($missing, $batchsize);
-            mtrace("Splitting into ".count($chunks)." batches of up to $batchsize");
-            foreach ($chunks as $i => $chunk) {
+
+            $config = \local_xlate\customfield_helper::get_course_config($courseid);
+            if ($config === null) {
+                mtrace("Skipping course {$courseid}: no xlate configuration.");
+                continue;
+            }
+
+            $sourcelang = $config['source'];
+            $targetlangs = array_filter($config['targets'], static function($code) use ($sourcelang) {
+                return $code && $code !== $sourcelang;
+            });
+
+            if (empty($targetlangs)) {
+                mtrace("Skipping course {$courseid}: no valid target languages configured.");
+                continue;
+            }
+
+            foreach ($targetlangs as $targetlang) {
+                $missing = self::get_missing_course_translations($courseid, $targetlang, $batchsize);
+                if (empty($missing)) {
+                    continue;
+                }
+
+                mtrace("Course {$courseid}: translating " . count($missing) . " keys into {$targetlang}.");
                 $items = [];
-                foreach ($chunk as $row) {
+                foreach ($missing as $row) {
                     $items[] = [
-                        'id' => $row->xkey,
-                        'source_text' => $row->source,
+                        'id' => (string)$row->xkey,
+                        'key' => (string)$row->xkey,
+                        'component' => (string)$row->component,
+                        'source_text' => (string)$row->source,
                         'context' => '',
                         'placeholders' => []
                     ];
                 }
-                mtrace("Batch ".($i+1)."/".count($chunks).": sending ".count($items)." items to backend for $lang");
-                $result = \local_xlate\translation\backend::translate_batch('autotask-'.uniqid(), 'en', $lang, $items, [], []);
-                if (!empty($result['ok']) && !empty($result['results'])) {
-                    mtrace("Received ".count($result['results'])." results for batch ".($i+1)."/$lang");
-                    foreach ($result['results'] as $r) {
-                        if (!empty($r['id']) && isset($r['translated'])) {
-                            // Insert translation if still missing (avoid race/dup).
-                            $keyid = array_search($r['id'], $keys);
-                            if ($keyid && !$DB->record_exists('local_xlate_tr', ['keyid'=>$keyid, 'lang'=>$lang])) {
-                                $rec = (object)[
-                                    'keyid' => $keyid,
-                                    'lang' => $lang,
-                                    'text' => $r['translated'],
-                                    'status' => 1,
-                                    'reviewed' => 0,
-                                    'mtime' => time()
-                                ];
-                                $DB->insert_record('local_xlate_tr', $rec, false);
-                                mtrace("Added autotranslation for $lang:$r[id]");
-                            }
-                        }
-                    }
-                } else {
-                    mtrace("Autotranslate error for $lang batch ".($i+1).": ".json_encode($result['errors'] ?? []));
+
+                $result = \local_xlate\translation\backend::translate_batch(
+                    'course-auto-' . $courseid . '-' . $targetlang . '-' . uniqid('', true),
+                    $sourcelang,
+                    $targetlang,
+                    $items,
+                    [],
+                    []
+                );
+
+                if (empty($result['ok']) || empty($result['results'])) {
+                    mtrace("Course {$courseid}: backend error for {$targetlang}: " . json_encode($result['errors'] ?? []));
+                    continue;
                 }
+
+                self::persist_batch_results($missing, $result['results'], $targetlang, $courseid);
             }
         }
+
         mtrace('Autotranslate_missing_task complete.');
+    }
+
+    /**
+     * Fetch keys for a course missing translations in a target language.
+     *
+     * @param int $courseid Course identifier.
+     * @param string $targetlang Target language code.
+     * @param int $limit Maximum records to fetch.
+     * @return array<int,\stdClass> Records containing key metadata.
+     */
+    protected static function get_missing_course_translations(int $courseid, string $targetlang, int $limit): array {
+        global $DB;
+
+        $sql = "SELECT k.id, k.xkey, k.source, k.component
+                  FROM {local_xlate_key_course} kc
+                  JOIN {local_xlate_key} k ON k.id = kc.keyid
+             LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
+                 WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)
+              ORDER BY k.id ASC";
+
+        $params = ['courseid' => $courseid, 'targetlang' => $targetlang];
+        return $DB->get_records_sql($sql, $params, 0, $limit);
+    }
+
+    /**
+     * Persist backend results for a single course/target combo.
+     *
+     * @param array<int,\stdClass> $pendingRows Rows returned from get_missing_course_translations.
+     * @param array<int,array> $results Backend results array.
+     * @param string $targetlang Target language code.
+     * @param int $courseid Course identifier.
+     * @return void
+     */
+    protected static function persist_batch_results(array $pendingRows, array $results, string $targetlang, int $courseid): void {
+        if (empty($pendingRows) || empty($results)) {
+            return;
+        }
+
+        $bykey = [];
+        foreach ($pendingRows as $row) {
+            $bykey[(string)$row->xkey] = $row;
+        }
+
+        foreach ($results as $result) {
+            $id = isset($result['id']) ? (string)$result['id'] : '';
+            $translated = isset($result['translated']) ? (string)$result['translated'] : '';
+            if ($id === '' || $translated === '') {
+                continue;
+            }
+
+            if (!isset($bykey[$id])) {
+                continue;
+            }
+            $row = $bykey[$id];
+
+            try {
+                \local_xlate\local\api::save_key_with_translation(
+                    (string)$row->component,
+                    (string)$row->xkey,
+                    (string)$row->source,
+                    $targetlang,
+                    $translated,
+                    0,
+                    $courseid,
+                    ''
+                );
+            } catch (\Throwable $e) {
+                debugging('[local_xlate] Failed to persist autotranslate for key ' . $row->xkey . ' (' . $targetlang . '): ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
     }
 }

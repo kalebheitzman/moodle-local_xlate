@@ -114,8 +114,11 @@ class customfield_helper {
             return; // Already exists
         }
 
-        // Get installed languages
+        // Get installed languages in a predictable display order.
         $installedlangs = self::get_installed_languages();
+        if (!empty($installedlangs)) {
+            asort($installedlangs, SORT_NATURAL | SORT_FLAG_CASE);
+        }
         $options = [];
         foreach ($installedlangs as $code => $name) {
             $options[] = $name;
@@ -153,8 +156,11 @@ class customfield_helper {
     protected static function create_target_languages_field(\core_customfield\category_controller $category): void {
         global $DB;
 
-        // Get installed languages
+        // Get installed languages in a predictable display order.
         $installedlangs = self::get_installed_languages();
+        if (!empty($installedlangs)) {
+            asort($installedlangs, SORT_NATURAL | SORT_FLAG_CASE);
+        }
         
         // Create a checkbox field for each installed language
         $sortorder = 2;
@@ -212,15 +218,20 @@ class customfield_helper {
         $installedlangs = self::get_installed_languages();
         
         foreach ($datas as $data) {
-            if ($data->get_field()->get('shortname') === 'xlate_source_lang') {
-                $value = trim((string)$data->get_value());
-                if ($value === '') {
-                    return null;
-                }
-
-                $normalized = self::normalize_lang_value($value, $installedlangs);
-                return $normalized ?? $value;
+            $field = $data->get_field();
+            if ($field->get('shortname') !== 'xlate_source_lang') {
+                continue;
             }
+
+            $value = trim((string)$data->get_value());
+            if ($value === '') {
+                return null;
+            }
+
+            $value = self::map_select_index_to_option($value, $field);
+
+            $normalized = self::normalize_lang_value($value, $installedlangs);
+            return $normalized ?? $value;
         }
         
         return null;
@@ -391,5 +402,32 @@ class customfield_helper {
         }
 
         return null;
+    }
+
+    /**
+     * Convert a select field's stored numeric index into its option label.
+     *
+     * @param string $value Raw value coming from customfield_select.
+     * @param \core_customfield\field_controller $field Select field controller.
+     * @return string
+     */
+    protected static function map_select_index_to_option(string $value, \core_customfield\field_controller $field): string {
+        if ($value === '' || !ctype_digit($value)) {
+            return $value;
+        }
+
+        $options = $field->get_options();
+        $index = (int)$value;
+
+        if (array_key_exists($index, $options)) {
+            return $options[$index];
+        }
+
+        $onebased = $index - 1;
+        if ($onebased >= 0 && array_key_exists($onebased, $options)) {
+            return $options[$onebased];
+        }
+
+        return $value;
     }
 }
