@@ -42,6 +42,63 @@ DB (local_xlate_key + local_xlate_tr)
 - **Server APIs** (`classes/local/api.php`, `classes/external.php`) provide CRUD,
   cache invalidation, and web services consumed by the AMD module and admin UI.
 
+### Expanded system diagram
+
+```
+                                          +------------------------------+
+                                          | Site admin settings          |
+                                          | (enable, OpenAI creds, etc.) |
+                                          +---------------+--------------+
+                                                          |
+                                                          v
++------------------------------+              +-----------+-------------+
+| Course custom fields         |<-------------+ classes/customfield_    |
+| (source select + targets)    |  provision   | helper::ensure_category()|
++----------------------+-------+              +--------------------------+
+                       | resolve config via helper
+                       v
++----------------------+--------------------+             +---------------------------+
+| classes/hooks/output.php (render gating) |----config--->| AMD bootloader config JS  |
++----------------------+--------------------+             +---------------------------+
+                       |                                          |
+                  inject CSS/JS                                   v
+                       v                          +---------------------------------+
+            +----------+-----------+              | amd/src/translator.js + capture |
+            | Moodle page request |--------------> applies translations, optional  |
+            +----------+-----------+              | capture, DOM observer, tagging  |
+                       |                          +-----------------+---------------+
+                       | bundle fetch (GET/POST)                    |
+                       v                                            | capture posts
+            +-----------------------------+                         v
+            | bundle.php + local\api      |<-------------------+ classes/external.php
+            | (cache, sourceMap, version) |                    |  (save key, rebuild)
+            +----------------------+------+
+                                   |
+                                   v
+           +---------------------------------------------+
+           | DB tables: local_xlate_key/tr/bundle/...    |
+           | + cache stores + glossary/token logs        |
+           +------------------+--------------------------+
+                              |
+                              v
++----------------------------+-------------------------------------------+
+| Scheduled task (task/autotranslate_missing_task.php)                   |
+| CLI tools (autotranslate_dryrun, queue_course_job, etc.)               |
+| - call customfield_helper for gating                                   |
+| - enqueue adhoc translate_course_task                                  |
+| - inspect token usage / new translations                               |
++----------------------------+-------------------------------------------+
+                              |
+                              v
++-----------------------------+------------------------------------------+
+| translation/backend.php (OpenAI-compatible HTTP calls, retries, logging)|
++-----------------------------------------------------------------------+
+
+MLang migration tooling (CLI + adhoc task) operates in parallel against
+legacy content, feeding updates back into the same DB tables and bundle
+versioning flow.
+```
+
 ### Course language configuration & gating
 
 - `classes/customfield_helper.php` provisions the **Xlate** course customfield category with a select (`xlate_source_lang`) and one checkbox per installed language (`xlate_target_<code>`). The helper also provides `get_course_config()` so every runtime component can resolve source/target languages consistently.
