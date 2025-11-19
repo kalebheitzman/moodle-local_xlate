@@ -56,4 +56,26 @@ $capabilities = [
             'manager' => CAP_ALLOW
         ]
     ],
+    'local/xlate:viewbundle' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'teacher' => CAP_ALLOW,
+            'student' => CAP_ALLOW,
+            'user' => CAP_ALLOW,
+            'guest' => CAP_ALLOW,
+            'manager' => CAP_ALLOW
+        ]
+    ],
+    'local/xlate:viewsystem' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+            'frontpage' => CAP_ALLOW
+        ]
+    ],
 ];

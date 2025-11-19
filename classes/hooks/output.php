@@ -149,6 +149,7 @@ class output {
             'contextid' => $contextid,
             'pagetype' => $pagetype,
             'courseid' => $courseid,
+            'sesskey' => sesskey(),
         ]);
 
         $initconfig = [

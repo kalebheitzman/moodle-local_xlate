@@ -29,56 +29,110 @@
 require_once(__DIR__ . '/../../config.php');
 defined('MOODLE_INTERNAL') || die();
 
-// Require authentication
-require_login();
+if (!get_config('local_xlate', 'enable')) {
+    http_response_code(403);
+    echo json_encode(['error' => 'disabled']);
+    exit;
+}
 
-// Get parameters
+// Allow guests to obtain bundles when permitted.
+require_login(null, false);
+
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($method !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    echo json_encode(['error' => 'methodnotallowed']);
+    exit;
+}
+
+require_sesskey();
+
+// Parameters passed via query string for context/lang hints.
 $lang = optional_param('lang', current_language(), PARAM_ALPHANUMEXT);
 $contextid = optional_param('contextid', SYSCONTEXTID, PARAM_INT);
 $pagetype = optional_param('pagetype', '', PARAM_TEXT);
 $courseid = optional_param('courseid', 0, PARAM_INT);
-
-// Clean pagetype to ensure it's safe
 $pagetype = preg_replace('/[^a-zA-Z0-9\-_.]/', '', $pagetype);
 
-// Validate context and permissions
+$raw = file_get_contents('php://input');
+$payload = json_decode($raw, true);
+if (!is_array($payload)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'invalidjson']);
+    exit;
+}
+
+$keys = [];
+if (!empty($payload['keys']) && is_array($payload['keys'])) {
+    $keys = $payload['keys'];
+}
+
+if (empty($keys)) {
+    http_response_code(200);
+    echo json_encode(['translations' => [], 'reviewed' => []]);
+    exit;
+}
+
+$context = null;
 try {
-    $context = context::instance_by_id($contextid);
-    
-    // Check basic view permission for the context
-    if ($context->contextlevel == CONTEXT_COURSE) {
-        require_capability('moodle/course:view', $context);
-    } else if ($context->contextlevel == CONTEXT_MODULE) {
-        require_capability('moodle/course:view', $context);
-    }
+    $context = context::instance_by_id($contextid, IGNORE_MISSING);
 } catch (Exception $e) {
-    // Fall back to system context for invalid context IDs
+    $context = null;
+}
+if (!$context) {
     $context = context_system::instance();
 }
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: private, max-age=3600');
+$coursecontext = null;
+$resolvedcourseid = 0;
 
-try {
-    // If POST with JSON body of keys is provided, return a flat map of only those keys
-    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-    if ($method === 'POST') {
-        $raw = file_get_contents('php://input');
-        $data = json_decode($raw, true);
-        if (is_array($data) && !empty($data['keys']) && is_array($data['keys'])) {
-            $map = \local_xlate\local\api::get_keys_bundle($lang, $data['keys'], $context, $pagetype, $courseid);
-            // Shorter cache for key-specific bundles
-            header('Cache-Control: private, max-age=120');
-            echo json_encode($map, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            exit;
+// Prefer explicit course id when provided.
+if ($courseid > 0) {
+    try {
+        $coursecontext = context_course::instance($courseid, IGNORE_MISSING);
+        if ($coursecontext) {
+            $resolvedcourseid = $coursecontext->instanceid;
+        }
+    } catch (Exception $e) {
+        $coursecontext = null;
+    }
+}
+
+if (!$coursecontext) {
+    if ($context->contextlevel === CONTEXT_COURSE) {
+        $coursecontext = $context;
+        $resolvedcourseid = $context->instanceid;
+    } else if ($context->contextlevel === CONTEXT_MODULE && method_exists($context, 'get_course_context')) {
+        $coursecontext = $context->get_course_context(false) ?: null;
+        if ($coursecontext) {
+            $resolvedcourseid = $coursecontext->instanceid;
         }
     }
+}
 
-    // Fallback: page bundle (legacy/full)
-    $bundle = \local_xlate\local\api::get_page_bundle($lang, $pagetype, $context, $USER, $courseid);
+// Reject mismatched course identifiers.
+if ($courseid > 0 && $resolvedcourseid > 0 && (int)$courseid !== (int)$resolvedcourseid) {
+    http_response_code(400);
+    echo json_encode(['error' => 'invalidcoursecontext']);
+    exit;
+}
+
+if ($coursecontext) {
+    require_capability('local/xlate:viewbundle', $coursecontext);
+} else {
+    require_capability('local/xlate:viewsystem', context_system::instance());
+}
+
+$courseparam = $coursecontext ? $coursecontext->instanceid : 0;
+
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: private, max-age=120');
+
+try {
+    $bundle = \local_xlate\local\api::get_keys_bundle($lang, $keys, $context, $pagetype, $courseparam);
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {
-    // If there's an error, return empty bundle instead of fatal error
     http_response_code(200);
-    echo json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo json_encode(['translations' => [], 'reviewed' => []]);
 }

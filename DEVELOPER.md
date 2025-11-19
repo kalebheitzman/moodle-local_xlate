@@ -36,6 +36,10 @@ DB (local_xlate_key + local_xlate_tr)
 - **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
   language bundles (`{translations, sourceMap}`) with `Cache-Control: public,
   max-age=31536000, immutable`. Supports POST with `{keys: [...]}` to return only translations for keys found on the page (used for efficient capture and translation).
+- **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
+  translation bundles for the current page/context. Requests must be POST calls
+  with a JSON body of `{"keys": [...]}` plus the Moodle `sesskey`; other
+  methods are rejected to avoid leaking unauthorized data.
 - **Client runtime** (`amd/src/translator.js`) applies translations, stores state
   on `window.__XLATE__`, observes DOM mutations, and can capture untranslated
   text when enabled. If the page is in edit mode (`isEditing` flag from PHP), all capture and tagging logic is skipped and a console message is logged.
@@ -131,7 +135,7 @@ versioning flow.
   caches so subsequent requests fetch fresh bundles.
 
 ## 4. Bundle & Cache Layer (`classes/local/api.php`)
-* Bundle endpoint supports both GET (full bundle) and POST (filtered by keys array) for efficient translation and capture.
+* Bundle endpoint only accepts POST (JSON body with `keys` array + `sesskey`), eliminating the legacy GET fallback to prevent accidental data leaks.
 
 | Method | Purpose |
 | ------ | ------- |

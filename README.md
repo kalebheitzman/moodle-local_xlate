@@ -216,7 +216,7 @@ Notes about glossary and ordering
 ## Verifying the Plugin
 - View page source: you should see the `html.xlate-loading` CSS in `<head>` and
 	an inline bootloader near the top of `<body>`.
-- Inspect `/local/xlate/bundle.php?lang=en` to confirm bundles return JSON
+- Use a tool like `curl` to POST to `/local/xlate/bundle.php?lang=en&sesskey=...` with `{"keys":["yourkey"]}` and confirm bundles return JSON
 	(empty object when no keys exist for the language). You can POST a list of keys to this endpoint for page-specific bundles.
 - In the browser console check `window.__XLATE__` to see the active language,
 	site default language, and in-memory translation map.

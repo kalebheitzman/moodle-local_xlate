@@ -6,6 +6,8 @@ $string['enable'] = 'Enable Xlate';
 $string['enable_desc'] = 'Turn on/off client-side translation injection.';
 $string['xlate:manage'] = 'Manage Xlate translations';
 $string['xlate:viewui'] = 'View Xlate admin UI';
+$string['xlate:viewbundle'] = 'View page-level translation bundles';
+$string['xlate:viewsystem'] = 'View site-wide translation bundles';
 $string['autotranslate_task_enable'] = 'Enable scheduled autotranslation';
 $string['autotranslate_task_enable_desc'] = 'If enabled, a scheduled task will automatically generate translations for all missing languages and keys using the autotranslation backend.';
 
