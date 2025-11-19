@@ -25,12 +25,12 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 /**
- * Renders the local_xlate admin navigation tabs in Moodle admin style.
- * Usage: include_once(__DIR__ . '/admin_nav.php'); local_xlate_render_admin_nav('usage');
+ * Build the local_xlate admin navigation tabs HTML.
+ *
  * @param string $active One of: manage, glossary, usage, settings
+ * @return string
  */
-function local_xlate_render_admin_nav($active = '') {
-    global $CFG;
+function local_xlate_admin_nav_html($active = ''): string {
     $tabs = [
         'manage' => [
             'url' => new moodle_url('/local/xlate/manage.php'),
@@ -49,17 +49,25 @@ function local_xlate_render_admin_nav($active = '') {
             'label' => get_string('settings', 'core'),
         ],
     ];
-    echo html_writer::start_div('mb-4');
-    echo html_writer::start_tag('ul', ['class' => 'nav nav-tabs']);
+    $output = html_writer::start_div('mb-4');
+    $output .= html_writer::start_tag('ul', ['class' => 'nav nav-tabs']);
     foreach ($tabs as $key => $tab) {
         $isactive = ($active === $key);
-        echo html_writer::tag('li',
+        $output .= html_writer::tag('li',
             html_writer::link($tab['url'], $tab['label'], [
                 'class' => 'nav-link' . ($isactive ? ' active' : '')
             ]),
             ['class' => 'nav-item']
         );
     }
-    echo html_writer::end_tag('ul');
-    echo html_writer::end_div();
+    $output .= html_writer::end_tag('ul');
+    $output .= html_writer::end_div();
+    return $output;
+}
+
+/**
+ * Echo the admin nav tabs directly (legacy helper).
+ */
+function local_xlate_render_admin_nav($active = ''): void {
+    echo local_xlate_admin_nav_html($active);
 }

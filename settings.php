@@ -27,12 +27,15 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/admin_nav.php');
+
 if ($hassiteconfig) {
     global $ADMIN;
 
     $settings = new admin_settingpage('local_xlate', get_string('pluginname', 'local_xlate'));
 
     if ($ADMIN->fulltree) {
+        $settings->add(new admin_setting_heading('local_xlate/navtabs', '', local_xlate_admin_nav_html('settings')));
         // --- Scheduled Autotranslate Task --------------------------------
         $settings->add(new admin_setting_configcheckbox('local_xlate/autotranslate_task_enabled',
             get_string('autotranslate_task_enable', 'local_xlate'),
