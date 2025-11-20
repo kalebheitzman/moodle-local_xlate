@@ -34,12 +34,11 @@ DB (local_xlate_key + local_xlate_tr)
 - **Hooks** (`classes/hooks/output.php`) inject anti-FOUT CSS and a bootloader
   via Moodle’s hook system (`db/hooks.php`). Hooks are skipped on admin pages and in edit mode to preserve core behaviour and prevent unwanted capture.
 - **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
-  language bundles (`{translations, sourceMap}`) with `Cache-Control: public,
-  max-age=31536000, immutable`. Supports POST with `{keys: [...]}` to return only translations for keys found on the page (used for efficient capture and translation).
-- **Bundle endpoint** (`bundle.php`) wraps `local_xlate\local\api`, returning
-  translation bundles for the current page/context. Requests must be POST calls
-  with a JSON body of `{"keys": [...]}` plus the Moodle `sesskey`; other
-  methods are rejected to avoid leaking unauthorized data.
+  translation bundles for the current page/context. Requests are POST-only, must
+  include a JSON body of `{"keys": [...]}` plus the caller’s Moodle `sesskey`,
+  and are capability-gated: course contexts require `local/xlate:viewbundle`,
+  while system contexts require `local/xlate:viewsystem`. Invalid/mismatched
+  course ids return HTTP 400 and empty key lists short-circuit with `{}`.
 - **Client runtime** (`amd/src/translator.js`) applies translations, stores state
   on `window.__XLATE__`, observes DOM mutations, and can capture untranslated
   text when enabled. If the page is in edit mode (`isEditing` flag from PHP), all capture and tagging logic is skipped and a console message is logged.
@@ -71,7 +70,7 @@ DB (local_xlate_key + local_xlate_tr)
             | Moodle page request |--------------> applies translations, optional  |
             +----------+-----------+              | capture, DOM observer, tagging  |
                        |                          +-----------------+---------------+
-                       | bundle fetch (GET/POST)                    |
+                       | bundle fetch (POST w/ sesskey)             |
                        v                                            | capture posts
             +-----------------------------+                         v
             | bundle.php + local\api      |<-------------------+ classes/external.php
@@ -119,7 +118,7 @@ versioning flow.
   - **Edit mode disables capture**: If the page is in edit mode, capture/tagging is always skipped (see `isEditing` flag in JS config).
   - Capability check happens via `local_xlate_save_key`
     (`local/xlate:manage`).
-  - The associate-only web service (`local_xlate_associate_keys`) intentionally skips capability checks and only calls `require_login()` so regular users can help populate source strings while browsing.
+  - The associate-only web service (`local_xlate_associate_keys`) enforces `local/xlate:manage` (system) or `local/xlate:managecourse` (course context), requires enrolment when scoped to a course, sanitises incoming payloads, and rejects batches over 200 keys to prevent abuse.
   - No manual or toggle: keys are always auto-assigned by the JS.
 - Captured text includes text nodes plus `placeholder`, `title`, `alt`, and `aria-label`
   attributes. Stable keys combine detected component, element type, normalized
@@ -135,7 +134,7 @@ versioning flow.
   caches so subsequent requests fetch fresh bundles.
 
 ## 4. Bundle & Cache Layer (`classes/local/api.php`)
-* Bundle endpoint only accepts POST (JSON body with `keys` array + `sesskey`), eliminating the legacy GET fallback to prevent accidental data leaks.
+* Bundle endpoint only accepts POST (JSON body with `keys` array + `sesskey`), eliminating the legacy GET fallback to prevent accidental data leaks. Context resolution now enforces `local/xlate:viewbundle` (course) or `local/xlate:viewsystem` (system) before returning per-key JSON.
 
 | Method | Purpose |
 | ------ | ------- |
@@ -193,14 +192,17 @@ Be careful with privacy and cost: sending user content externally may expose dat
 Capabilities and course-level management
 ---------------------------------------
 
-Two capabilities control access to the management UI and capture-related APIs:
+Four capabilities coordinate UI, API, and bundle access:
 
-- `local/xlate:manage` (system-level): grants full management rights across the site.
+- `local/xlate:manage` (system-level): grants full management rights across the site, including admin UI, glossary edits, bundle rebuilds, and capture writes.
 - `local/xlate:managecourse` (course-level): grants management rights for a specific course when assigned via role overrides. When a course-level manager visits a course they are granted the "Manage Translations" link in the More menu which opens `/local/xlate/manage.php?courseid=<id>`.
+- `local/xlate:viewbundle` (course context): required for `bundle.php` whenever a course context (or module-derived course) is resolved. Default editing teachers/teachers/students/guests inherit it but you can revoke it per role to suppress translation delivery.
+- `local/xlate:viewsystem` (system context): fallback for contexts outside a course (site front page, system pages). Typically only site managers/front-page roles retain it.
 
 Code notes:
-- The navigation hook is implemented in `lib.php` and checks for either capability before showing the link.
-- `manage.php` now respects `courseid` and allows access when the viewer has `local/xlate:managecourse` in that course context (site managers with `local/xlate:manage` still have full access).
+- The navigation hook is implemented in `lib.php` and checks for either management capability before showing the link.
+- `manage.php` respects `courseid` and allows access when the viewer has `local/xlate:managecourse` in that course context (site managers with `local/xlate:manage` still have full access).
+- Bundle access always funnels through `require_capability('local/xlate:viewbundle'|'local/xlate:viewsystem')`, so capability overrides directly affect whether translation JSON can be requested.
 
 ## Scheduled Autotranslation Task
 
@@ -242,7 +244,7 @@ Defined in `classes/external.php` and `db/services.php`:
 | `local_xlate_save_key` | `local/xlate:manage` | Save/update key + translation, bump bundle version, clear caches. |
 | `local_xlate_get_key` | `local/xlate:viewui` | Retrieve key metadata for tooling. |
 | `local_xlate_rebuild_bundles` | `local/xlate:manage` | Rebuild bundle versions for languages with active translations. |
-| `local_xlate_associate_keys` | _(require_login only)_ | Ensure keys exist and associate them with a course/context so source strings are captured from general traffic. |
+| `local_xlate_associate_keys` | `local/xlate:manage` or `local/xlate:managecourse` | Ensure keys exist and associate them with a course/context. Requires enrolment for course-scoped calls, sanitises payloads, and rejects batches over 200 keys. |
 
 The AMD module uses `local_xlate_save_key`; the others enable admin tooling and
 external integrations.

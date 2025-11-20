@@ -73,19 +73,32 @@ sudo -u www-data php local/xlate/cli/sync_source_language_indices.php --dry-run
 - Ensure commands respect guarding (skip courses with no source language, etc.).
 - Confirm `autotranslate_dryrun` matches UI data for counts.
 
-### H. Scheduled / Adhoc Tasks
+### H. Bundle Endpoint & Web Service Security
+
+- [ ] `bundle.php` rejects GET traffic: `curl -i 'https://example.com/local/xlate/bundle.php?lang=en'` should return `405 Method Not Allowed`.
+- [ ] POST requests without a `sesskey` or Moodle session cookie must be rejected (expect `403` or `invalidsesskey`).
+- [ ] Valid POST requests require a JSON body with `keys`. Use the example from `README.md` and confirm only the requested keys are returned.
+- [ ] Temporarily remove `local/xlate:viewbundle` from a test role in the target course and confirm bundle calls fail until the capability is restored. Repeat for `local/xlate:viewsystem` on the front page/system context.
+- [ ] Supply a mismatched `courseid`/`contextid` combo and confirm the endpoint returns `invalidcoursecontext`.
+- [ ] Exercise `local_xlate_associate_keys` via core web services (e.g., REST or WS testing client):
+  - [ ] Call without `local/xlate:manage`/`local/xlate:managecourse` and ensure access is denied.
+  - [ ] Call as a course-level manager who is not enrolled—verify the enrolment guard blocks the request.
+  - [ ] Send more than 200 keys and confirm the `Too many keys requested` error.
+  - [ ] Inspect DB to ensure sanitised `component`/`source` values are stored and associations respect the provided course.
+
+### I. Scheduled / Adhoc Tasks
 
 - Trigger `local_xlate\task\autotranslate_missing_task` via `scheduled_task.php`.
 - Monitor logs for per-course gating, batch sizes, token usage recording.
 - Run `translate_course_task` adhoc jobs and verify results appear in `Manage Translations` + `usage.php`.
 
-### I. Guardrail Regression (Critical)
+### J. Guardrail Regression (Critical)
 
 - [ ] For each path listed under **Exclude path prefixes**, ensure the translator never loads.
 - [ ] Add a custom prefix (e.g., `/local/customreport/`), save, and confirm no translator assets load there.
 - [ ] Remove the prefix and ensure translator resumes on normal course pages.
 
-### J. MLang Migration Tooling (if relevant)
+### K. MLang Migration Tooling (if relevant)
 
 - Run `cli/mlang_migrate.php` in dry-run mode on a staging DB.
 - Inspect the JSON report, confirm sample replacements look correct.
@@ -112,7 +125,7 @@ Getting started:
 
 ## 4. Release Checklist
 
-- [ ] Manual suites A–I pass.
+- [ ] Manual suites A–K pass.
 - [ ] CLI tools run without warnings.
 - [ ] Scheduled task exercised or dry-run logs reviewed.
 - [ ] README/DEVELOPER/TESTS reflect any new features.

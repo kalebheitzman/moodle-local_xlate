@@ -33,13 +33,21 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - **Optional auto-capture**: When browsing in the site’s default language with
 	the `local/xlate:manage` capability, the plugin records new strings (text,
 	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
-- **Caching stack**: Moodle application cache → browser `localStorage` → long-lived HTTP responses for efficient repeat visits. The bundle endpoint supports POST requests with a list of keys for efficient, page-specific translation.
-- **Translation management UI**: Admins can review automatically captured keys,
+- **Secure bundle pipeline**: Moodle application cache → browser `localStorage` → POST-only `bundle.php` calls. Requests must include the user’s `sesskey`, a JSON `keys` array, and the caller must have either `local/xlate:viewbundle` (course context) or `local/xlate:viewsystem` (system context). Responses only contain the requested keys, preventing accidental data leaks.
 - **Translation management UI**: Admins can review automatically captured keys,
   enter translations, and rebuild bundles from `Site administration → Plugins →
   Local plugins → Xlate`. Use the **Xlate: Manage Translations** page to manage captured keys and the **Xlate: Manage Glossary** page to maintain the language glossary.
 - **Per-course language control**: Each course exposes an “Xlate source language” select plus per-language target checkboxes under Course custom fields. Translator assets, CLI jobs, and scheduled tasks only run when a course declares a source language, preventing accidental activation on unconfigured courses.
 - **Administrative guardrails**: The bootloader automatically skips admin, maintenance, and edit-mode pages using pagelayout checks plus a configurable list of path prefixes, so translation/capture assets never run on sensitive workflows.
+
+### Bundle endpoint security
+
+`bundle.php` now behaves like an authenticated API endpoint instead of an open GET feed:
+- Rejects any non-POST call (returns HTTP 405) and requires a valid Moodle `sesskey` so only the active login session can request bundles.
+- Resolves course/system context from the provided `contextid`/`courseid` and enforces `local/xlate:viewbundle` (course) or `local/xlate:viewsystem` (system). Default role archetypes already have the read capability, but custom roles can revoke it to block bundle fetches.
+- Requires a non-empty JSON `keys` array; responses only include those keys plus review metadata.
+- Validates that the provided course id matches the resolved context, preventing callers from mixing enrolment contexts to probe for data.
+- Returns empty payloads instead of errors when the API layer throws, keeping leak surface minimal.
 
 ## System Diagram
 
@@ -193,17 +201,19 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 	sanitizes the HTML against a safe inline whitelist (`a`, `strong`, `em`,
 	`span`, etc.) so inline styling survives without introducing executable markup
 	or unsafe URLs.
-- For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, which only requires the user to be logged in. This allows ordinary users browsing the site to populate source strings while keeping write access to translations restricted to site managers.
+- For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, but it now enforces `local/xlate:manage` (system) or `local/xlate:managecourse` (course context) plus enrolment checks, sanitises every submitted key/source pair, and caps requests at 200 keys per call. This keeps source capture open to trusted staff without letting arbitrary traffic create associations.
 
 Role and capabilities
 ---------------------
 
-There are two relevant capabilities:
+There are four relevant capabilities:
 
-- `local/xlate:manage` — site-level management (typically assigned to site managers). Grants full access to the Manage Translations UI and capture-related webservices.
+- `local/xlate:manage` — site-level management (typically assigned to site managers). Grants full access to the Manage Translations UI and capture-related web services.
 - `local/xlate:managecourse` — course-level management (assignable per-course, typically to editing teachers). Grants access to the Manage Translations UI for a specific course (the UI can be opened at `/local/xlate/manage.php?courseid=<id>`).
+- `local/xlate:viewbundle` — read-only capability at the course context. Required for `bundle.php` when a course context is resolved. Default Moodle roles (students, teachers, guests, etc.) have it so front-end bundle fetches work out of the box, but it can be revoked to disable translation delivery for specific roles/courses.
+- `local/xlate:viewsystem` — system-context fallback used when no course context is available (e.g. front page). Usually only managers/front-page roles need it.
 
-The plugin adds a "Manage Translations" link to a course's More menu for users who have `local/xlate:managecourse` (or site managers who have `local/xlate:manage`).
+The plugin adds a "Manage Translations" link to a course's More menu for users who have `local/xlate:managecourse` (or site managers who have `local/xlate:manage`). Bundle access always respects the `viewbundle/viewsystem` capabilities so custom role overrides can fully disable translation delivery if required.
 - Dynamic content (drawer menus, modals, lazy-loaded blocks, etc.) is processed
 	automatically; the MutationObserver re-runs detection as nodes are added.
 - Mark markup you never want translated with `data-xlate-ignore`.
@@ -216,8 +226,14 @@ Notes about glossary and ordering
 ## Verifying the Plugin
 - View page source: you should see the `html.xlate-loading` CSS in `<head>` and
 	an inline bootloader near the top of `<body>`.
-- Use a tool like `curl` to POST to `/local/xlate/bundle.php?lang=en&sesskey=...` with `{"keys":["yourkey"]}` and confirm bundles return JSON
-	(empty object when no keys exist for the language). You can POST a list of keys to this endpoint for page-specific bundles.
+- Use a tool like `curl` to POST to `/local/xlate/bundle.php` with both a Moodle session cookie and your current `sesskey`; GET calls now return HTTP 405. Example:
+	```bash
+	curl -sS -X POST 'https://example.com/local/xlate/bundle.php?lang=en&contextid=1&sesskey=<sesskey>' \
+	  -H 'Content-Type: application/json' \
+	  -b 'MoodleSession=<cookie>' \
+	  --data '{"keys":["abc123def456"]}'
+	```
+	Grab the `sesskey` from any Moodle page while logged in (it is embedded in form actions and URLs). If the capability checks pass you will receive `{"translations":{...},"reviewed":{...}}`; an empty `translations` object indicates no matches for that language.
 - In the browser console check `window.__XLATE__` to see the active language,
 	site default language, and in-memory translation map.
 

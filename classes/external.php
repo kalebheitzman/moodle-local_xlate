@@ -258,10 +258,58 @@ class local_xlate_external extends external_api {
             'context' => $context
         ]);
 
-        // Require login but allow any authenticated user to trigger associations.
         require_login();
 
-        $details = \local_xlate\local\api::associate_keys_with_course($params['keys'], (int)$params['courseid'], $params['context']);
+        $courseid = (int)$params['courseid'];
+        if ($courseid <= 0) {
+            throw new invalid_parameter_exception('Invalid course id.');
+        }
+
+        $course = get_course($courseid);
+        $coursecontext = \context_course::instance($course->id);
+
+        if (has_capability('local/xlate:managecourse', $coursecontext)) {
+            require_capability('local/xlate:managecourse', $coursecontext);
+        } else {
+            require_capability('local/xlate:manage', \context_system::instance());
+        }
+
+        // Ensure the caller is at least enrolled when relying on the course capability.
+        if (!is_enrolled($coursecontext, $USER, '', true) && !has_capability('local/xlate:manage', \context_system::instance())) {
+            throw new required_capability_exception($coursecontext, 'local/xlate:managecourse', 'nopermissions', 'local_xlate');
+        }
+
+        $maxkeys = 200;
+        if (count($params['keys']) > $maxkeys) {
+            throw new invalid_parameter_exception('Too many keys requested; max ' . $maxkeys . ' per request.');
+        }
+
+        $sanitised = [];
+        foreach ($params['keys'] as $k) {
+            $xkey = trim($k['key']);
+            if ($xkey === '') {
+                continue;
+            }
+            $component = trim($k['component']);
+            if ($component === '') {
+                $component = 'core';
+            }
+            $source = isset($k['source']) ? clean_param($k['source'], PARAM_TEXT) : '';
+            $sanitised[] = [
+                'component' => $component,
+                'xkey' => $xkey,
+                'source' => $source
+            ];
+        }
+
+        if (empty($sanitised)) {
+            return [
+                'success' => true,
+                'details' => []
+            ];
+        }
+
+        $details = \local_xlate\local\api::associate_keys_with_course($sanitised, $courseid, $params['context']);
 
         return [
             'success' => true,
