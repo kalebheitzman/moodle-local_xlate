@@ -47,6 +47,10 @@ if ($hassiteconfig) {
             get_string('enable', 'local_xlate'),
             get_string('enable_desc', 'local_xlate'), 1));
 
+        $settings->add(new admin_setting_configcheckbox('local_xlate/debughooks',
+            get_string('debughooks', 'local_xlate'),
+            get_string('debughooks_desc', 'local_xlate'), 0));
+
         // --- OpenAI / Autotranslation ---------------------------------------
         $settings->add(new admin_setting_heading('local_xlate/autotranslateheading', '', get_string('autotranslate_heading', 'local_xlate')));
 

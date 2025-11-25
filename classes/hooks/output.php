@@ -32,6 +32,7 @@ defined('MOODLE_INTERNAL') || die();
 
 use core\hook\output\before_standard_head_html_generation as Head;
 use core\hook\output\before_standard_top_of_body_html_generation as Body;
+use moodle_page;
 
 /**
  * Registers frontend bootstrapping for the translator on Moodle page renders.
@@ -51,10 +52,18 @@ class output {
      */
     public static function before_head(Head $hook): void {
         if (!get_config('local_xlate', 'enable')) {
+            self::debug('Skipping head injection: plugin disabled');
             return;
         }
 
-        if (self::should_skip_page()) {
+        $page = self::resolve_page($hook->renderer->get_page() ?? null);
+        $reason = null;
+        if (self::should_skip_page($page, $reason)) {
+            self::debug('Skipping head injection', [
+                'reason' => $reason,
+                'pagetype' => $page?->pagetype,
+                'url' => $page?->url ? $page->url->out(false) : null,
+            ]);
             return;
         }
         
@@ -75,31 +84,45 @@ class output {
      */
     public static function before_body(Body $hook): void {
         if (!get_config('local_xlate', 'enable')) {
+            self::debug('Skipping body injection: plugin disabled');
             return;
         }
 
-        if (self::should_skip_page()) {
+        $page = self::resolve_page($hook->renderer->get_page() ?? null);
+        $reason = null;
+        if (self::should_skip_page($page, $reason)) {
+            self::debug('Skipping body injection', [
+                'reason' => $reason,
+                'pagetype' => $page?->pagetype,
+                'url' => $page?->url ? $page->url->out(false) : null,
+            ]);
             return;
         }
-        
+
+        if (!$page || !$page->context) {
+            self::debug('Skipping body injection: missing page context', [
+                'reason' => $reason,
+            ]);
+            return;
+        }
+
         // Get context information from the current page
-        global $PAGE;
-        $contextid = $PAGE->context->id;
-        $pagetype = $PAGE->pagetype;
+        $contextid = $page->context->id;
+        $pagetype = $page->pagetype;
         $courseid = 0;
 
         // Extract course ID based on context
-        if ($PAGE->context->contextlevel == CONTEXT_COURSE) {
-            $courseid = $PAGE->context->instanceid;
-        } else if ($PAGE->context->contextlevel == CONTEXT_MODULE) {
+        if ($page->context->contextlevel == CONTEXT_COURSE) {
+            $courseid = $page->context->instanceid;
+        } else if ($page->context->contextlevel == CONTEXT_MODULE) {
             // For activity contexts, get the course from the course module
-            $cm = get_coursemodule_from_id('', $PAGE->context->instanceid);
+            $cm = get_coursemodule_from_id('', $page->context->instanceid);
             if ($cm) {
                 $courseid = $cm->course;
             }
-        } else if (isset($PAGE->course) && $PAGE->course->id > 1) {
-            // Fallback to $PAGE->course if available and not site course
-            $courseid = $PAGE->course->id;
+        } else if (isset($page->course) && $page->course->id > 1) {
+            // Fallback to $page->course if available and not site course
+            $courseid = $page->course->id;
         }
 
         $lang = current_language();
@@ -107,6 +130,10 @@ class output {
             // Require an explicit course source language before running the translator.
             $courseconfig = \local_xlate\customfield_helper::get_course_config($courseid);
             if ($courseconfig === null || empty($courseconfig['source'])) {
+                self::debug('Course missing source language; skipping translator', [
+                    'courseid' => $courseid,
+                    'courseconfig' => $courseconfig,
+                ]);
                 return;
             }
         }
@@ -118,7 +145,7 @@ class output {
         $capture_source_lang = $source_lang;
         $version = \local_xlate\local\api::get_version($lang);
         $autodetect = (bool)get_config('local_xlate', 'autodetect');
-        $isediting = (isset($PAGE) && method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing());
+        $isediting = (isset($page) && method_exists($page, 'user_is_editing') && $page->user_is_editing());
 
         // Output capture/exclude selectors as global JS variables
         $capture_selectors = get_config('local_xlate', 'capture_selectors');
@@ -188,6 +215,14 @@ class output {
         $hook->add_html($script);
         // Debug marker
         $hook->add_html('<!-- XLATE BODY HOOK FIRED -->');
+
+        self::debug('Translator bootstrap injected', [
+            'contextid' => $contextid,
+            'courseid' => $courseid,
+            'pagetype' => $pagetype,
+            'lang' => $lang,
+            'isediting' => $isediting,
+        ]);
     }
 
     /**
@@ -195,42 +230,73 @@ class output {
      *
      * @return bool True when translation injection should be skipped.
      */
-    private static function should_skip_page(): bool {
+    private static function should_skip_page(?moodle_page $page = null, ?string &$reason = null): bool {
         global $PAGE;
 
-        if (!isset($PAGE) || empty($PAGE->url)) {
+        $page = $page ?? ($PAGE ?? null);
+
+        if (!$page) {
+            $reason = 'no_page_context';
             return true;
         }
 
         // Skip obvious admin/maintenance layouts before any path checks.
         $blockedlayouts = ['admin', 'maintenance', 'popup', 'report', 'coursecategory'];
-        if (!empty($PAGE->pagelayout) && in_array($PAGE->pagelayout, $blockedlayouts, true)) {
+        if (!empty($page->pagelayout) && in_array($page->pagelayout, $blockedlayouts, true)) {
+            $reason = 'blocked_layout_' . $page->pagelayout;
             return true;
         }
 
-        $path = $PAGE->url->get_path();
+        $path = null;
+        if (!empty($page->url)) {
+            $path = $page->url->get_path();
+        } else {
+            $path = self::detect_request_path();
+        }
+
+        if ($path === null) {
+            $path = '';
+        }
+
         $blockedpaths = self::get_excluded_paths();
         foreach ($blockedpaths as $prefix) {
             if ($prefix !== '' && strpos($path, $prefix) === 0) {
+                $reason = 'blocked_path_' . $prefix;
                 return true;
             }
         }
 
         // Skip when the viewer is in editing mode or explicitly toggles editing.
-        if (method_exists($PAGE, 'user_is_editing') && $PAGE->user_is_editing()) {
+        if (method_exists($page, 'user_is_editing') && $page->user_is_editing()) {
+            $reason = 'editing_mode';
             return true;
         }
         if (optional_param('edit', 0, PARAM_BOOL)) {
+            $reason = 'edit_param';
             return true;
         }
 
         // Avoid translating non-front-page system context screens.
-        $context = $PAGE->context ?? null;
-        if ($context && $context->contextlevel == CONTEXT_SYSTEM && $PAGE->pagetype !== 'site-index') {
+        $context = $page->context ?? null;
+        if ($context && $context->contextlevel == CONTEXT_SYSTEM && $page->pagetype !== 'site-index') {
+            $reason = 'system_context_' . $page->pagetype;
             return true;
         }
 
+        $reason = 'ok';
         return false;
+    }
+
+    /**
+     * Emit debug output when Moodle developer debugging (or plugin flag) is enabled.
+     */
+    private static function debug(string $message, array $context = []): void {
+        $enabled = debugging('', DEBUG_DEVELOPER) || (bool)get_config('local_xlate', 'debughooks');
+        if (!$enabled) {
+            return;
+        }
+        $payload = $context ? json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : '';
+        error_log('[local_xlate] ' . $message . ($payload ? ' ' . $payload : ''));
     }
 
     /**
@@ -283,5 +349,36 @@ class output {
             '/badges/edit.php',
             '/enrol/',
         ];
+    }
+
+    /**
+     * Prefer the renderer's moodle_page when the global is not yet initialised.
+     */
+    private static function resolve_page(?moodle_page $candidate): ?moodle_page {
+        global $PAGE;
+
+        if ($candidate) {
+            return $candidate;
+        }
+
+        return $PAGE ?? null;
+    }
+
+    /**
+     * Best-effort request path detection when $PAGE->url is not yet available.
+     */
+    private static function detect_request_path(): ?string {
+        if (!empty($_SERVER['REQUEST_URI'])) {
+            $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+            if (is_string($uri)) {
+                return $uri;
+            }
+        }
+
+        if (!empty($_SERVER['SCRIPT_NAME'])) {
+            return $_SERVER['SCRIPT_NAME'];
+        }
+
+        return null;
     }
 }
