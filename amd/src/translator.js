@@ -189,6 +189,62 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * Obtain direct child text content (excluding descendants) from an element.
+   * @param {Element} element - Target element.
+   * @returns {string} Direct text content.
+   */
+  function getDirectChildText(element) {
+    if (!element || !element.childNodes) {
+      return '';
+    }
+    var text = '';
+    for (var i = 0; i < element.childNodes.length; i++) {
+      var node = element.childNodes[i];
+      if (node.nodeType === 3) { // TEXT_NODE
+        text += node.textContent;
+      }
+    }
+    return text.trim();
+  }
+
+  /**
+   * Extract a plain-text version of an HTML string by stripping tags.
+   * @param {string} value - String potentially containing markup.
+   * @returns {string} Plain text content.
+   */
+  function extractPlainText(value) {
+    if (!value) {
+      return '';
+    }
+    if (value.indexOf('<') === -1) {
+      return value.trim();
+    }
+    var container = document.createElement('div');
+    container.innerHTML = value;
+    return (container.textContent || container.innerText || '').trim();
+  }
+
+  /**
+   * Determine the capture payload for an element, preserving safe inline markup.
+   * @param {Element} element - Source element.
+   * @returns {string} Sanitized innerHTML when markup exists, otherwise text.
+   */
+  function getElementSourcePayload(element) {
+    if (!element) {
+      return '';
+    }
+    var raw = element.innerHTML || '';
+    var tag = element.tagName ? element.tagName.toLowerCase() : '';
+    if (raw && raw.indexOf('<') !== -1) {
+      var sanitized = sanitizeTranslationHtml(raw, tag).trim();
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+    return getDirectChildText(element);
+  }
+
+  /**
    * Wrapper for debug logging which only emits when server-side debug is enabled.
    * The hook in PHP will expose `window.XLATE_DEBUG` as true when Moodle debugging
    * is set to DEVELOPER. This keeps noisy logs out of production.
@@ -338,11 +394,6 @@ define(['core/ajax'], function (Ajax) {
   }
   Translator.utils.hasTranslation = hasTranslation;
 
-  /**
-   * Obtain direct child text content (excluding descendants) from an element.
-   * @param {Element} element - Target element.
-   * @returns {string} Direct text content.
-   */
   /**
    * Persist the original value for an element so toggles can restore it later.
    * @param {Element} element - Element being translated.
@@ -582,15 +633,7 @@ define(['core/ajax'], function (Ajax) {
     if (type && type !== 'text') {
       parts.push(type);
     }
-    // Get only direct text nodes (ignore children)
-    var directText = '';
-    for (var i = 0; i < element.childNodes.length; i++) {
-      var node = element.childNodes[i];
-      if (node.nodeType === 3) { // TEXT_NODE
-        directText += node.textContent;
-      }
-    }
-    directText = directText.trim();
+    var directText = getDirectChildText(element);
     parts.push(directText);
 
     return simpleHash(parts.join('.'));
@@ -899,7 +942,12 @@ define(['core/ajax'], function (Ajax) {
    * @returns {void}
    */
   function processCandidateValue(element, value, attrName, tagOnly, isCapture, map) {
-    if (!value || !isTranslatableText(value)) {
+    if (!value) {
+      return;
+    }
+
+    var detectionValue = extractPlainText(value);
+    if (!isTranslatableText(detectionValue)) {
       return;
     }
 
@@ -948,23 +996,7 @@ define(['core/ajax'], function (Ajax) {
       (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
     var isCapture = (currentLang === sourceLang);
 
-    // For block-level elements, capture innerHTML to preserve inline tags
-    var blockTags = ['p', 'li', 'td', 'th', 'blockquote', 'dt', 'dd', 'figcaption'];
-    var tag = element.tagName ? element.tagName.toLowerCase() : '';
-    var sourceText;
-    if (blockTags.indexOf(tag) !== -1) {
-      sourceText = element.innerHTML.trim();
-    } else {
-      // Fallback: direct text only for inline/other elements
-      sourceText = '';
-      for (var i = 0; i < element.childNodes.length; i++) {
-        var node = element.childNodes[i];
-        if (node.nodeType === 3) { // TEXT_NODE
-          sourceText += node.textContent;
-        }
-      }
-      sourceText = sourceText.trim();
-    }
+    var sourceText = getElementSourcePayload(element);
     processCandidateValue(element, sourceText, 'text', tagOnly, isCapture, map);
 
     // Process attributes

@@ -123,13 +123,10 @@ versioning flow.
 - Captured text includes text nodes plus `placeholder`, `title`, `alt`, and `aria-label`
   attributes. Stable keys combine detected component, element type, normalized
   text, and a short hash. See `KEY_GENERATION.md` for full details.
-- Inline markup from the DOM (anchor tags, emphasis, spans, etc.) is preserved
-  when creating the captured string so translation prompts keep semantic hints
-  instead of reducing everything to plain text. When applying translations in
-  non-source languages the AMD module sanitizes translator-supplied HTML
-  against a curated inline-tag whitelist (links, emphasis, spans, code, etc.)
-  and strips unknown tags/unsafe attributes before calling `innerHTML`, keeping
-  the promise of markup fidelity without risking script injection.
+- Inline markup is preserved end-to-end as long as it matches the inline
+  allowlist used by `sanitizeTranslationHtml()`. Capture sanitises each
+  element’s `innerHTML` with that whitelist before persisting, and translation
+  rendering runs the same sanitizer again before writing to the DOM.
 - Successful capture updates Moodle DB, bumps the bundle version, and invalidates
   caches so subsequent requests fetch fresh bundles.
 

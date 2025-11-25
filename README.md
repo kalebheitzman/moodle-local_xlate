@@ -25,11 +25,10 @@ versioned translation bundles during page rendering, prevents flash-of-untransla
 - **Automatic DOM translation**: Elements marked with `data-xlate` attributes –
 	or captured automatically – are translated on load, on MutationObserver
 	events, and after user interactions that add new DOM nodes. The translator uses a MutationObserver to handle dynamic content.
-- **Inline markup-safe capture/render**: Text extraction preserves inline
-	markup such as `<a>`, `<strong>`, `<em>`, and `<span>` and translations are
-	re-applied via a sanitised inline-tag whitelist so rendered output keeps the
-	original structure without exposing XSS vectors. Unsupported tags/attributes
-	are stripped automatically.
+- **Sanitized inline markup**: Capture now preserves safe inline tags (links,
+	emphasis, spans, etc.) and translations are scrubbed against an allowlist before
+	injection. Copy with inline HTML survives end-to-end without exposing the DOM to
+	unsafe markup or URLs.
 - **Optional auto-capture**: When browsing in the site’s default language with
 	the `local/xlate:manage` capability, the plugin records new strings (text,
 	placeholders, titles, alt text, and aria-label) through the Moodle web service API. **Capture is always disabled in edit mode** (see browser console for `[XLATE] Edit mode detected...`).
@@ -197,10 +196,9 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 	via the `local_xlate_save_key` web service. Keys are based on element structure, class, region, type, and text (see DEVELOPER.md for details).
 - Inline HTML (links, emphasis, etc.) is preserved when capture runs so prompts
 	sent to translators or the autotranslate backend always reflect the source DOM
-	structure. When translations are rendered back into the DOM the client module
-	sanitizes the HTML against a safe inline whitelist (`a`, `strong`, `em`,
-	`span`, etc.) so inline styling survives without introducing executable markup
-	or unsafe URLs.
+	structure. Both capture and render paths sanitize HTML against the same inline
+	whitelist (`a`, `strong`, `em`, `span`, etc.), preserving formatting without
+	allowing executable markup or unsafe URLs.
 - For lightweight source collection the plugin also exposes `local_xlate_associate_keys`, but it now enforces `local/xlate:manage` (system) or `local/xlate:managecourse` (course context) plus enrolment checks, sanitises every submitted key/source pair, and caps requests at 200 keys per call. This keeps source capture open to trusted staff without letting arbitrary traffic create associations.
 
 Role and capabilities
