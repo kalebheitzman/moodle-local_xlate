@@ -169,7 +169,8 @@ function get_missing_translation_count(int $courseid, string $targetlang): int {
 function get_missing_translation_sample(int $courseid, string $targetlang, int $limit = 5): array {
     global $DB;
 
-    $sql = "SELECT k.component, k.xkey, k.source
+    // get_records_sql() requires the first selected column to be unique so rows can be keyed safely.
+    $sql = "SELECT k.id AS recordid, k.component, k.xkey, k.source
               FROM {local_xlate_key_course} kc
               JOIN {local_xlate_key} k ON k.id = kc.keyid
          LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
