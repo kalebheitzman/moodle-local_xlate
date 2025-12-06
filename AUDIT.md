@@ -15,7 +15,7 @@
    Tables `local_xlate_course_job` (records `userid`), `local_xlate_glossary` (`created_by`), token logs, and translation tables retain user-related data, yet the plugin does not declare `\core_privacy\local\metadata\provider` / `\core_privacy\local\request\userlist`. Moodle core will flag the plugin as non-compliant and it fails GDPR export/delete flows. Add a full privacy provider describing stored data, supporting export/delete, or clearly declare `_null_provider` if you drop the user identifiers.
 
 4. **Inline-markup capture claims are false (Functional, High)**  
-   `amd/src/translator.js::processElement()` captures block content via `element.innerHTML`, but `translateElement()` later writes translations with `element.textContent`, stripping every tag. The README/DEVELOPER docs promise "inline markup-safe capture" yet the runtime outputs escaped HTML and removes links/emphasis. Either apply translations via `innerHTML` after sanitising allowed tags, or stop capturing markup and update docs. As-is, translators cannot deliver rich text without breaking formatting.
+   _Resolved 2025-12-05_: `amd/src/translator.js` now sanitises inline HTML with the shared whitelist during both capture (`getElementSourcePayload()`) and rendering (`translateElement()`), preserving links/emphasis while blocking unsafe tags/URLs. README/DEVELOPER were updated to describe the sanitised workflow and AMD assets rebuilt (`npx grunt amd --root=local/xlate`).
 
 ## Other notable issues
 

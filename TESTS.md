@@ -33,6 +33,7 @@ This document outlines the recommended checks before releasing or deploying the 
   - [ ] Inspect console for `XLATE Initializing` debug log.
   - [ ] Toggle between languages using Moodle’s language picker; verify DOM updates and no FOUT.
   - [ ] Browse in the site default language with `local/xlate:manage` capability; confirm newly seen strings appear in `Manage Translations` after refresh.
+  - [ ] Add inline markup (e.g., link + `<em>` text) to a block, capture it, and confirm the saved string plus rendered translation preserve the tags while stripping disallowed markup/URLs.
 - [ ] Switch to **Edit mode**; translator and capture must remain disabled (no console init log, DOM untouched).
 - [ ] Visit an admin page (`/admin/search.php`), `/course/modedit.php`, and `/course/edit.php`; verify `XLATE` scripts are absent (guardrail test).
 
