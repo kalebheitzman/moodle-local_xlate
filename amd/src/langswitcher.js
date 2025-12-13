@@ -58,19 +58,20 @@ define([], function () {
             '  bottom:1rem;' +
             '  z-index:2147483647;' +
             '  font-family:inherit;' +
+            '  padding-bottom:0.4rem;' +
             '}' +
             '.xlate-lang-switcher__toggle {' +
             '  background:#0f172a;' +
             '  color:#fff;' +
             '  border:none;' +
-            '  border-radius:999px;' +
-            '  min-width:56px;' +
-            '  height:52px;' +
+            '  border-radius:1.5rem;' +
+            '  min-width:62px;' +
+            '  height:46px;' +
             '  display:inline-flex;' +
             '  align-items:center;' +
             '  justify-content:center;' +
-            '  gap:0.4rem;' +
-            '  padding:0 1rem;' +
+            '  gap:0.5rem;' +
+            '  padding:0 1.1rem;' +
             '  cursor:pointer;' +
             '  box-shadow:0 14px 30px rgba(15,23,42,0.35);' +
             '}' +
@@ -84,9 +85,18 @@ define([], function () {
             '  font-size:0.85rem;' +
             '  letter-spacing:0.05em;' +
             '}' +
+            '.xlate-lang-switcher__caret-wrap {' +
+            '  background:rgba(255,255,255,0.18);' +
+            '  border-radius:999px;' +
+            '  width:26px;' +
+            '  height:26px;' +
+            '  display:flex;' +
+            '  align-items:center;' +
+            '  justify-content:center;' +
+            '}' +
             '.xlate-lang-switcher__caret {' +
-            '  width:8px;' +
-            '  height:8px;' +
+            '  width:9px;' +
+            '  height:9px;' +
             '  border:solid #fff;' +
             '  border-width:0 2px 2px 0;' +
             '  transform:rotate(-135deg);' +
@@ -111,8 +121,20 @@ define([], function () {
             '  pointer-events:none;' +
             '  transition:opacity 0.2s ease, transform 0.2s ease;' +
             '  position:absolute;' +
-            '  bottom:calc(100% + 0.5rem);' +
+            '  bottom:calc(100% + 0.2rem);' +
             '  left:0;' +
+            '}' +
+            '.xlate-lang-switcher__list::after {' +
+            '  content:"";' +
+            '  position:absolute;' +
+            '  left:1.25rem;' +
+            '  bottom:-0.55rem;' +
+            '  width:1.4rem;' +
+            '  height:0.65rem;' +
+            '  background:#fff;' +
+            '  box-shadow:0 12px 22px rgba(15,23,42,0.15);' +
+            '  border-bottom-left-radius:0.65rem;' +
+            '  border-bottom-right-radius:0.65rem;' +
             '}' +
             '.xlate-lang-switcher.xlate-open .xlate-lang-switcher__list,' +
             '.xlate-lang-switcher:hover .xlate-lang-switcher__list,' +
@@ -245,10 +267,13 @@ define([], function () {
         toggle.appendChild(toggleCode);
         toggle.setAttribute('aria-label', 'Change language (current ' + toggleCode.textContent + ')');
 
+        var caretWrap = document.createElement('span');
+        caretWrap.className = 'xlate-lang-switcher__caret-wrap';
         var caret = document.createElement('span');
         caret.className = 'xlate-lang-switcher__caret';
         caret.setAttribute('aria-hidden', 'true');
-        toggle.appendChild(caret);
+        caretWrap.appendChild(caret);
+        toggle.appendChild(caretWrap);
 
         var list = document.createElement('ul');
         list.className = 'xlate-lang-switcher__list';
