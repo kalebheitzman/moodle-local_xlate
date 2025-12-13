@@ -147,16 +147,46 @@ class output {
         $autodetect = (bool)get_config('local_xlate', 'autodetect');
         $isediting = (isset($page) && method_exists($page, 'user_is_editing') && $page->user_is_editing());
 
+        $stringmanager = get_string_manager();
+        $languageoptions = $stringmanager->get_list_of_languages();
+        if (empty($languageoptions)) {
+            $languageoptions = $stringmanager->get_list_of_translations(true);
+        }
+        $languagecodes = array_keys($languageoptions);
+        if (!empty($enabled_langs)) {
+            $languagecodes = array_values(array_unique(array_merge([$lang], array_values(array_intersect($languagecodes, $enabled_langs)))));
+        }
+        $languageentries = [];
+        if (!empty($languagecodes)) {
+            $baseurl = ($page && $page->url) ? $page->url : new \moodle_url('/');
+            foreach ($languagecodes as $code) {
+                $langurl = clone $baseurl;
+                $langurl->param('lang', $code);
+                $label = self::format_language_label($code, (string)($languageoptions[$code] ?? $code), $stringmanager);
+                $languageentries[] = [
+                    'code' => $code,
+                    'label' => $label,
+                    'url' => $langurl->out(false)
+                ];
+            }
+        }
+        $language_switcher = [
+            'enabled' => count($languageentries) > 1,
+            'current' => $lang,
+            'languages' => $languageentries
+        ];
+
         // Output capture/exclude selectors as global JS variables
         $capture_selectors = get_config('local_xlate', 'capture_selectors');
         $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
         $debugflag = (defined('DEBUG_DEVELOPER') && (debugging() & DEBUG_DEVELOPER)) ? 'true' : 'false';
 
         $selectors_script = '<script>'
-            . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
-            . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n"
-            . 'window.XLATE_COURSEID = ' . json_encode($courseid) . ";\n"
-            . 'window.XLATE_DEBUG = ' . $debugflag . ";\n"
+            . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . "\n"
+            . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . "\n"
+            . 'window.XLATE_COURSEID = ' . json_encode($courseid) . "\n"
+            . 'window.XLATE_DEBUG = ' . $debugflag . "\n"
+            . 'window.XLATE_LANG_SWITCHER = ' . json_encode($language_switcher, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
             . '</script>';
         $hook->add_html($selectors_script);
 
@@ -189,6 +219,7 @@ class output {
             'autodetect' => $autodetect,
             'isEditing' => $isediting,
             'bundleurl' => $bundleurl->out(false),
+            'languageSwitcher' => $language_switcher,
         ];
 
         $script = '<script>'
@@ -198,7 +229,8 @@ class output {
             . 'console.debug(' . json_encode('XLATE Initializing') . ', ' . json_encode($debugcontext, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ');'
             . '}'
             . 'if (typeof require !== "undefined" && typeof M !== "undefined" && M.cfg) {'
-            . 'require(["local_xlate/translator"], function(translator) {'
+            . 'require(["local_xlate/langswitcher","local_xlate/translator"], function(langSwitcher, translator) {'
+            . 'langSwitcher.init(window.XLATE_LANG_SWITCHER || null);'
             . 'translator.init(' . json_encode($initconfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ');'
             . '});'
             . '} else {'
@@ -323,6 +355,42 @@ class output {
             $normalized[] = rtrim($path);
         }
         return array_unique($normalized);
+    }
+
+    /**
+     * Return the most user-friendly label for a language code.
+     *
+     * Prefers the language's autonym from langconfig ("thislanguage") and
+     * falls back to the provided default label with any trailing aliases
+     * (separated by semicolons) stripped.
+     *
+     * @param string $code Moodle language code (e.g. en, ro)
+     * @param string $fallback Default label to use when no autonym is found
+     * @param \core_string_manager $manager Moodle string manager instance
+     * @return string
+     */
+    private static function format_language_label(string $code, string $fallback, \core_string_manager $manager): string {
+        $label = trim($fallback);
+        if ($label === '') {
+            $label = $code;
+        }
+
+        if (strpos($label, ';') !== false) {
+            $parts = explode(';', $label);
+            $label = trim($parts[0]);
+        }
+
+        try {
+            $autonym = $manager->get_string('thislanguage', 'langconfig', null, $code);
+            $autonym = trim((string)$autonym);
+            if ($autonym !== '') {
+                return $autonym;
+            }
+        } catch (\Throwable $e) {
+            // Ignore failures and fall back to the derived label.
+        }
+
+        return $label;
     }
 
     /**
