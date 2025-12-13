@@ -34,8 +34,8 @@ $tasks = [
     [
         'classname' => 'local_xlate\task\mlang_cleanup_task',
         'blocking' => 0,
-        'minute' => 'R',
-        'hour' => '2',
+        'minute' => '*/5',
+        'hour' => '*',
         'day' => '*',
         'month' => '*',
         'dayofweek' => '*',
@@ -44,8 +44,8 @@ $tasks = [
     [
         'classname' => 'local_xlate\task\autotranslate_missing_task',
         'blocking' => 0,
-        'minute' => 'R',
-        'hour' => '2',
+        'minute' => '*/5',
+        'hour' => '*',
         'day' => '*',
         'dayofweek' => '*',
         'month' => '*',

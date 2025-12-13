@@ -522,12 +522,12 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025111705, 'local', 'xlate');
     }
 
-    if ($oldversion < 2025111900) {
+    if ($oldversion < 2025121300) {
         // Ensure newly declared capabilities (viewbundle/viewsystem) are created
         // with their default archetype assignments.
         update_capabilities('local_xlate');
 
-        upgrade_plugin_savepoint(true, 2025111900, 'local', 'xlate');
+        upgrade_plugin_savepoint(true, 2025121300, 'local', 'xlate');
     }
 
     return true;

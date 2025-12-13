@@ -29,7 +29,12 @@ define(['core/ajax'], function (Ajax) {
   var requestedTranslationKeys = new Set();
   var missingFetchTimer = null;
   var indicatorStylesAdded = false;
-  var toggleButton = null;
+  var BLOCK_CHILD_TAGS = [
+    'div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav',
+    'figure', 'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol',
+    'li', 'p'
+  ];
+  var BLOCK_CHILD_SELECTOR = BLOCK_CHILD_TAGS.join(', ');
   var ALLOWED_INLINE_TAGS = {
     'a': ['href', 'title', 'target', 'rel'],
     'abbr': ['title'],
@@ -240,8 +245,17 @@ define(['core/ajax'], function (Ajax) {
       if (sanitized) {
         return sanitized;
       }
+      var fallbackPlain = extractPlainText(raw);
+      if (fallbackPlain) {
+        return fallbackPlain;
+      }
     }
-    return getDirectChildText(element);
+    var direct = getDirectChildText(element);
+    if (direct) {
+      return direct;
+    }
+    var textContent = (element.textContent || '').trim();
+    return textContent;
   }
 
   /**
@@ -522,70 +536,8 @@ define(['core/ajax'], function (Ajax) {
       '  font-size:0.75em;' +
       '  margin-left:0.35em;' +
       '  opacity:0.75;' +
-      '}' +
-      '.xlate-auto-toggle {' +
-      '  position:fixed;' +
-      '  right:1rem;' +
-      '  bottom:1rem;' +
-      '  z-index:1040;' +
-      '}' +
-      '.xlate-auto-toggle .icon {' +
-      '  margin-right:0.35em;' +
       '}';
     document.head.appendChild(style);
-  }
-
-  /**
-   * Update the toggle button label to reflect current mode.
-   * @returns {void}
-   */
-  function updateToggleButtonLabel() {
-    if (!toggleButton) {
-      return;
-    }
-    var enabled = shouldShowTranslations();
-    var label = enabled ? 'Hide AI translations' : 'Show AI translations';
-    toggleButton.innerHTML = '<span class="icon fa fa-language" aria-hidden="true"></span>' + label;
-    toggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    toggleButton.setAttribute('title', label);
-  }
-
-  /**
-   * Handle user toggling AI translation display.
-   * @param {Event} e - Click event instance.
-   * @returns {void}
-   */
-  function handleToggleClick(e) {
-    if (e) {
-      e.preventDefault();
-    }
-    if (!window.__XLATE__) {
-      return;
-    }
-    window.__XLATE__.showTranslations = !shouldShowTranslations();
-    updateToggleButtonLabel();
-    processedElements = new WeakSet();
-    walk(document.body, window.__XLATE__.map || {}, false);
-  }
-
-  /**
-   * Ensure the floating toggle control is present for translation mode.
-   * @returns {void}
-   */
-  function ensureToggleControl() {
-    if (!window.__XLATE__ || window.__XLATE__.isCapture) {
-      return;
-    }
-    ensureIndicatorStyles();
-    if (toggleButton) {
-      return;
-    }
-    toggleButton = document.createElement('button');
-    toggleButton.type = 'button';
-    toggleButton.className = 'btn btn-light btn-sm xlate-auto-toggle';
-    toggleButton.addEventListener('click', handleToggleClick);
-    document.body.appendChild(toggleButton);
-    updateToggleButtonLabel();
   }
 
   /**
@@ -789,6 +741,12 @@ define(['core/ajax'], function (Ajax) {
    * @param {Object} existingMap - Optional bundle map to check before saving
    */
   function saveToDatabase(element, text, type, key, existingMap) {
+    var normalizedPayload = extractPlainText(text);
+    if (!isTranslatableText(normalizedPayload)) {
+      xlateDebug('[XLATE] Skipping save - payload lacks translatable text for key:', key);
+      return;
+    }
+
     // If key already exists in the bundle, skip saving
     if (existingMap && existingMap[key]) {
       xlateDebug('[XLATE] Skipping save - key exists:', key);
@@ -996,8 +954,18 @@ define(['core/ajax'], function (Ajax) {
       (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
     var isCapture = (currentLang === sourceLang);
 
-    var sourceText = getElementSourcePayload(element);
-    processCandidateValue(element, sourceText, 'text', tagOnly, isCapture, map);
+    var skipTextCapture = false;
+    if (element.querySelector && element.querySelector(BLOCK_CHILD_SELECTOR)) {
+      // Block-level descendants indicate this node is acting as a structural
+      // wrapper (cards, panels, etc.); let the inner blocks handle capture so
+      // we do not collapse layout containers like anchors with div children.
+      skipTextCapture = true;
+    }
+
+    if (!skipTextCapture) {
+      var sourceText = getElementSourcePayload(element);
+      processCandidateValue(element, sourceText, 'text', tagOnly, isCapture, map);
+    }
 
     // Process attributes
     ATTRIBUTE_TYPES.forEach(function (attr) {
@@ -1283,28 +1251,16 @@ define(['core/ajax'], function (Ajax) {
   function run(map) {
     try {
       walk(document.body, map || {});
-      if (window.__XLATE__ && !window.__XLATE__.isCapture) {
-        ensureToggleControl();
-      }
 
       // Fallback: periodic refreshes to catch late-injected content
       setTimeout(function () {
         walk(document.body, map || {});
-        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
-          ensureToggleControl();
-        }
       }, 1000);
       setTimeout(function () {
         walk(document.body, map || {});
-        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
-          ensureToggleControl();
-        }
       }, 3000);
       setTimeout(function () {
         walk(document.body, map || {});
-        if (window.__XLATE__ && !window.__XLATE__.isCapture) {
-          ensureToggleControl();
-        }
       }, 6000);
 
       var mo = new MutationObserver(function (muts) {
@@ -1326,9 +1282,6 @@ define(['core/ajax'], function (Ajax) {
               lastProcessTime = now;
               setTimeout(function () {
                 walk(document.body, map || {});
-                if (window.__XLATE__ && !window.__XLATE__.isCapture) {
-                  ensureToggleControl();
-                }
               }, 100);
             }
           }, true);
@@ -1351,14 +1304,7 @@ define(['core/ajax'], function (Ajax) {
       return '';
     }
     if (typename === 'content') {
-      var dt = '';
-      for (var dn = 0; dn < el.childNodes.length; dn++) {
-        var node = el.childNodes[dn];
-        if (node.nodeType === 3) {
-          dt += node.textContent;
-        }
-      }
-      return dt.trim();
+      return getElementSourcePayload(el);
     }
     try {
       return el.getAttribute(typename) || '';
