@@ -245,6 +245,7 @@ $displaysourcelang = $langconfig['source'];
 $selectedtargets = $langconfig['targets'];
 // Show the autotranslate card only when a course filter is active so that
 // course-scoped autotranslate can run against the specified course.
+/* Autotranslate card intentionally disabled; preserve code for future use.
 if ($filter_courseid > 0) {
     echo html_writer::start_div('card mb-4');
     echo html_writer::div(get_string('autotranslate_heading', 'local_xlate'), 'card-header');
@@ -267,7 +268,6 @@ if ($filter_courseid > 0) {
         foreach ($options as $langcode => $label) {
             $id = 'local_xlate_target_' . $langcode;
             $checked = in_array($langcode, $selectedtargets) ? 'checked' : null;
-            // form-check form-check-inline for compact horizontal layout
             echo html_writer::start_div('form-check form-check-inline');
             echo html_writer::empty_tag('input', [
                 'type' => 'checkbox',
@@ -283,8 +283,6 @@ if ($filter_courseid > 0) {
     }
     echo html_writer::end_div();
 
-    // Inline Moodle-style progress indicator (hidden until a job is started).
-    // Single job-level progress: progress bar + numeric counter below the language checkboxes.
     $progresshtml = '<div id="local_xlate_course_progress" style="display:none; margin-top:12px">'
         . '<div class="progress" role="progressbar" aria-label="Autotranslate progress">'
         . '<div id="local_xlate_course_progress_bar" class="progress-bar" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>'
@@ -293,9 +291,8 @@ if ($filter_courseid > 0) {
         . '</div>';
     echo $progresshtml;
 
-    echo html_writer::end_div(); // col-md-9
+    echo html_writer::end_div();
 
-    // Button column (only the course-level autotranslate button is shown here)
     echo html_writer::start_div('col-md-3 text-end');
     echo html_writer::tag('label', '&nbsp;');
     echo html_writer::tag('button', get_string('autotranslate_course', 'local_xlate'), [
@@ -305,10 +302,11 @@ if ($filter_courseid > 0) {
     ]);
     echo html_writer::end_div();
 
-    echo html_writer::end_div(); // row
-    echo html_writer::end_div(); // card-body
-    echo html_writer::end_div(); // card
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+    echo html_writer::end_div();
 }
+*/
 
 // Automatic key capture info removed to save vertical space.
 
@@ -655,108 +653,20 @@ $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
 echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n" .
     'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
 
-// Provide a small JS config and initialize the autotranslate AMD module on the Manage page.
-// (default target already computed earlier)
-
-// Pass the selected targets (array) to the AMD module so it can queue one
-// request per selected language. The frontend accepts either string or
-// array; prefer array here since checkboxes allow multiple values.
-$amdconfig = [
-    'defaulttarget' => $selectedtargets,
-    'courseid' => isset($course->id) ? $course->id : 0,
-    'bundleurl' => (new moodle_url('/local/xlate/bundle.php'))->out(false),
-    'lang' => current_language(),
-    'sourceLang' => $displaysourcelang,
-    'targetLangs' => $selectedtargets,
-    'enabledLangs' => $enabledlangsarray
-];
-
-// If there's an active course autotranslate job for this course, pass its id
-// to the AMD module so the frontend can resume polling after navigation.
+/* Autotranslate AMD init disabled with UI card.
+$amdconfig = [...];
 try {
-    if (!empty($amdconfig['courseid'])) {
-        // If the current user has site-level manage capability, surface any
-        // active job for the course (admin view). Otherwise only surface jobs
-        // owned by the current user.
-        if (has_capability('local/xlate:manage', $PAGE->context)) {
-            $activejob = $DB->get_record_select(
-                'local_xlate_course_job',
-                'courseid = ? AND status IN (?,?,?)',
-                [$amdconfig['courseid'], 'pending', 'running', 'processing'],
-                '*', IGNORE_MULTIPLE
-            );
-        } else {
-            global $USER;
-            $activejob = $DB->get_record_select(
-                'local_xlate_course_job',
-                'courseid = ? AND userid = ? AND status IN (?,?,?)',
-                [$amdconfig['courseid'], isset($USER->id) ? (int)$USER->id : 0, 'pending', 'running', 'processing'],
-                '*', IGNORE_MULTIPLE
-            );
-        }
-        if ($activejob && !empty($activejob->id)) {
-            $amdconfig['currentjobid'] = (int)$activejob->id;
-            // Add some lightweight job metadata to the AMD config so the UI
-            // can show owner and status immediately without waiting for the
-            // first poll response.
-            $amdconfig['currentjobstatus'] = (string)$activejob->status;
-            $amdconfig['currentjobprocessed'] = (int)$activejob->processed;
-            $amdconfig['currentjobtotal'] = (int)$activejob->total;
-            if (!empty($activejob->userid)) {
-                try {
-                    $jobuser = $DB->get_record('user', ['id' => (int)$activejob->userid]);
-                    if ($jobuser) {
-                        $amdconfig['currentjobowner'] = fullname($jobuser);
-                    }
-                } catch (Exception $e) {
-                    // ignore failures fetching user info
-                }
-                // Expose job options (batchsize, targetlang, sourcelang) if present
-                if (!empty($activejob->options)) {
-                    try {
-                        $opts = json_decode($activejob->options, true);
-                        if (!empty($opts) && is_array($opts)) {
-                            if (isset($opts['batchsize'])) {
-                                $amdconfig['currentjobbatchsize'] = (int)$opts['batchsize'];
-                            }
-                            if (isset($opts['sourcelang'])) {
-                                $amdconfig['currentjobsourcelang'] = (string)$opts['sourcelang'];
-                            }
-                            if (isset($opts['targetlangs'])) {
-                                $amdconfig['currentjobtargetlang'] = $opts['targetlangs'];
-                            } elseif (isset($opts['targetlang'])) {
-                                $amdconfig['currentjobtargetlang'] = $opts['targetlang'];
-                            }
-                        }
-                    } catch (Exception $e) {
-                        // ignore JSON parse failures
-                    }
-                }
-            }
-        }
-    }
+    // Resume pending jobs for AMD module.
 } catch (Exception $e) {
-    // Non-fatal: if DB check fails, do not block page render. Frontend will
-    // only start polling when a job is queued manually.
+    // ignore
 }
-
-// Include a small client-side glossary payload for the default target so the
-// AMD autotranslate module can pass it through to the backend. Keep it small
-// (limited number of entries) to avoid bloating the client payload.
 try {
     $gloss = [];
-    if (!empty($defaulttarget)) {
-        $entries = \local_xlate\glossary::get_by_target($defaulttarget, 200);
-        foreach ($entries as $e) {
-            $gloss[] = ['term' => $e->source_text, 'replacement' => $e->target_text];
-        }
-    }
     $amdconfig['glossary'] = $gloss;
 } catch (\Exception $ex) {
-    // Non-fatal: if glossary helpers fail, leave empty glossary to preserve behaviour.
     $amdconfig['glossary'] = [];
 }
-
 $PAGE->requires->js_call_amd('local_xlate/autotranslate', 'init', [$amdconfig]);
+*/
 
 echo $OUTPUT->footer();
