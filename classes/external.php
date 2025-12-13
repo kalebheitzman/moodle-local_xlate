@@ -516,8 +516,33 @@ class local_xlate_external extends external_api {
             throw new \moodle_exception('Course has no xlate language configuration. Please set source and target languages in course settings.');
         }
 
-        if (empty($config['targets'])) {
-            throw new \moodle_exception('Course has no target languages configured. Please select at least one target language in course settings.');
+        $sourcelang = $config['source'];
+
+        $installedlangs = array_keys(get_string_manager()->get_list_of_translations());
+        $requestedtargets = [];
+        if (!empty($params['options']['targetlang'])) {
+            $requestedtargets = (array)$params['options']['targetlang'];
+        } elseif (!empty($params['options']['targetlangs'])) {
+            $requestedtargets = (array)$params['options']['targetlangs'];
+        }
+        $requestedtargets = array_values(array_unique(array_filter(array_map('trim', $requestedtargets), function ($code) {
+            return $code !== '';
+        })));
+        if (!empty($requestedtargets)) {
+            $requestedtargets = array_values(array_intersect($requestedtargets, $installedlangs));
+        }
+        $requestedtargets = array_values(array_filter($requestedtargets, function ($code) use ($sourcelang) {
+            return $code && $code !== $sourcelang;
+        }));
+
+        $defaultTargets = array_values(array_filter($config['targets'], function ($code) use ($sourcelang) {
+            return $code && $code !== $sourcelang;
+        }));
+
+        $targetlangs = !empty($requestedtargets) ? $requestedtargets : $defaultTargets;
+
+        if (empty($targetlangs)) {
+            throw new \moodle_exception('Course has no target languages configured. Please select at least one target language in course settings or the Manage UI card.');
         }
 
         // Count total keys associated with the course
@@ -530,8 +555,8 @@ class local_xlate_external extends external_api {
 
         // Merge course config into options
         $merged_options = $params['options'] ?: [];
-        $merged_options['sourcelang'] = $config['source'];
-        $merged_options['targetlangs'] = $config['targets'];
+        $merged_options['sourcelang'] = $sourcelang;
+        $merged_options['targetlangs'] = $targetlangs;
 
         $record = new \stdClass();
         $record->courseid = (int)$params['courseid'];

@@ -44,6 +44,7 @@ This document outlines the recommended checks before releasing or deploying the 
   - [ ] Search, filter by status, paginate, and ensure counts update.
   - [ ] Edit a translation, save, and confirm success toast + DB change.
   - [ ] Use the course filter (`courseid` query parameter) with a user who only has `local/xlate:managecourse` to confirm scoped access.
+  - [ ] Queue the **Autotranslate course** job with a custom target selection (including a language that is not part of the course’s default Xlate targets) and confirm the adhoc task only processes the selected languages while scheduled tasks continue using the course defaults.
 
 ### E. Glossary
 

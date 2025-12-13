@@ -722,7 +722,9 @@ try {
                             if (isset($opts['sourcelang'])) {
                                 $amdconfig['currentjobsourcelang'] = (string)$opts['sourcelang'];
                             }
-                            if (isset($opts['targetlang'])) {
+                            if (isset($opts['targetlangs'])) {
+                                $amdconfig['currentjobtargetlang'] = $opts['targetlangs'];
+                            } elseif (isset($opts['targetlang'])) {
                                 $amdconfig['currentjobtargetlang'] = $opts['targetlang'];
                             }
                         }

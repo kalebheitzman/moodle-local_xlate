@@ -143,15 +143,20 @@ class translate_course_task extends adhoc_task {
         }
         
         $sourcelang = $config['source'];
-        $targetlangs = $config['targets'];
-        
-        // Fall back to options if custom fields don't provide targets
-        if (empty($targetlangs) && !empty($options['targetlangs']) && is_array($options['targetlangs'])) {
+
+        $targetlangs = [];
+        if (!empty($options['targetlangs']) && is_array($options['targetlangs'])) {
             $targetlangs = $options['targetlangs'];
-        } elseif (empty($targetlangs) && !empty($options['targetlang'])) {
+        } elseif (!empty($config['targets'])) {
+            $targetlangs = $config['targets'];
+        } elseif (!empty($options['targetlang'])) {
             $targetlangs = is_array($options['targetlang']) ? $options['targetlang'] : [$options['targetlang']];
         }
-        
+
+        $targetlangs = array_values(array_unique(array_filter($targetlangs, function ($code) use ($sourcelang) {
+            return $code && $code !== $sourcelang;
+        })));
+
         if (empty($targetlangs)) {
             // No target languages configured - nothing to translate
             mtrace("Course {$job->courseid} has no target languages configured. Marking job complete.");
@@ -226,6 +231,9 @@ class translate_course_task extends adhoc_task {
         // Update job progress
         $job->lastid = $lastProcessedId;
         $job->processed = (int)$job->processed + count($records);
+        if ($job->total > 0 && $job->processed > $job->total) {
+            $job->processed = (int)$job->total;
+        }
         $job->mtime = time();
         $DB->update_record('local_xlate_course_job', $job);
 

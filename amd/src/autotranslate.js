@@ -88,9 +88,25 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                         return;
                     }
 
+                    var selectedTargets = [];
+                    var targetInputs = document.querySelectorAll('#local_xlate_target_container input[type="checkbox"]');
+                    if (targetInputs && targetInputs.length) {
+                        selectedTargets = Array.prototype.filter.call(targetInputs, function (input) {
+                            return !!input.checked;
+                        }).map(function (input) {
+                            return input.value;
+                        });
+                    }
+
+                    if (!selectedTargets.length) {
+                        notification.alert('Select at least one target language before enqueuing autotranslation.');
+                        return;
+                    }
+
                     // Options for the job (backend will validate course custom fields)
                     var options = {
-                        batchsize: (config && config.batchsize) ? config.batchsize : 50
+                        batchsize: (config && config.batchsize) ? config.batchsize : 50,
+                        targetlang: selectedTargets
                     };
 
                     var call = Ajax.call([{
