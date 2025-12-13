@@ -165,6 +165,7 @@ if ($hassiteconfig) {
             '.toast',
             '.alert',
             '.badge',
+            '.jumpmenu',
             '._jswarning',
             '.popover-region',
             '.popover-region-container',

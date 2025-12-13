@@ -71,7 +71,7 @@ define([], function () {
             '  align-items:center;' +
             '  justify-content:center;' +
             '  gap:0.5rem;' +
-            '  padding:0 1.1rem;' +
+            '  padding:0 0.8rem 0 1.1rem;' +
             '  cursor:pointer;' +
             '  box-shadow:0 14px 30px rgba(15,23,42,0.35);' +
             '}' +
@@ -88,8 +88,8 @@ define([], function () {
             '.xlate-lang-switcher__caret-wrap {' +
             '  background:rgba(255,255,255,0.18);' +
             '  border-radius:999px;' +
-            '  width:26px;' +
-            '  height:26px;' +
+            '  width:24px;' +
+            '  height:24px;' +
             '  display:flex;' +
             '  align-items:center;' +
             '  justify-content:center;' +
