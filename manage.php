@@ -31,9 +31,23 @@ require_once($CFG->libdir . '/tablelib.php');
 /**
  * Render pagination controls
  */
-function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $courseid = 0) {
+function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
+    $langfilter = is_array($langfilter) ? $langfilter : [];
+    $langfiltersubmitted = (int)!empty($langfiltersubmitted);
+    $sharedparams = [
+        'perpage' => $perpage,
+        'search' => $search,
+        'status_filter' => $status_filter,
+        'courseid' => $courseid
+    ];
+    if ($langfiltersubmitted) {
+        $sharedparams['langfiltersubmitted'] = 1;
+        if (!empty($langfilter)) {
+            $sharedparams['langfilter'] = $langfilter;
+        }
+    }
     
     if ($total_pages > 1) {
         $pagination .= html_writer::start_tag('nav', ['aria-label' => 'Translation keys pagination']);
@@ -42,9 +56,9 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         // Previous
         if ($page > 0) {
             $prevurl = new moodle_url($baseurl, [
-                'page' => $page - 1, 'perpage' => $perpage, 
-                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
+                'page' => $page - 1
             ]);
+            $prevurl->params($sharedparams);
             $pagination .= html_writer::tag('li', 
                 html_writer::link($prevurl, '‹ ' . get_string('previous'), ['class' => 'page-link']), 
                 ['class' => 'page-item']
@@ -58,10 +72,8 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         
         // First page if not in range
         if ($page > 2) {
-            $firsturl = new moodle_url($baseurl, [
-                'page' => 0, 'perpage' => $perpage,
-                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
-            ]);
+            $firsturl = new moodle_url($baseurl, ['page' => 0]);
+            $firsturl->params($sharedparams);
             $pagination .= html_writer::tag('li',
                 html_writer::link($firsturl, '1', ['class' => 'page-link']),
                 ['class' => 'page-item']
@@ -80,10 +92,8 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         $end_page = min($total_pages - 1, $page + 2);
         
         for ($i = $start_page; $i <= $end_page; $i++) {
-            $pageurl = new moodle_url($baseurl, [
-                'page' => $i, 'perpage' => $perpage,
-                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
-            ]);
+            $pageurl = new moodle_url($baseurl, ['page' => $i]);
+            $pageurl->params($sharedparams);
             
             if ($i == $page) {
                 $pagination .= html_writer::tag('li',
@@ -107,10 +117,8 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
                 );
             }
             
-            $lasturl = new moodle_url($baseurl, [
-                'page' => $total_pages - 1, 'perpage' => $perpage,
-                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
-            ]);
+            $lasturl = new moodle_url($baseurl, ['page' => $total_pages - 1]);
+            $lasturl->params($sharedparams);
             $pagination .= html_writer::tag('li',
                 html_writer::link($lasturl, $total_pages, ['class' => 'page-link']),
                 ['class' => 'page-item']
@@ -119,10 +127,8 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         
         // Next
         if ($page < $total_pages - 1) {
-            $nexturl = new moodle_url($baseurl, [
-                'page' => $page + 1, 'perpage' => $perpage,
-                'search' => $search, 'status_filter' => $status_filter, 'courseid' => $courseid
-            ]);
+            $nexturl = new moodle_url($baseurl, ['page' => $page + 1]);
+            $nexturl->params($sharedparams);
             $pagination .= html_writer::tag('li',
                 html_writer::link($nexturl, get_string('next') . ' ›', ['class' => 'page-link']),
                 ['class' => 'page-item']
@@ -156,6 +162,8 @@ $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
+$langfilterraw = optional_param_array('langfilter', [], PARAM_ALPHANUMEXT);
+$langfiltersubmitted = optional_param('langfiltersubmitted', 0, PARAM_BOOL);
 
 // Determine the page context based on optional course filter so the page
 // context and capability checks are correct for course-level managers.
@@ -178,17 +186,56 @@ if (!empty($filter_courseid) && $filter_courseid > 0) {
     require_capability('local/xlate:manage', $systemcontext);
 }
 
-$PAGE->set_url(new moodle_url('/local/xlate/manage.php', [
+$PAGE->set_context($pagecontext);
+// $PAGE->set_pagelayout('admin');
+$PAGE->set_title(get_string('admin_manage_translations', 'local_xlate'));
+$PAGE->set_heading(get_string('admin_manage_translations', 'local_xlate'));
+
+// Determine enabled/source/target languages using the custom field helper and
+// sanitize any submitted language filter selections before the page URL is set
+// (the URL is used by redirects further down).
+$installedlangs = get_string_manager()->get_list_of_translations();
+$langconfig = \local_xlate\customfield_helper::resolve_languages($filter_courseid > 0 ? $filter_courseid : null);
+$enabledlangsarray = $langconfig['enabled'];
+$displaysourcelang = $langconfig['source'];
+$selectedtargets = $langconfig['targets'];
+$langfilterselection = [];
+$enabledlookup = array_flip($enabledlangsarray);
+if ($langfiltersubmitted) {
+    $langfilterraw = is_array($langfilterraw) ? $langfilterraw : [];
+    foreach ($langfilterraw as $langcode) {
+        if (isset($enabledlookup[$langcode])) {
+            $langfilterselection[] = $langcode;
+        }
+    }
+} else {
+    if (!empty($filter_courseid) && !empty($selectedtargets)) {
+        foreach ($selectedtargets as $langcode) {
+            if (isset($enabledlookup[$langcode])) {
+                $langfilterselection[] = $langcode;
+            }
+        }
+    }
+    if (empty($langfilterselection)) {
+        $langfilterselection = $enabledlangsarray;
+    }
+}
+$langfilterlookup = array_flip($langfilterselection);
+
+$pageparams = [
     'page' => $page,
     'perpage' => $perpage,
     'search' => $search,
     'status_filter' => $status_filter,
     'courseid' => $filter_courseid
-]));
-$PAGE->set_context($pagecontext);
-// $PAGE->set_pagelayout('admin');
-$PAGE->set_title(get_string('admin_manage_translations', 'local_xlate'));
-$PAGE->set_heading(get_string('admin_manage_translations', 'local_xlate'));
+];
+if ($langfiltersubmitted) {
+    $pageparams['langfiltersubmitted'] = 1;
+    if (!empty($langfilterselection)) {
+        $pageparams['langfilter'] = $langfilterselection;
+    }
+}
+$PAGE->set_url(new moodle_url('/local/xlate/manage.php', $pageparams));
 
 if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
@@ -237,12 +284,6 @@ local_xlate_render_admin_nav('manage');
 
 // (Autotranslate controls are rendered below inside a styled card.)
 
-// Determine enabled/source/target languages using the custom field helper.
-$installedlangs = get_string_manager()->get_list_of_translations();
-$langconfig = \local_xlate\customfield_helper::resolve_languages($filter_courseid > 0 ? $filter_courseid : null);
-$enabledlangsarray = $langconfig['enabled'];
-$displaysourcelang = $langconfig['source'];
-$selectedtargets = $langconfig['targets'];
 // Show the autotranslate card only when a course filter is active so that
 // course-scoped autotranslate can run against the specified course.
 /* Autotranslate card intentionally disabled; preserve code for future use.
@@ -316,6 +357,11 @@ echo html_writer::div(get_string('search_and_filter', 'local_xlate'), 'card-head
 echo html_writer::start_div('card-body');
 
 echo html_writer::start_tag('form', ['method' => 'get', 'action' => $PAGE->url]);
+echo html_writer::empty_tag('input', [
+    'type' => 'hidden',
+    'name' => 'langfiltersubmitted',
+    'value' => '1'
+]);
 echo html_writer::start_div('row');
 
 // Search box
@@ -375,6 +421,43 @@ echo html_writer::tag('button', get_string('filter', 'local_xlate'), [
 echo html_writer::end_div();
 
 echo html_writer::end_div();
+
+echo html_writer::start_div('row mt-3');
+echo html_writer::start_div('col-12');
+echo html_writer::tag('label', get_string('language_filter', 'local_xlate'), ['class' => 'form-label d-block']);
+echo html_writer::tag('div', get_string('language_filter_hint', 'local_xlate'), ['class' => 'text-muted small mb-2']);
+$filteroptionsrendered = false;
+echo html_writer::start_div('d-flex flex-wrap gap-2', ['id' => 'local_xlate_langfilter']);
+foreach ($enabledlangsarray as $langcode) {
+    if ($langcode === $displaysourcelang || !isset($installedlangs[$langcode])) {
+        continue;
+    }
+    $filteroptionsrendered = true;
+    $id = 'langfilter_' . $langcode;
+    $checked = in_array($langcode, $langfilterselection, true) ? 'checked' : null;
+    $label = $installedlangs[$langcode];
+    if (strpos($label, '(' . $langcode . ')') === false) {
+        $label .= ' (' . $langcode . ')';
+    }
+    echo html_writer::start_div('form-check form-check-inline mb-1');
+    echo html_writer::empty_tag('input', [
+        'type' => 'checkbox',
+        'class' => 'form-check-input',
+        'name' => 'langfilter[]',
+        'id' => $id,
+        'value' => $langcode,
+        'checked' => $checked
+    ]);
+    echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
+    echo html_writer::end_div();
+}
+if (!$filteroptionsrendered) {
+    echo html_writer::div(get_string('language_filter_empty', 'local_xlate'), 'text-muted fst-italic');
+}
+echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div();
+
 echo html_writer::end_tag('form');
 
 echo html_writer::end_div();
@@ -483,7 +566,20 @@ if (!empty($keys)) {
     // Pagination controls (top)
     if ($total_count > $perpage) {
         echo html_writer::start_div('card-body pb-2 border-bottom');
-        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $status_filter, $filter_courseid), 'd-flex justify-content-center');
+        echo html_writer::div(
+            render_pagination_controls(
+                $PAGE->url,
+                $page,
+                $perpage,
+                $total_count,
+                $search,
+                $status_filter,
+                $filter_courseid,
+                $langfilterselection,
+                $langfiltersubmitted
+            ),
+            'd-flex justify-content-center'
+        );
         echo html_writer::end_div();
     }
     
@@ -497,14 +593,23 @@ if (!empty($keys)) {
         echo html_writer::end_div();
         
         echo html_writer::start_div('card-body');
-    // Show source text in a row styled like the translation fields.
-    $orderedlangs = $enabledlangsarray;
-    if (!in_array($displaysourcelang, $orderedlangs, true)) {
-        $orderedlangs[] = $displaysourcelang;
-    }
-        
-        // Show translations for all enabled languages (source row appears first and is disabled)
+        // Show source text in a row styled like the translation fields.
+        $orderedlangs = $enabledlangsarray;
+        if (!in_array($displaysourcelang, $orderedlangs, true)) {
+            $orderedlangs[] = $displaysourcelang;
+        }
+        $displaylangs = [];
         foreach ($orderedlangs as $langcode) {
+            if ($langcode === $displaysourcelang || isset($langfilterlookup[$langcode])) {
+                $displaylangs[] = $langcode;
+            }
+        }
+        if (empty($displaylangs)) {
+            $displaylangs[] = $displaysourcelang;
+        }
+        
+        // Show translations for selected languages (source row appears first and is disabled)
+        foreach ($displaylangs as $langcode) {
             if (!isset($installedlangs[$langcode])) {
                 continue;
             }
@@ -628,7 +733,20 @@ if (!empty($keys)) {
     // Pagination controls (bottom)
     if ($total_count > $perpage) {
         echo html_writer::start_div('card-body pt-2 border-top');
-        echo html_writer::div(render_pagination_controls($PAGE->url, $page, $perpage, $total_count, $search, $status_filter, $filter_courseid), 'd-flex justify-content-center');
+        echo html_writer::div(
+            render_pagination_controls(
+                $PAGE->url,
+                $page,
+                $perpage,
+                $total_count,
+                $search,
+                $status_filter,
+                $filter_courseid,
+                $langfilterselection,
+                $langfiltersubmitted
+            ),
+            'd-flex justify-content-center'
+        );
         echo html_writer::end_div();
     }
     
