@@ -141,10 +141,10 @@
         <FIELD NAME="cached_input_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="output_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="total_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
-        <FIELD NAME="input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
-        <FIELD NAME="cached_input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
-        <FIELD NAME="output_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
-        <FIELD NAME="total_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="input_cost" TYPE="number" LENGTH="12" DECIMALS="6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="cached_input_cost" TYPE="number" LENGTH="12" DECIMALS="6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="output_cost" TYPE="number" LENGTH="12" DECIMALS="6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="total_cost" TYPE="number" LENGTH="12" DECIMALS="6" NOTNULL="false" DEFAULT="0"/>
         <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
         <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="false"/>
       </FIELDS>
