@@ -126,17 +126,6 @@ class output {
         }
 
         $lang = current_language();
-        if ($courseid > 0) {
-            // Require an explicit course source language before running the translator.
-            $courseconfig = \local_xlate\customfield_helper::get_course_config($courseid);
-            if ($courseconfig === null || empty($courseconfig['source'])) {
-                self::debug('Course missing source language; skipping translator', [
-                    'courseid' => $courseid,
-                    'courseconfig' => $courseconfig,
-                ]);
-                return;
-            }
-        }
 
         $langconfig = \local_xlate\customfield_helper::resolve_languages($courseid ?: null);
         $source_lang = $langconfig['source'];
@@ -153,6 +142,7 @@ class output {
         if (empty($languageoptions)) {
             $languageoptions = $stringmanager->get_list_of_translations(true);
         }
+
         $languagecodes = array_keys($languageoptions);
         if (!empty($enabled_langs)) {
             $languagecodes = array_values(array_unique(array_merge([$lang], array_values(array_intersect($languagecodes, $enabled_langs)))));
