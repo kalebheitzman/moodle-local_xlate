@@ -140,7 +140,11 @@ class autotranslate_missing_task extends scheduled_task {
 
                     self::persist_batch_results($missing, $result['results'], $targetlang, $courseid);
 
-                    core_php_time_limit::raise(30);
+                    if (class_exists('core_php_time_limit')) {
+                        \core_php_time_limit::raise(60);
+                    } else {
+                        @set_time_limit(60);
+                    }
                 } while ($chunkcount === $batchsize);
             }
         }
