@@ -225,6 +225,17 @@ define([], function () {
             '}' +
             '.xlate-lang-switcher__notice-label {' +
             '  white-space:nowrap;' +
+            '}' +
+            '.xlate-visually-hidden {' +
+            '  position:absolute;' +
+            '  width:1px;' +
+            '  height:1px;' +
+            '  padding:0;' +
+            '  margin:-1px;' +
+            '  overflow:hidden;' +
+            '  clip:rect(0,0,0,0);' +
+            '  border:0;' +
+            '  white-space:nowrap;' +
             '}';
         document.head.appendChild(style);
     }
@@ -355,6 +366,15 @@ define([], function () {
         translationPillLabel.className = 'xlate-lang-switcher__notice-label';
         translationPillLabel.textContent = toggleConfig.label || '';
         translationPillButton.appendChild(translationPillLabel);
+        if (toggleConfig.help) {
+            var helpId = 'xlate-toggle-help-' + Math.random().toString(36).slice(2);
+            var helpNode = document.createElement('span');
+            helpNode.className = 'xlate-visually-hidden';
+            helpNode.id = helpId;
+            helpNode.textContent = toggleConfig.help;
+            translationPillButton.appendChild(helpNode);
+            translationPillButton.setAttribute('aria-describedby', helpId);
+        }
 
         ['mouseenter', 'focus'].forEach(function (evt) {
             translationPillButton.addEventListener(evt, function () {
@@ -420,13 +440,16 @@ define([], function () {
     *   enabled:boolean,
     *   current:string,
     *   languages:Array<{code:string,label:string,url:string}>,
+    *   ariaLabel?:string,
+    *   toggleAriaLabel?:string,
     *   translationToggle?:{
     *       enabled:boolean,
     *       label:string,
     *       originalLabel:string,
     *       hoverShowOriginal:string,
     *       hoverShowTranslated:string,
-    *       tooltip:string
+    *       tooltip:string,
+    *       help:string
     *   }
     * }} config - Switcher config payload.
      * @returns {void}
@@ -452,7 +475,8 @@ define([], function () {
 
         container = document.createElement('div');
         container.className = 'xlate-lang-switcher';
-        container.setAttribute('aria-label', 'Language selector');
+        var containerLabel = (config.ariaLabel || 'Language selector');
+        container.setAttribute('aria-label', containerLabel);
 
         var toggle = document.createElement('button');
         toggle.type = 'button';
@@ -467,7 +491,8 @@ define([], function () {
         toggleCode.className = 'xlate-lang-switcher__toggle-code';
         toggleCode.textContent = (currentEntry ? currentEntry.code : config.current).toUpperCase();
         toggle.appendChild(toggleCode);
-        toggle.setAttribute('aria-label', 'Change language (current ' + toggleCode.textContent + ')');
+        var toggleAriaLabel = config.toggleAriaLabel || ('Change language (current ' + toggleCode.textContent + ')');
+        toggle.setAttribute('aria-label', toggleAriaLabel);
 
         var caretWrap = document.createElement('span');
         caretWrap.className = 'xlate-lang-switcher__caret-wrap';

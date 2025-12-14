@@ -171,17 +171,30 @@ class output {
                 ];
             }
         }
+        $currentlanguage = null;
+        foreach ($languageentries as $entry) {
+            if ($entry['code'] === $lang) {
+                $currentlanguage = $entry['label'];
+                break;
+            }
+        }
+        if ($currentlanguage === null) {
+            $currentlanguage = self::format_language_label($lang, (string)($languageoptions[$lang] ?? $lang), $stringmanager);
+        }
         $language_switcher = [
             'enabled' => count($languageentries) > 1,
             'current' => $lang,
             'languages' => $languageentries,
+            'ariaLabel' => get_string('langswitcher_aria_label', 'local_xlate'),
+            'toggleAriaLabel' => get_string('langswitcher_toggle_aria_label', 'local_xlate', (object)['language' => $currentlanguage]),
             'translationToggle' => [
                 'enabled' => $istargetlang,
                 'label' => get_string('langswitcher_notice_label', 'local_xlate'),
                 'originalLabel' => get_string('langswitcher_notice_original', 'local_xlate'),
                 'hoverShowOriginal' => get_string('langswitcher_notice_hover_show_original', 'local_xlate'),
                 'hoverShowTranslated' => get_string('langswitcher_notice_hover_show_translated', 'local_xlate'),
-                'tooltip' => get_string('langswitcher_notice_tooltip', 'local_xlate')
+                'tooltip' => get_string('langswitcher_notice_tooltip', 'local_xlate'),
+                'help' => get_string('langswitcher_notice_help', 'local_xlate')
             ]
         ];
 

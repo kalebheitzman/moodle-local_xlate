@@ -141,3 +141,6 @@ $string['langswitcher_notice_original'] = 'Original text';
 $string['langswitcher_notice_hover_show_original'] = 'View original text';
 $string['langswitcher_notice_hover_show_translated'] = 'View AI-assisted translation';
 $string['langswitcher_notice_tooltip'] = 'Some text on this page comes from AI-assisted translations. Toggle to compare with the original content.';
+$string['langswitcher_notice_help'] = 'Toggle to compare AI-assisted translations against the original content.';
+$string['langswitcher_aria_label'] = 'Language selector';
+$string['langswitcher_toggle_aria_label'] = 'Change language (current {$a->language})';
