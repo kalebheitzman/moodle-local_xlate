@@ -73,7 +73,8 @@ class autotranslate_missing_task extends scheduled_task {
             return;
         }
 
-        $batchsize = 20;
+        $configuredbatch = (int)get_config('local_xlate', 'autotranslate_task_batchsize');
+        $batchsize = $configuredbatch > 0 ? $configuredbatch : 20;
         foreach ($courseids as $courseid) {
             $courseid = (int)$courseid;
             if ($courseid <= 0) {
@@ -97,39 +98,50 @@ class autotranslate_missing_task extends scheduled_task {
             }
 
             foreach ($targetlangs as $targetlang) {
-                $missing = self::get_missing_course_translations($courseid, $targetlang, $batchsize);
-                if (empty($missing)) {
-                    continue;
-                }
+                $processed = 0;
+                do {
+                    $missing = self::get_missing_course_translations($courseid, $targetlang, $batchsize);
+                    if (empty($missing)) {
+                        if ($processed === 0) {
+                            mtrace("Course {$courseid}: no pending keys for {$targetlang}.");
+                        }
+                        break;
+                    }
 
-                mtrace("Course {$courseid}: translating " . count($missing) . " keys into {$targetlang}.");
-                $items = [];
-                foreach ($missing as $row) {
-                    $items[] = [
-                        'id' => (string)$row->xkey,
-                        'key' => (string)$row->xkey,
-                        'component' => (string)$row->component,
-                        'source_text' => (string)$row->source,
-                        'context' => '',
-                        'placeholders' => []
-                    ];
-                }
+                    $chunkcount = count($missing);
+                    $processed += $chunkcount;
+                    mtrace("Course {$courseid}: translating {$chunkcount} keys into {$targetlang} (total this run: {$processed}).");
 
-                $result = \local_xlate\translation\backend::translate_batch(
-                    'course-auto-' . $courseid . '-' . $targetlang . '-' . uniqid('', true),
-                    $sourcelang,
-                    $targetlang,
-                    $items,
-                    [],
-                    []
-                );
+                    $items = [];
+                    foreach ($missing as $row) {
+                        $items[] = [
+                            'id' => (string)$row->xkey,
+                            'key' => (string)$row->xkey,
+                            'component' => (string)$row->component,
+                            'source_text' => (string)$row->source,
+                            'context' => '',
+                            'placeholders' => []
+                        ];
+                    }
 
-                if (empty($result['ok']) || empty($result['results'])) {
-                    mtrace("Course {$courseid}: backend error for {$targetlang}: " . json_encode($result['errors'] ?? []));
-                    continue;
-                }
+                    $result = \local_xlate\translation\backend::translate_batch(
+                        'course-auto-' . $courseid . '-' . $targetlang . '-' . uniqid('', true),
+                        $sourcelang,
+                        $targetlang,
+                        $items,
+                        [],
+                        []
+                    );
 
-                self::persist_batch_results($missing, $result['results'], $targetlang, $courseid);
+                    if (empty($result['ok']) || empty($result['results'])) {
+                        mtrace("Course {$courseid}: backend error for {$targetlang}: " . json_encode($result['errors'] ?? []));
+                        break;
+                    }
+
+                    self::persist_batch_results($missing, $result['results'], $targetlang, $courseid);
+
+                    core_php_time_limit::raise(30);
+                } while ($chunkcount === $batchsize);
             }
         }
 
