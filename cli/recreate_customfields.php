@@ -47,6 +47,14 @@ do {
 
     echo "Xlate category not found. Creating it now...\n";
     \local_xlate\customfield_helper::setup_customfields();
+
+    // Re-query to confirm creation succeeded.
+    $category = $DB->get_record('customfield_category', [
+        'component' => $component,
+        'area' => $area,
+        'itemid' => $itemid,
+        'name' => 'Xlate'
+    ]);
 } while (false);
 
 if (!$category) {
