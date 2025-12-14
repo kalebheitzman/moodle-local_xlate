@@ -33,15 +33,24 @@ $component = $handler->get_component();
 $area = $handler->get_area();
 $itemid = $handler->get_itemid();
 
-$category = $DB->get_record('customfield_category', [
-    'component' => $component,
-    'area' => $area,
-    'itemid' => $itemid,
-    'name' => 'Xlate'
-]);
+do {
+    $category = $DB->get_record('customfield_category', [
+        'component' => $component,
+        'area' => $area,
+        'itemid' => $itemid,
+        'name' => 'Xlate'
+    ]);
+
+    if ($category) {
+        break;
+    }
+
+    echo "Xlate category not found. Creating it now...\n";
+    \local_xlate\customfield_helper::setup_customfields();
+} while (false);
 
 if (!$category) {
-    cli_error('Xlate category not found. Run the upgrade first.');
+    cli_error('Unable to create Xlate category. Ensure the plugin is installed/upgraded.');
 }
 
 echo "Found Xlate category (ID: {$category->id})\n";
