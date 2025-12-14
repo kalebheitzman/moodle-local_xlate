@@ -6,6 +6,13 @@ define([], function () {
     var stylesInjected = false;
     var outsideClickHandler = null;
     var keydownHandler = null;
+    var translationPillButton = null;
+    var translationPillLabel = null;
+    var translationPillConfig = null;
+    var translationVisibilityListener = null;
+    var translationReadyListener = null;
+    var translationsVisibleState = true;
+    var translationToggleReady = false;
 
     /**
      * Persist debug information for troubleshooting the switcher state.
@@ -37,6 +44,19 @@ define([], function () {
             container.parentNode.removeChild(container);
         }
         container = null;
+        translationPillConfig = null;
+        translationPillLabel = null;
+        translationPillButton = null;
+        translationToggleReady = false;
+        translationsVisibleState = true;
+        if (translationVisibilityListener) {
+            document.removeEventListener('xlate:visibilitychange', translationVisibilityListener);
+            translationVisibilityListener = null;
+        }
+        if (translationReadyListener) {
+            document.removeEventListener('xlate:ready', translationReadyListener);
+            translationReadyListener = null;
+        }
         setDebugState({ stage: 'destroyed' });
     }
 
@@ -59,6 +79,14 @@ define([], function () {
             '  z-index:2147483647;' +
             '  font-family:inherit;' +
             '  padding-bottom:0.4rem;' +
+            '  display:flex;' +
+            '  align-items:flex-end;' +
+            '  gap:0.75rem;' +
+            '  flex-wrap:wrap;' +
+            '}' +
+            '.xlate-lang-switcher__control {' +
+            '  position:relative;' +
+            '  display:inline-block;' +
             '}' +
             '.xlate-lang-switcher__toggle {' +
             '  background:#0f172a;' +
@@ -71,7 +99,7 @@ define([], function () {
             '  align-items:center;' +
             '  justify-content:center;' +
             '  gap:0.5rem;' +
-            '  padding:0 0.8rem 0 1.1rem;' +
+            '  padding:0 1rem 0 1.1rem;' +
             '  cursor:pointer;' +
             '  box-shadow:0 14px 30px rgba(15,23,42,0.35);' +
             '}' +
@@ -165,6 +193,38 @@ define([], function () {
             '}' +
             '.xlate-lang-switcher__link[aria-current="true"] {' +
             '  font-weight:600;' +
+            '}' +
+            '.xlate-lang-switcher__notice {' +
+            '  background:#374151;' +
+            '  color:#f9fafb;' +
+            '  border:none;' +
+            '  border-radius:1.5rem;' +
+            '  height:46px;' +
+            '  padding:0 1.2rem 0 1.35rem;' +
+            '  font-weight:600;' +
+            '  font-size:0.85rem;' +
+            '  cursor:pointer;' +
+            '  box-shadow:0 14px 32px rgba(15,23,42,0.2);' +
+            '  transition:background 0.2s ease, color 0.2s ease, opacity 0.2s ease;' +
+            '}' +
+            '.xlate-lang-switcher__notice:focus {' +
+            '  outline:2px solid #cbd5f5;' +
+            '  outline-offset:2px;' +
+            '}' +
+            '.xlate-lang-switcher__notice:hover,' +
+            '.xlate-lang-switcher__notice:focus {' +
+            '  background:#4b5563;' +
+            '}' +
+            '.xlate-lang-switcher__notice[aria-disabled="true"] {' +
+            '  opacity:0.55;' +
+            '  cursor:not-allowed;' +
+            '}' +
+            '.xlate-lang-switcher__notice.is-muted {' +
+            '  background:#1f2937;' +
+            '  color:#f3f4f6;' +
+            '}' +
+            '.xlate-lang-switcher__notice-label {' +
+            '  white-space:nowrap;' +
             '}';
         document.head.appendChild(style);
     }
@@ -221,11 +281,153 @@ define([], function () {
     }
 
     /**
+     * Update the translation notice pill text to reflect current state.
+     * @returns {void}
+     */
+    function updateTranslationPillLabel() {
+        if (!translationPillLabel || !translationPillConfig) {
+            return;
+        }
+        var defaultLabel = translationPillConfig.label || '';
+        var originalLabel = translationPillConfig.originalLabel || translationPillConfig.hoverShowTranslated || defaultLabel;
+        translationPillLabel.textContent = translationsVisibleState ? defaultLabel : originalLabel;
+        if (translationPillButton) {
+            translationPillButton.setAttribute('aria-pressed', translationsVisibleState ? 'false' : 'true');
+            if (translationsVisibleState) {
+                translationPillButton.classList.remove('is-muted');
+            } else {
+                translationPillButton.classList.add('is-muted');
+            }
+        }
+    }
+
+    /**
+     * Update internal readiness state and toggle aria-disabled semantics.
+     * @param {boolean} ready - Whether the translator runtime can toggle visibility.
+     * @returns {void}
+     */
+    function setTranslationToggleReady(ready) {
+        translationToggleReady = !!ready;
+        if (translationPillButton) {
+            translationPillButton.setAttribute('aria-disabled', translationToggleReady ? 'false' : 'true');
+        }
+    }
+
+    /**
+     * Temporarily swap the pill text while hovering/focusing.
+     * @param {boolean} active - Whether the hover/focus state is active.
+     * @returns {void}
+     */
+    function setTranslationPillHover(active) {
+        if (!translationPillLabel || !translationPillConfig) {
+            return;
+        }
+        if (!active) {
+            updateTranslationPillLabel();
+            return;
+        }
+        var hoverLabel = translationsVisibleState ?
+            (translationPillConfig.hoverShowOriginal || translationPillConfig.label || '') :
+            (translationPillConfig.hoverShowTranslated || translationPillConfig.originalLabel || translationPillConfig.label || '');
+        translationPillLabel.textContent = hoverLabel;
+    }
+
+    /**
+     * Render the translation notice/toggle pill and wire up events.
+     * @param {Object} toggleConfig - Translation toggle labels/config.
+     * @returns {void}
+     */
+    function initTranslationPill(toggleConfig) {
+        if (!toggleConfig || !toggleConfig.enabled) {
+            return;
+        }
+        translationPillConfig = toggleConfig;
+        translationPillButton = document.createElement('button');
+        translationPillButton.type = 'button';
+        translationPillButton.className = 'xlate-lang-switcher__notice';
+        translationPillButton.setAttribute('aria-disabled', 'true');
+        translationPillButton.setAttribute('aria-live', 'polite');
+        translationPillButton.setAttribute('aria-pressed', 'false');
+        if (toggleConfig.tooltip) {
+            translationPillButton.setAttribute('title', toggleConfig.tooltip);
+        }
+        translationPillLabel = document.createElement('span');
+        translationPillLabel.className = 'xlate-lang-switcher__notice-label';
+        translationPillLabel.textContent = toggleConfig.label || '';
+        translationPillButton.appendChild(translationPillLabel);
+
+        ['mouseenter', 'focus'].forEach(function (evt) {
+            translationPillButton.addEventListener(evt, function () {
+                setTranslationPillHover(true);
+            });
+        });
+        ['mouseleave', 'blur'].forEach(function (evt) {
+            translationPillButton.addEventListener(evt, function () {
+                setTranslationPillHover(false);
+            });
+        });
+        translationPillButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            var targetVisible = !translationsVisibleState;
+            var clickTime = Date.now();
+            var isReady = translationToggleReady && typeof window !== 'undefined' &&
+                window.__XLATE__ && typeof window.__XLATE__.setTranslationVisibility === 'function';
+            setDebugState({
+                lastClick: clickTime,
+                requestedVisible: targetVisible,
+                toggleReady: isReady
+            });
+            if (!isReady) {
+                return;
+            }
+            window.__XLATE__.setTranslationVisibility(targetVisible);
+        });
+
+        translationVisibilityListener = function (event) {
+            var detail = event && event.detail ? event.detail : {};
+            translationsVisibleState = detail.visible !== false;
+            updateTranslationPillLabel();
+        };
+        document.addEventListener('xlate:visibilitychange', translationVisibilityListener);
+
+        translationReadyListener = function (event) {
+            var detail = event && event.detail ? event.detail : {};
+            var ready = detail.isTargetLang !== false && !detail.isCapture;
+            setTranslationToggleReady(ready);
+            if (ready && window.__XLATE__) {
+                translationsVisibleState = window.__XLATE__.showTranslations !== false;
+            }
+            updateTranslationPillLabel();
+        };
+        document.addEventListener('xlate:ready', translationReadyListener);
+
+        if (window.__XLATE__) {
+            var readyNow = window.__XLATE__.isTargetLang !== false && !window.__XLATE__.isCapture;
+            setTranslationToggleReady(readyNow);
+            translationsVisibleState = window.__XLATE__.showTranslations !== false;
+        } else {
+            setTranslationToggleReady(false);
+            translationsVisibleState = true;
+        }
+
+        updateTranslationPillLabel();
+        container.appendChild(translationPillButton);
+    }
+
+    /**
      * Initialise the floating language switcher with provided config.
     * @param {{
     *   enabled:boolean,
     *   current:string,
-    *   languages:Array<{code:string,label:string,url:string}>
+    *   languages:Array<{code:string,label:string,url:string}>,
+    *   translationToggle?:{
+    *       enabled:boolean,
+    *       label:string,
+    *       originalLabel:string,
+    *       hoverShowOriginal:string,
+    *       hoverShowTranslated:string,
+    *       tooltip:string
+    *   }
     * }} config - Switcher config payload.
      * @returns {void}
      */
@@ -328,10 +530,22 @@ define([], function () {
             }
         });
 
-        container.appendChild(toggle);
-        container.appendChild(list);
+        var control = document.createElement('div');
+        control.className = 'xlate-lang-switcher__control';
+        control.appendChild(toggle);
+        control.appendChild(list);
+        container.appendChild(control);
+
+        if (config.translationToggle && config.translationToggle.enabled) {
+            initTranslationPill(config.translationToggle);
+        }
+
         document.body.appendChild(container);
-        setDebugState({ stage: 'rendered', languages: config.languages.length });
+        setDebugState({
+            stage: 'rendered',
+            languages: config.languages.length,
+            translationPill: !!(config.translationToggle && config.translationToggle.enabled)
+        });
 
         outsideClickHandler = function (event) {
             if (!container) {

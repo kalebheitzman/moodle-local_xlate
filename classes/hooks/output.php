@@ -146,6 +146,7 @@ class output {
         $version = \local_xlate\local\api::get_version($lang);
         $autodetect = (bool)get_config('local_xlate', 'autodetect');
         $isediting = (isset($page) && method_exists($page, 'user_is_editing') && $page->user_is_editing());
+        $istargetlang = ($lang !== $capture_source_lang) && (empty($target_langs) || in_array($lang, $target_langs, true));
 
         $stringmanager = get_string_manager();
         $languageoptions = $stringmanager->get_list_of_languages();
@@ -173,7 +174,15 @@ class output {
         $language_switcher = [
             'enabled' => count($languageentries) > 1,
             'current' => $lang,
-            'languages' => $languageentries
+            'languages' => $languageentries,
+            'translationToggle' => [
+                'enabled' => $istargetlang,
+                'label' => get_string('langswitcher_notice_label', 'local_xlate'),
+                'originalLabel' => get_string('langswitcher_notice_original', 'local_xlate'),
+                'hoverShowOriginal' => get_string('langswitcher_notice_hover_show_original', 'local_xlate'),
+                'hoverShowTranslated' => get_string('langswitcher_notice_hover_show_translated', 'local_xlate'),
+                'tooltip' => get_string('langswitcher_notice_tooltip', 'local_xlate')
+            ]
         ];
 
         // Output capture/exclude selectors as global JS variables
@@ -220,6 +229,7 @@ class output {
             'isEditing' => $isediting,
             'bundleurl' => $bundleurl->out(false),
             'languageSwitcher' => $language_switcher,
+            'showInlineIndicators' => false,
         ];
 
         $script = '<script>'

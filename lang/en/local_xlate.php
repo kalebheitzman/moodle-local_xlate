@@ -134,3 +134,10 @@ $string['exclude_selectors'] = 'Exclude selectors';
 $string['exclude_selectors_desc'] = 'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.';
 $string['excluded_paths'] = 'Exclude path prefixes';
 $string['excluded_paths_desc'] = 'Requests whose paths begin with one of these prefixes will never load the translator (useful for administrative or edit-only pages). One prefix per line.';
+
+// Language switcher + translation notice.
+$string['langswitcher_notice_label'] = 'AI-assisted translation';
+$string['langswitcher_notice_original'] = 'Original text';
+$string['langswitcher_notice_hover_show_original'] = 'View original text';
+$string['langswitcher_notice_hover_show_translated'] = 'View AI-assisted translation';
+$string['langswitcher_notice_tooltip'] = 'Some text on this page comes from AI-assisted translations. Toggle to compare with the original content.';

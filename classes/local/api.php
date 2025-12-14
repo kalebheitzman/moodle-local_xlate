@@ -53,13 +53,13 @@ class api {
      * @param \context|null $context Context used to derive component filters; defaults to system.
      * @param string $pagetype Optional pagetype hint (e.g. `mod-forum-view`).
      * @param int $courseid Optional course to scope associations.
-     * @return array<string,string> Map of xkey => translated text.
+     * @return array{translations:array<string,string>,sources:array<string,string>,reviewed:array<string,int>} Map of xkey => translation + source metadata.
      */
     public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0): array {
         global $DB;
 
         if (empty($keys)) {
-            return [];
+            return ['translations' => [], 'sources' => [], 'reviewed' => []];
         }
 
         // Sanitize keys: allow only base36-ish keys up to 64 chars to be safe
@@ -76,7 +76,7 @@ class api {
         $clean = array_slice(array_values(array_unique($clean)), 0, 2000);
 
         if (empty($clean)) {
-            return [];
+            return ['translations' => [], 'sources' => [], 'reviewed' => []];
         }
 
         // Build IN clause safely
@@ -117,9 +117,10 @@ class api {
         $recs = $DB->get_records_sql($sql, $params);
 
         $map = [];
+        $sources = [];
         $reviewedmap = [];
         if (empty($recs)) {
-            return ['translations' => $map, 'reviewed' => $reviewedmap];
+            return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap];
         }
 
         $trids = [];
@@ -131,18 +132,19 @@ class api {
 
         if (!empty($trids)) {
             list($trsql, $trparams) = $DB->get_in_or_equal($trids, SQL_PARAMS_NAMED, 'tr');
-            $sql = "SELECT t.id, k.xkey, t.text, t.reviewed
+            $sql = "SELECT t.id, k.xkey, k.source, t.text, t.reviewed
                       FROM {local_xlate_tr} t
                       JOIN {local_xlate_key} k ON k.id = t.keyid
                      WHERE t.id $trsql";
             $translations = $DB->get_records_sql($sql, $trparams);
             foreach ($translations as $row) {
                 $map[$row->xkey] = $row->text;
+                $sources[$row->xkey] = $row->source ?? '';
                 $reviewedmap[$row->xkey] = (int)$row->reviewed;
             }
         }
 
-        return ['translations' => $map, 'reviewed' => $reviewedmap];
+        return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap];
     }
 
     /**
@@ -155,7 +157,7 @@ class api {
      * @param string $lang Target language code.
      * @param array<int,string> $keys Stable translation keys to resolve.
      * @param int $courseid Optional course to include association status for.
-     * @return array{translations:array<string,string>,sourceMap:array<string,string>,associations?:array<string,bool>} Structured bundle response.
+    * @return array{translations:array<string,string>,sources:array<string,string>,sourceMap:array<string,string>,associations?:array<string,bool>} Structured bundle response.
      */
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
@@ -163,6 +165,7 @@ class api {
         $bundle = self::get_keys_bundle($lang, $keys);
         $translations = $bundle['translations'];
         $reviewedmap = $bundle['reviewed'];
+        $sources = $bundle['sources'] ?? [];
 
         // Build sourceMap for the returned keys
         $sourceMap = [];
@@ -178,7 +181,7 @@ class api {
             }
         }
 
-    $result = ['translations' => $translations, 'sourceMap' => $sourceMap, 'reviewed' => $reviewedmap];
+    $result = ['translations' => $translations, 'sourceMap' => $sourceMap, 'sources' => $sources, 'reviewed' => $reviewedmap];
 
         // If courseid present, compute associations map
         if (!empty($courseid) && is_int($courseid) && $courseid > 0) {

@@ -19,6 +19,7 @@ define(['core/ajax'], function (Ajax) {
   var ATTRIBUTE_TYPES = [
     'placeholder', 'title', 'alt', 'aria-label'
   ];
+  var KEYED_ATTRIBUTE_TYPES = ['content'].concat(ATTRIBUTE_TYPES);
 
   // Auto-detection is always enabled; keys are always auto-assigned.
   var detectedStrings = new Set();
@@ -35,6 +36,14 @@ define(['core/ajax'], function (Ajax) {
     'li', 'p'
   ];
   var BLOCK_CHILD_SELECTOR = BLOCK_CHILD_TAGS.join(', ');
+  if (typeof window !== 'undefined') {
+    if (typeof window.XLATE_LAST_TOGGLE_REQUEST === 'undefined') {
+      window.XLATE_LAST_TOGGLE_REQUEST = null;
+    }
+    if (typeof window.XLATE_LAST_TOGGLE_APPLIED === 'undefined') {
+      window.XLATE_LAST_TOGGLE_APPLIED = null;
+    }
+  }
   var ALLOWED_INLINE_TAGS = {
     'a': ['href', 'title', 'target', 'rel'],
     'abbr': ['title'],
@@ -63,6 +72,23 @@ define(['core/ajax'], function (Ajax) {
   Translator.capture = {};
   Translator.dom = {};
   Translator.api = {};
+
+  /**
+   * Persist metadata about the most recent toggle request for debugging.
+   * @param {{visible?: boolean}|null} request - Requested visibility payload.
+   * @param {string} source - Identifier describing who triggered the request.
+   * @returns {void}
+   */
+  function recordToggleRequest(request, source) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.XLATE_LAST_TOGGLE_REQUEST = {
+      time: Date.now(),
+      request: request || {},
+      source: source || 'direct'
+    };
+  }
 
   /**
    * Determine if a URL value is safe for href/src attributes.
@@ -467,6 +493,174 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * Retrieve the captured source string for a translation key when available.
+   * @param {string} key - Structural key identifier.
+   * @returns {string|null} Original source string or null when unavailable.
+   */
+  function getSourceStringForKey(key) {
+    if (!key || !window.__XLATE__ || !window.__XLATE__.sourceStrings) {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(window.__XLATE__.sourceStrings, key)) {
+      return window.__XLATE__.sourceStrings[key];
+    }
+    return null;
+  }
+
+  /**
+   * Dispatch a custom event for other modules (e.g., UI controls).
+   * @param {string} name - Event name to dispatch.
+   * @param {Object} detail - Optional detail payload.
+   * @returns {void}
+   */
+  function dispatchXlateEvent(name, detail) {
+    if (typeof document === 'undefined' || typeof document.dispatchEvent !== 'function') {
+      return;
+    }
+    var payload = detail || {};
+    var event;
+    try {
+      event = new CustomEvent(name, { detail: payload });
+    } catch (err) {
+      event = document.createEvent('CustomEvent');
+      event.initCustomEvent(name, true, true, payload);
+    }
+    document.dispatchEvent(event);
+  }
+
+  /**
+   * Ensure source-language strings are available for the provided keys.
+   * @param {Array<string>} keys - Translation keys to ensure.
+   * @returns {Promise<void>} Resolves once source strings are hydrated.
+   */
+  function ensureSourceStrings(keys) {
+    if (!window.__XLATE__) {
+      return Promise.resolve();
+    }
+    var store = window.__XLATE__.sourceStrings || {};
+    window.__XLATE__.sourceStrings = store;
+    var missing = [];
+    if (Array.isArray(keys)) {
+      keys.forEach(function (key) {
+        if (!key) {
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(store, key) || store[key] === '') {
+          missing.push(key);
+        }
+      });
+    }
+    if (!missing.length) {
+      return Promise.resolve();
+    }
+    if (window.__XLATE__.sourceFetchPromise) {
+      return window.__XLATE__.sourceFetchPromise;
+    }
+
+    var bundleUrl = window.__XLATE__.bundleUrl || window.__XLATE__.bundleurl || '';
+    if (!bundleUrl) {
+      return Promise.resolve();
+    }
+
+    var sourceUrl;
+    try {
+      sourceUrl = new URL(bundleUrl, window.location.origin);
+    } catch (err) {
+      var anchor = document.createElement('a');
+      anchor.href = bundleUrl;
+      sourceUrl = new URL(anchor.href, window.location.origin);
+    }
+
+    var sourceLang = window.__XLATE__.captureSourceLang || window.__XLATE__.sourceLang || window.__XLATE__.lang;
+    if (!sourceLang) {
+      return Promise.resolve();
+    }
+    sourceUrl.searchParams.set('lang', sourceLang);
+
+    var payload = { keys: missing };
+    window.__XLATE__.sourceFetchPromise = fetch(sourceUrl.toString(), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (map) {
+        var providedSources = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
+        var translations = (map && map.translations && typeof map.translations === 'object') ? map.translations : {};
+        Object.keys(providedSources).forEach(function (key) {
+          store[key] = providedSources[key];
+        });
+        Object.keys(translations).forEach(function (key) {
+          if (!store[key]) {
+            store[key] = translations[key];
+          }
+        });
+      })
+      .catch(function (err) {
+        xlateDebug('[XLATE] Source fetch failed', err);
+      })
+      .finally(function () {
+        window.__XLATE__.sourceFetchPromise = null;
+      });
+
+    return window.__XLATE__.sourceFetchPromise;
+  }
+
+  /**
+   * Apply the desired translation visibility state across the page.
+   * @param {boolean} newValue - True to show translations, false for originals.
+   * @returns {void}
+   */
+  function applyVisibilityState(newValue) {
+    window.__XLATE__.showTranslations = newValue;
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.classList.toggle('xlate-original-visible', !newValue);
+    }
+    processedElements = new WeakSet();
+    refreshVisibleElements(window.__XLATE__.map || {});
+    dispatchXlateEvent('xlate:visibilitychange', { visible: newValue });
+  }
+
+  /**
+   * Toggle the translation visibility and reprocess the DOM.
+   * @param {boolean} [visible] - Optional target visibility (defaults to toggle).
+   * @returns {void}
+   */
+  function setTranslationVisibility(visible) {
+    var requestedVisibility = (typeof visible === 'boolean') ? visible : null;
+    recordToggleRequest({ visible: requestedVisibility }, 'direct_call');
+    if (typeof window !== 'undefined') {
+      window.XLATE_TOGGLE_LOG = window.XLATE_TOGGLE_LOG || [];
+      window.XLATE_TOGGLE_LOG.push({
+        at: Date.now(),
+        requested: requestedVisibility,
+        priorState: shouldShowTranslations()
+      });
+    }
+    if (!window.__XLATE__ || window.__XLATE__.isCapture) {
+      return;
+    }
+    var newValue = (typeof visible === 'boolean') ? visible : !shouldShowTranslations();
+    if (typeof window !== 'undefined') {
+      window.XLATE_LAST_TOGGLE_APPLIED = window.XLATE_LAST_TOGGLE_APPLIED || {};
+      window.XLATE_LAST_TOGGLE_APPLIED.result = newValue;
+    }
+    if (!newValue) {
+      var keys = Object.keys(window.__XLATE__.map || {});
+      ensureSourceStrings(keys).then(function () {
+        applyVisibilityState(newValue);
+      }).catch(function () {
+        applyVisibilityState(newValue);
+      });
+      return;
+    }
+    applyVisibilityState(newValue);
+  }
+
+  /**
    * Check if a translation key has been human-reviewed.
    * @param {string} key - Structural translation key.
    * @returns {boolean} True when the key is marked reviewed.
@@ -490,7 +684,8 @@ define(['core/ajax'], function (Ajax) {
     if (!element || typeof element !== 'object') {
       return;
     }
-    if (!show) {
+    var indicatorsAllowed = !!(window.__XLATE__ && window.__XLATE__.inlineIndicator);
+    if (!indicatorsAllowed || !show) {
       if (element.__xlateIndicator && element.__xlateIndicator.remove) {
         element.__xlateIndicator.remove();
       }
@@ -647,10 +842,24 @@ define(['core/ajax'], function (Ajax) {
 
     storeOriginalValue(element, type);
 
-    if (!shouldShowTranslations()) {
-      restoreOriginalValue(element, type);
+    var showingTranslations = shouldShowTranslations();
+    if (!showingTranslations) {
+      var sourceValue = getSourceStringForKey(key);
       if (type === 'text') {
+        if (typeof sourceValue === 'string' && sourceValue !== '') {
+          var originalHost = element.tagName ? element.tagName.toLowerCase() : '';
+          var sanitizedSource = sanitizeTranslationHtml(sourceValue, originalHost);
+          element.innerHTML = sanitizedSource;
+        } else {
+          restoreOriginalValue(element, type);
+        }
         toggleAutoIndicator(element, key, false);
+      } else {
+        if (typeof sourceValue === 'string' && sourceValue !== '') {
+          element.setAttribute(type, sourceValue);
+        } else {
+          restoreOriginalValue(element, type);
+        }
       }
       return;
     }
@@ -675,6 +884,87 @@ define(['core/ajax'], function (Ajax) {
     } else {
       element.setAttribute(type, value);
     }
+  }
+
+  /**
+   * Restore the original/source content for an element when translations are hidden.
+   * @param {Element} element - Element to restore.
+   * @param {string} type - Attribute name or 'text'.
+   * @param {string} key - Translation key used for lookup.
+   * @returns {void}
+   */
+  function renderOriginalElement(element, type, key) {
+    if (!element || !key) {
+      return;
+    }
+
+    var sourceValue = getSourceStringForKey(key);
+    if (type === 'text') {
+      if (typeof sourceValue === 'string' && sourceValue !== '') {
+        var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
+        element.innerHTML = sanitizeTranslationHtml(sourceValue, hostTag);
+      } else {
+        restoreOriginalValue(element, type);
+      }
+      toggleAutoIndicator(element, key, false);
+      return;
+    }
+
+    if (typeof sourceValue === 'string' && sourceValue !== '') {
+      element.setAttribute(type, sourceValue);
+    } else {
+      restoreOriginalValue(element, type);
+    }
+  }
+
+  /**
+   * Apply the currently active visibility mode to a single element.
+   * @param {Element} element - Target element.
+   * @param {string} type - Attribute name or 'text'.
+   * @param {Object} map - Translation map.
+   * @returns {void}
+   */
+  function applyVisibilityForElement(element, type, map) {
+    if (!element) {
+      return;
+    }
+    var key = getKeyFromAttributes(element, type);
+    if (!key) {
+      return;
+    }
+    if (shouldShowTranslations()) {
+      translateElement(element, type, map);
+      return;
+    }
+    renderOriginalElement(element, type, key);
+  }
+
+  /**
+   * Re-render every element that carries an XLATE key to match visibility mode.
+   * @param {Object} map - Translation map.
+   * @returns {void}
+   */
+  function refreshVisibleElements(map) {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    var selector = KEYED_ATTRIBUTE_TYPES.map(function (attr) {
+      return '[' + ATTR_KEY_PREFIX + attr + ']';
+    }).join(',');
+    var nodes = document.querySelectorAll(selector);
+    nodes.forEach(function (node) {
+      if (node.nodeType !== 1) {
+        return;
+      }
+      if (node.hasAttribute(ATTR_KEY_PREFIX + 'content')) {
+        applyVisibilityForElement(node, 'text', map);
+      }
+      ATTRIBUTE_TYPES.forEach(function (attr) {
+        if (node.hasAttribute(ATTR_KEY_PREFIX + attr)) {
+          applyVisibilityForElement(node, attr, map);
+        }
+      });
+    });
   }
   /**
    * Translate a single element using the provided translation map.
@@ -904,17 +1194,19 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
+    var existingKey = getKeyFromAttributes(element, attrName);
     var detectionValue = extractPlainText(value);
-    if (!isTranslatableText(detectionValue)) {
+    if (!existingKey && !isTranslatableText(detectionValue)) {
       return;
     }
-
-    var key = generateKey(element, value, attrName);
+    var key = existingKey || generateKey(element, value, attrName);
     if (!key) {
       return;
     }
 
-    setKeyAttribute(element, attrName, key);
+    if (!existingKey) {
+      setKeyAttribute(element, attrName, key);
+    }
 
     if (tagOnly) {
       return;
@@ -922,6 +1214,12 @@ define(['core/ajax'], function (Ajax) {
 
     if (isCapture) {
       saveToDatabase(element, value, attrName, key, map);
+      return;
+    }
+
+    var showingTranslations = shouldShowTranslations();
+    if (!showingTranslations) {
+      renderOriginalElement(element, attrName, key);
       return;
     }
 
@@ -1067,11 +1365,12 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Persist the latest translations and review map to local storage cache.
+   * Persist the latest translations, source strings, and review map to cache.
    * @param {Object} translations - Newly received translations.
+   * @param {Object|null} [sources] - Optional source string updates to persist.
    * @returns {void}
    */
-  function syncCacheWithLatest(translations) {
+  function syncCacheWithLatest(translations, sources) {
     if (!window.__XLATE__.cacheKey) {
       return;
     }
@@ -1079,21 +1378,21 @@ define(['core/ajax'], function (Ajax) {
     try {
       var cached = localStorage.getItem(window.__XLATE__.cacheKey);
       var cachedPayload = cached ? JSON.parse(cached) : null;
-      var cachedTranslations;
-      var cachedReviewed;
+      var cachedTranslations = {};
+      var cachedReviewed = {};
+      var cachedSources = {};
 
-      if (cachedPayload && typeof cachedPayload === 'object' && cachedPayload.translations) {
-        cachedTranslations = cachedPayload.translations;
-        cachedReviewed = cachedPayload.reviewed || {};
-      } else if (cachedPayload && typeof cachedPayload === 'object' && !Array.isArray(cachedPayload)) {
-        cachedTranslations = cachedPayload;
-        cachedReviewed = {};
-      } else {
-        cachedTranslations = {};
-        cachedReviewed = {};
+      if (cachedPayload && typeof cachedPayload === 'object') {
+        if (cachedPayload.translations && typeof cachedPayload.translations === 'object') {
+          cachedTranslations = cachedPayload.translations;
+          cachedReviewed = cachedPayload.reviewed || {};
+          cachedSources = cachedPayload.sources || cachedPayload.sourceStrings || {};
+        } else if (!Array.isArray(cachedPayload)) {
+          cachedTranslations = cachedPayload;
+        }
       }
 
-      Object.keys(translations).forEach(function (k) {
+      Object.keys(translations || {}).forEach(function (k) {
         cachedTranslations[k] = translations[k];
       });
 
@@ -1102,9 +1401,16 @@ define(['core/ajax'], function (Ajax) {
         cachedReviewed[k] = reviewMap[k];
       });
 
+      if (sources && typeof sources === 'object') {
+        Object.keys(sources).forEach(function (k) {
+          cachedSources[k] = sources[k];
+        });
+      }
+
       localStorage.setItem(window.__XLATE__.cacheKey, JSON.stringify({
         translations: cachedTranslations,
-        reviewed: cachedReviewed
+        reviewed: cachedReviewed,
+        sources: cachedSources
       }));
     } catch (e) {
       // Ignore cache sync errors.
@@ -1146,12 +1452,22 @@ define(['core/ajax'], function (Ajax) {
           return null;
         }
 
+        var sourceUpdates = (data && data.sources && typeof data.sources === 'object') ? data.sources : null;
+        if (sourceUpdates) {
+          if (!window.__XLATE__.sourceStrings || typeof window.__XLATE__.sourceStrings !== 'object') {
+            window.__XLATE__.sourceStrings = {};
+          }
+          Object.keys(sourceUpdates).forEach(function (k) {
+            window.__XLATE__.sourceStrings[k] = sourceUpdates[k];
+          });
+        }
+
         var updated = mergeTranslationsIntoMap(map, translations);
         var reviewChanged = applyReviewUpdates(data && data.reviewed ? data.reviewed : null);
 
         if (updated || reviewChanged) {
           window.__XLATE__.map = map;
-          syncCacheWithLatest(translations);
+          syncCacheWithLatest(translations, sourceUpdates);
 
           processedElements = new WeakSet();
           walk(document.body, map, false);
@@ -1292,6 +1608,7 @@ define(['core/ajax'], function (Ajax) {
     }
   }
   Translator.api.run = run;
+  Translator.api.setTranslationVisibility = setTranslationVisibility;
 
   /**
    * Get source value for an element based on the key attribute type.
@@ -1370,10 +1687,12 @@ define(['core/ajax'], function (Ajax) {
       enabledLangs: enabledLangs,
       map: {},
       sourceMap: {},
+      sourceStrings: {},
       reviewMap: {},
       bundleUrl: config.bundleurl || '',
       version: config.version || '',
-      cacheKey: ''
+      cacheKey: '',
+      inlineIndicator: !!config.showInlineIndicators
     };
 
     state.isCapture = (config.lang === state.captureSourceLang);
@@ -1467,14 +1786,16 @@ define(['core/ajax'], function (Ajax) {
       if (payload.translations && typeof payload.translations === 'object') {
         return {
           translations: payload.translations,
-          reviewed: payload.reviewed || {}
+          reviewed: payload.reviewed || {},
+          sources: payload.sources || payload.sourceStrings || {}
         };
       }
 
       if (!Array.isArray(payload)) {
         return {
           translations: payload,
-          reviewed: {}
+          reviewed: {},
+          sources: {}
         };
       }
     } catch (e) {
@@ -1522,12 +1843,14 @@ define(['core/ajax'], function (Ajax) {
         var translations = (map && map.translations) ? map.translations : map;
         var sourceMap = (map && map.sourceMap) ? map.sourceMap : {};
         var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+        var sourceStrings = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
         var associations = (map && map.associations) ? map.associations : {};
         if (!translations || typeof translations !== 'object') {
           translations = {};
         }
         window.__XLATE__.map = translations;
         window.__XLATE__.sourceMap = sourceMap;
+        window.__XLATE__.sourceStrings = sourceStrings;
         window.__XLATE__.reviewMap = reviewMap;
 
         var existingCount = Object.keys(translations).length;
@@ -1578,6 +1901,7 @@ define(['core/ajax'], function (Ajax) {
       if (cachedPayload) {
         window.__XLATE__.map = cachedPayload.translations;
         window.__XLATE__.reviewMap = cachedPayload.reviewed;
+        window.__XLATE__.sourceStrings = cachedPayload.sources || {};
         processedElements = new WeakSet();
         run(cachedPayload.translations);
       }
@@ -1594,19 +1918,22 @@ define(['core/ajax'], function (Ajax) {
         .then(function (map) {
           var translations = (map && map.translations) ? map.translations : map;
           var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+          var sourceStrings = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
           if (!translations || typeof translations !== 'object') {
             translations = {};
           }
           try {
             localStorage.setItem(cacheKey, JSON.stringify({
               translations: translations,
-              reviewed: reviewMap
+              reviewed: reviewMap,
+              sources: sourceStrings
             }));
           } catch (e) {
             // Ignore
           }
           window.__XLATE__.map = translations;
           window.__XLATE__.reviewMap = reviewMap;
+          window.__XLATE__.sourceStrings = sourceStrings;
           processedElements = new WeakSet();
           run(translations);
           return true;
@@ -1646,6 +1973,20 @@ define(['core/ajax'], function (Ajax) {
     }
 
     window.__XLATE__ = createXlateState(config);
+    window.__XLATE__.showTranslations = true;
+    window.__XLATE__.setTranslationVisibility = setTranslationVisibility;
+    window.__XLATE__.toggleTranslations = function () {
+      setTranslationVisibility();
+    };
+    window.__XLATE__.canToggleTranslations = !window.__XLATE__.isCapture && window.__XLATE__.isTargetLang !== false;
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.classList.remove('xlate-original-visible');
+    }
+    dispatchXlateEvent('xlate:ready', {
+      isTargetLang: window.__XLATE__.isTargetLang,
+      isCapture: window.__XLATE__.isCapture
+    });
+    dispatchXlateEvent('xlate:visibilitychange', { visible: shouldShowTranslations() });
 
     var courseId = resolveCourseId();
     xlateDebug('[XLATE] Initializing:', {

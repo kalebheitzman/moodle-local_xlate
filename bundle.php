@@ -70,7 +70,7 @@ if (!empty($payload['keys']) && is_array($payload['keys'])) {
 
 if (empty($keys)) {
     http_response_code(200);
-    echo json_encode(['translations' => [], 'reviewed' => []]);
+    echo json_encode(['translations' => [], 'sources' => [], 'reviewed' => []]);
     exit;
 }
 
@@ -134,5 +134,5 @@ try {
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {
     http_response_code(200);
-    echo json_encode(['translations' => [], 'reviewed' => []]);
+    echo json_encode(['translations' => [], 'sources' => [], 'reviewed' => []]);
 }
