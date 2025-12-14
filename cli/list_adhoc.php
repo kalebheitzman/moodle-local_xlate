@@ -15,30 +15,36 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Hook definitions for Local Xlate.
+ * CLI script to list Moodle adhoc tasks.
  *
- * Registers output hooks that inject the translator bootstrap markup.
+ * Dumps current entries from the task_adhoc table to assist with diagnosing
+ * queued work related to Local Xlate.
  *
  * @package    local_xlate
- * @category   hooks
+ * @category   cli
  * @copyright  2025 Kaleb Heitzman <kalebheitzman@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+define('CLI_SCRIPT', true);
+require_once(__DIR__ . '/../../../config.php');
+require_once($CFG->libdir . '/filelib.php');
 
-require_once(__DIR__ . '/../classes/hooks/output.php');
-
+global $DB;
 /**
- * @var array<int,array<string,mixed>> Hook callback registrations for Moodle core hook dispatcher.
+ * Current adhoc task rows fetched for inspection.
+ *
+ * @var array<int,\stdClass>
  */
-$callbacks = [
-    [
-        'hook' => \core\hook\output\before_standard_head_html_generation::class,
-        'callback' => \local_xlate\hooks\output::class . '::before_head',
-    ],
-    [
-        'hook' => \core\hook\output\before_standard_top_of_body_html_generation::class,
-        'callback' => \local_xlate\hooks\output::class . '::before_body',
-    ],
-];
+$rows = $DB->get_records('task_adhoc');
+if (empty($rows)) {
+    echo "No adhoc tasks found.\n";
+    exit(0);
+}
+foreach ($rows as $r) {
+    echo "--- TASK id={$r->id} ---\n";
+    foreach ($r as $k => $v) {
+        echo "$k => " . (is_scalar($v) ? $v : json_encode($v)) . "\n";
+    }
+    echo "\n";
+}

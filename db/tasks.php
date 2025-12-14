@@ -15,30 +15,41 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Hook definitions for Local Xlate.
+ * Scheduled task definitions for Local Xlate.
  *
- * Registers output hooks that inject the translator bootstrap markup.
+ * Registers cron tasks used for multilang cleanup and autotranslation.
  *
  * @package    local_xlate
- * @category   hooks
+ * @category   task
  * @copyright  2025 Kaleb Heitzman <kalebheitzman@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once(__DIR__ . '/../classes/hooks/output.php');
-
 /**
- * @var array<int,array<string,mixed>> Hook callback registrations for Moodle core hook dispatcher.
+ * @var array<int,array<string,mixed>> Scheduled task definitions consumed by Moodle cron.
  */
-$callbacks = [
+$tasks = [
     [
-        'hook' => \core\hook\output\before_standard_head_html_generation::class,
-        'callback' => \local_xlate\hooks\output::class . '::before_head',
+        'classname' => 'local_xlate\task\mlang_cleanup_task',
+        'blocking' => 0,
+        'minute' => '*/5',
+        'hour' => '*',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+        'disabled' => 0,
     ],
     [
-        'hook' => \core\hook\output\before_standard_top_of_body_html_generation::class,
-        'callback' => \local_xlate\hooks\output::class . '::before_body',
+        'classname' => 'local_xlate\task\autotranslate_missing_task',
+        'blocking' => 0,
+        'minute' => '*/5',
+        'hour' => '*',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+        'disabled' => 0,
+        'customised' => 0
     ],
 ];

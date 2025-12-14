@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/xlate/db" VERSION="2025102400" COMMENT="xlate" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<XMLDB PATH="local/xlate/db" VERSION="2025110400" COMMENT="xlate" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <TABLES>
     <TABLE NAME="local_xlate_key" COMMENT="canonical phrase keys">
       <FIELDS>
@@ -8,12 +8,31 @@
         <FIELD NAME="xkey" TYPE="char" LENGTH="191" NOTNULL="true"/>
         <FIELD NAME="source" TYPE="text" NOTNULL="false"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="ctime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
       </KEYS>
       <INDEXES>
         <INDEX NAME="uniq_key" UNIQUE="true" FIELDS="component,xkey"/>
+      </INDEXES>
+    </TABLE>
+    
+    <TABLE NAME="local_xlate_key_course" COMMENT="associates keys with course ids">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="keyid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="context" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="fk_keyid" TYPE="foreign" FIELDS="keyid" REFTABLE="local_xlate_key" REFFIELDS="id" ONDELETE="cascade"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="ix_courseid" UNIQUE="false" FIELDS="courseid"/>
+        <INDEX NAME="uq_key_course" UNIQUE="true" FIELDS="keyid,courseid"/>
       </INDEXES>
     </TABLE>
 
@@ -24,6 +43,7 @@
         <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
         <FIELD NAME="text" TYPE="text" NOTNULL="true"/>
         <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="reviewed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
@@ -47,6 +67,93 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="uniq_lang" UNIQUE="true" FIELDS="lang"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_xlate_glossary" COMMENT="language glossary mapping">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="source_lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
+        <FIELD NAME="target_lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
+        <FIELD NAME="source_text" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="target_text" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="created_by" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="ctime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_langpair" UNIQUE="false" FIELDS="source_lang,target_lang"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_xlate_mlang_migration" COMMENT="records provenance for mlang destructive migration">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="tablename" TYPE="char" LENGTH="255" NOTNULL="true"/>
+        <FIELD NAME="recordid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="columnname" TYPE="char" LENGTH="255" NOTNULL="true"/>
+        <FIELD NAME="old_value" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="new_value" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="migrated_at" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="migrated_by" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_table_record" UNIQUE="false" FIELDS="tablename,recordid"/>
+      </INDEXES>
+    </TABLE>
+    
+    <TABLE NAME="local_xlate_course_job" COMMENT="course-level autotranslate jobs">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="status" TYPE="char" LENGTH="30" NOTNULL="true" DEFAULT="pending"/>
+        <FIELD NAME="total" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="processed" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="batchsize" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="50"/>
+        <FIELD NAME="options" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="lastid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="mtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="ctime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_courseid" UNIQUE="false" FIELDS="courseid"/>
+        <INDEX NAME="idx_status" UNIQUE="false" FIELDS="status"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_xlate_token_batch" COMMENT="Tracks token usage for each batch autotranslation request">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="model" TYPE="char" LENGTH="64" NOTNULL="false"/>
+        <FIELD NAME="lang" TYPE="char" LENGTH="20" NOTNULL="true"/>
+        <FIELD NAME="batchsize" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="input_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="cached_input_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="output_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="total_tokens" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="cached_input_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="output_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="total_cost" TYPE="number" LENGTH="12,6" NOTNULL="false" DEFAULT="0"/>
+        <FIELD NAME="response_ms" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_timecreated" UNIQUE="false" FIELDS="timecreated"/>
+        <INDEX NAME="idx_lang" UNIQUE="false" FIELDS="lang"/>
       </INDEXES>
     </TABLE>
   </TABLES>
