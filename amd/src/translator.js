@@ -1254,10 +1254,13 @@ define(['core/ajax'], function (Ajax) {
 
     var skipTextCapture = false;
     if (element.querySelector && element.querySelector(BLOCK_CHILD_SELECTOR)) {
-      // Block-level descendants indicate this node is acting as a structural
-      // wrapper (cards, panels, etc.); let the inner blocks handle capture so
-      // we do not collapse layout containers like anchors with div children.
-      skipTextCapture = true;
+      // Only skip when the element has no direct text nodes of its own; this keeps
+      // wrappers that mix inline markup (e.g., <strong>) with paragraph text eligible
+      // for capture while still avoiding structural containers like cards/lists.
+      var directText = getDirectChildText(element);
+      if (!directText) {
+        skipTextCapture = true;
+      }
     }
 
     if (!skipTextCapture) {
