@@ -64,6 +64,7 @@ define(['core/ajax'], function (Ajax) {
     'sup': [],
     'u': []
   };
+  var INLINE_PIGGYBACK_TAGS = ['strong', 'b', 'em', 'i', 'u', 'mark'];
   /* Translator namespace to expose public API while keeping internal helpers private. */
   var Translator = {};
   Translator.utils = {};
@@ -271,6 +272,14 @@ define(['core/ajax'], function (Ajax) {
       if (sanitized) {
         return sanitized;
       }
+      if (window.__XLATE__ && window.__XLATE__.isCapture) {
+        xlateDebug(
+          '[XLATE][Capture] Sanitized HTML empty for',
+          describeElementContext(element),
+          'raw snippet:',
+          abbreviateValue(raw)
+        );
+      }
       var fallbackPlain = extractPlainText(raw);
       if (fallbackPlain) {
         return fallbackPlain;
@@ -305,6 +314,43 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /* eslint-enable no-console */
+
+  /**
+   * Return a short descriptor for logging the element context.
+   * @param {Element} element - Element to summarise.
+   * @returns {string} Summary string including tag/id/class hints.
+   */
+  function describeElementContext(element) {
+    if (!element || !element.tagName) {
+      return '<unknown>';
+    }
+    var tag = element.tagName.toLowerCase();
+    var id = element.id ? '#' + element.id : '';
+    var classSuffix = '';
+    if (element.className && typeof element.className === 'string') {
+      var classes = element.className.trim().split(/\s+/).filter(Boolean).slice(0, 3);
+      if (classes.length) {
+        classSuffix = '.' + classes.join('.');
+      }
+    }
+    return tag + id + classSuffix;
+  }
+
+  /**
+   * Produce a short snippet of a string for debug logging.
+   * @param {string} value - Original string.
+   * @returns {string} Abbreviated string capped to ~80 chars.
+   */
+  function abbreviateValue(value) {
+    if (!value) {
+      return '';
+    }
+    var trimmed = value.trim();
+    if (trimmed.length <= 80) {
+      return trimmed;
+    }
+    return trimmed.substring(0, 77) + '...';
+  }
 
   // ============================================================================
   // KEY GENERATION - Create structural 12-character hash keys
@@ -1033,25 +1079,28 @@ define(['core/ajax'], function (Ajax) {
   function saveToDatabase(element, text, type, key, existingMap) {
     var normalizedPayload = extractPlainText(text);
     if (!isTranslatableText(normalizedPayload)) {
-      xlateDebug('[XLATE] Skipping save - payload lacks translatable text for key:', key);
+      xlateDebug('[XLATE][Capture] Skip save - not translatable', key, describeElementContext(element));
       return;
     }
 
-    // If key already exists in the bundle, skip saving
-    if (existingMap && existingMap[key]) {
-      xlateDebug('[XLATE] Skipping save - key exists:', key);
-      return;
+    if (existingMap && Object.prototype.hasOwnProperty.call(existingMap, key)) {
+      var existingValue = (existingMap[key] || '').trim();
+      if (existingValue === text.trim()) {
+        xlateDebug('[XLATE][Capture] Skip save - identical text already stored', key);
+        return;
+      }
     }
 
     var component = detectComponent(element);
     var dedupeKey = component + ':' + key + ':' + type;
 
     if (detectedStrings.has(dedupeKey)) {
+      xlateDebug('[XLATE][Capture] Skip save - dedupe hit', dedupeKey);
       return;
     }
     detectedStrings.add(dedupeKey);
 
-    xlateDebug('[XLATE] Saving new key:', key, 'component:', component, 'text:', text.substring(0, 50));
+    xlateDebug('[XLATE][Capture] Saving key', key, 'component', component, 'type', type, 'snippet:', abbreviateValue(text));
 
     // Determine page-level course id (prefer server-injected XLATE_COURSEID when present)
     var pageCourseId = 0;
@@ -1066,21 +1115,31 @@ define(['core/ajax'], function (Ajax) {
       (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
     var reviewedFlag = (curLang === sourceLang) ? 1 : 0;
 
+    var payload = {
+      component: component,
+      key: key,
+      source: text,
+      lang: curLang,
+      translation: text,
+      reviewed: reviewedFlag,
+      courseid: pageCourseId,
+      context: component
+    };
+
+    xlateDebug('[XLATE][Capture] Ajax save payload', {
+      key: key,
+      component: component,
+      type: type,
+      lang: curLang,
+      courseid: pageCourseId,
+      reviewed: reviewedFlag,
+      length: text.length
+    });
+
     Ajax.call([{
       methodname: 'local_xlate_save_key',
-      args: {
-        component: component,
-        key: key,
-        source: text,
-        lang: curLang,
-        translation: text,
-        // If the current page language equals the configured source, mark
-        // captured source strings as reviewed (human-authored content).
-        reviewed: reviewedFlag,
-        courseid: pageCourseId,
-        context: component
-      }
-    }])[0].then(function () {
+      args: payload
+    }])[0].then(function (response) {
       if (window.__XLATE__) {
         if (!window.__XLATE__.map) {
           window.__XLATE__.map = {};
@@ -1091,9 +1150,11 @@ define(['core/ajax'], function (Ajax) {
         }
         window.__XLATE__.reviewMap[key] = 1;
       }
+      xlateDebug('[XLATE][Capture] Save success', key, response || '');
       return true;
-    }).catch(function () {
+    }).catch(function (err) {
       detectedStrings.delete(dedupeKey);
+      xlateDebug('[XLATE][Capture] Save failed', key, err && err.message ? err.message : err);
     });
   }
   Translator.capture.saveToDatabase = saveToDatabase;
@@ -1191,16 +1252,37 @@ define(['core/ajax'], function (Ajax) {
    */
   function processCandidateValue(element, value, attrName, tagOnly, isCapture, map) {
     if (!value) {
+      if (isCapture) {
+        xlateDebug('[XLATE][Capture] Empty value ignoring', attrName, describeElementContext(element));
+      }
       return;
     }
 
     var existingKey = getKeyFromAttributes(element, attrName);
     var detectionValue = extractPlainText(value);
     if (!existingKey && !isTranslatableText(detectionValue)) {
+      if (isCapture) {
+        xlateDebug(
+          '[XLATE][Capture] Non-translatable value skipped',
+          attrName,
+          describeElementContext(element),
+          'snippet:',
+          abbreviateValue(value)
+        );
+      }
       return;
     }
     var key = existingKey || generateKey(element, value, attrName);
     if (!key) {
+      if (isCapture) {
+        xlateDebug(
+          '[XLATE][Capture] Failed to generate key',
+          attrName,
+          describeElementContext(element),
+          'snippet:',
+          abbreviateValue(value)
+        );
+      }
       return;
     }
 
@@ -1209,6 +1291,9 @@ define(['core/ajax'], function (Ajax) {
     }
 
     if (tagOnly) {
+      if (isCapture) {
+        xlateDebug('[XLATE][Capture] Tag-only pass recorded key', key, 'for', attrName, describeElementContext(element));
+      }
       return;
     }
 
@@ -1245,6 +1330,18 @@ define(['core/ajax'], function (Ajax) {
     if (shouldIgnoreElement(element) || processedElements.has(element)) {
       return;
     }
+    var tagName = element.tagName ? element.tagName.toLowerCase() : '';
+    if (
+      element.parentElement &&
+      element.parentElement.hasAttribute(ATTR_KEY_PREFIX + 'content') &&
+      INLINE_PIGGYBACK_TAGS.indexOf(tagName) !== -1
+    ) {
+      if (window.__XLATE__ && window.__XLATE__.isCapture) {
+        xlateDebug('[XLATE][Capture] Skipping inline child inside keyed parent', describeElementContext(element));
+      }
+      processedElements.add(element);
+      return;
+    }
     processedElements.add(element);
 
     var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
@@ -1260,6 +1357,9 @@ define(['core/ajax'], function (Ajax) {
       var directText = getDirectChildText(element);
       if (!directText) {
         skipTextCapture = true;
+        if (window.__XLATE__ && window.__XLATE__.isCapture) {
+          xlateDebug('[XLATE][Capture] Skipping container without direct text', describeElementContext(element));
+        }
       }
     }
 
