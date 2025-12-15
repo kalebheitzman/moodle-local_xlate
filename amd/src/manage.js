@@ -1,25 +1,133 @@
-// AMD module to queue autotranslate for visible keys in Manage UI.
+// AMD module for the Manage UI (autotranslate controls + inline actions).
 /**
- * Autotranslate UI helper for the Manage page.
+ * Manage UI helper for the Admin page.
  *
- * Wires up the course-level "Autotranslate" button, resumes progress polling
- * for in-flight jobs, and ensures a progress widget is rendered even when the
- * user navigates away from the originating course filter.
- *
- * Expected config keys:
- *  - courseid (number)
- *  - currentjobid (number)
- *  - currentjobowner (string)
- *  - currentjobstatus (string)
- *  - currentjobsourcelang (string)
- *  - currentjobtargetlang (string|string[])
- *  - currentjobprocessed (number)
- *  - currentjobtotal (number)
- *  - batchsize (number)
- *  - sourcelang (string)
- *  - defaulttarget (string|string[])
+ * Handles per-entry delete actions, course-level autotranslate submission,
+ * and progress polling for in-flight jobs.
  */
 define(['core/ajax', 'core/notification'], function (Ajax, notification) {
+    /**
+     * Resolve a UI string from the AMD config or return a fallback.
+     *
+     * @param {Object} config Module configuration payload.
+     * @param {string} key String key under config.strings.
+     * @param {string} fallback Default text when missing.
+     * @returns {string} Localised string.
+     */
+    function getString(config, key, fallback) {
+        if (config && config.strings && config.strings[key]) {
+            return config.strings[key];
+        }
+        return fallback;
+    }
+
+    /**
+     * Clear translation input/checkbox fields tied to a delete button.
+     *
+     * @param {HTMLElement} button Delete button element.
+     * @returns {void}
+     */
+    function clearTranslationFields(button) {
+        if (!button) {
+            return;
+        }
+        var form = button.closest ? button.closest('form') : null;
+        if (!form) {
+            var node = button.parentNode;
+            while (node && node.tagName && node.tagName.toLowerCase() !== 'form') {
+                node = node.parentNode;
+            }
+            form = node;
+        }
+        if (!form) {
+            return;
+        }
+        var field = form.querySelector('[name="translation"]');
+        if (field) {
+            field.value = '';
+        }
+        var toggles = form.querySelectorAll('input[name="status"], input[name="reviewed"]');
+        if (toggles && toggles.length) {
+            Array.prototype.forEach.call(toggles, function (toggle) {
+                toggle.checked = false;
+            });
+        }
+    }
+
+    /**
+     * Invoke the delete translation web service for a button context.
+     *
+     * @param {HTMLElement} button Button initiating the delete request.
+     * @param {Object} config Module configuration.
+     * @returns {void}
+     */
+    function deleteTranslation(button, config) {
+        if (!button) {
+            return;
+        }
+        var keyid = parseInt(button.getAttribute('data-keyid'), 10) || 0;
+        var lang = button.getAttribute('data-lang') || '';
+        if (!keyid || !lang) {
+            return;
+        }
+
+        var failureMessage = getString(config, 'deleteFailed', 'Unable to delete translation.');
+        var successMessage = getString(config, 'deleteSuccess', 'Translation deleted.');
+
+        button.disabled = true;
+
+        var request = Ajax.call([{
+            methodname: 'local_xlate_delete_translation',
+            args: {
+                keyid: keyid,
+                lang: lang
+            }
+        }])[0];
+
+        request.then(function (res) {
+            if (res && res.success) {
+                clearTranslationFields(button);
+                notification.addNotification({
+                    message: successMessage,
+                    type: 'success'
+                });
+            } else {
+                notification.alert(failureMessage);
+            }
+            button.disabled = false;
+        }).catch(function (err) {
+            var msg = failureMessage;
+            if (err && err.message) {
+                msg += '\n' + err.message;
+            } else if (err && err.error) {
+                msg += '\n' + err.error;
+            }
+            notification.alert(msg);
+            button.disabled = false;
+        });
+    }
+
+    /**
+     * Wire up delete buttons to the AJAX workflow.
+     *
+     * @param {Object} config Module configuration payload.
+     * @returns {void}
+     */
+    function attachDeleteHandlers(config) {
+        var buttons = document.querySelectorAll('.js-xlate-delete-translation');
+        if (!buttons || !buttons.length) {
+            return;
+        }
+        var confirmMessage = getString(config, 'confirmDelete', 'Delete this translation?');
+        Array.prototype.forEach.call(buttons, function (button) {
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
+                notification.confirm(confirmMessage, function () {
+                    deleteTranslation(button, config);
+                });
+            });
+        });
+    }
     return {
         /**
          * Initialise the autotranslate UI bindings.
@@ -30,6 +138,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
          * @returns {void}
          */
         init: function (config) {
+            attachDeleteHandlers(config);
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
 
             // If the server passed an active job id but the Manage page card or

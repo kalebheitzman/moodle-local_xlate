@@ -43,6 +43,9 @@ $string['reviewed'] = 'Reviewed';
 $string['save_translation'] = 'Save';
 $string['auto_translate'] = 'Autotranslate';
 $string['delete_translation'] = 'Delete';
+$string['translation_deleted'] = 'Translation deleted.';
+$string['delete_failed'] = 'Unable to delete translation.';
+$string['confirm_delete_translation'] = 'Delete this translation?';
 // Automatic key capture strings removed because the info card was removed from the UI.
 
 // Success/error messages for management

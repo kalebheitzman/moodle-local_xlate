@@ -116,6 +116,53 @@ class local_xlate_external extends external_api {
     }
 
     /**
+     * Describe the parameters accepted by {@see self::delete_translation()}.
+     *
+     * @return external_function_parameters Parameter schema for deletion requests.
+     */
+    public static function delete_translation_parameters() {
+        return new external_function_parameters([
+            'keyid' => new external_value(PARAM_INT, 'Translation key id'),
+            'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code')
+        ]);
+    }
+
+    /**
+     * Delete a translation row for the specified key/language pair.
+     *
+     * @param int $keyid Key identifier owning the translation.
+     * @param string $lang Language code to remove.
+     * @return array{success:bool} Deletion result payload.
+     */
+    public static function delete_translation($keyid, $lang) {
+        $params = self::validate_parameters(self::delete_translation_parameters(), [
+            'keyid' => $keyid,
+            'lang' => $lang
+        ]);
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:manage', $context);
+
+        $success = \local_xlate\local\api::delete_translation((int)$params['keyid'], $params['lang']);
+
+        return [
+            'success' => $success
+        ];
+    }
+
+    /**
+     * Describe the response produced by {@see self::delete_translation()}.
+     *
+     * @return external_single_structure API response specification.
+     */
+    public static function delete_translation_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'True when translation deleted')
+        ]);
+    }
+
+    /**
      * Describe the parameters accepted by {@see self::get_key()}.
      *
      * @return external_function_parameters Parameter schema for validation.

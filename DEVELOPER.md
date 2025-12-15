@@ -385,7 +385,7 @@ Testing and CI:
 ```
 local/xlate/
 ├── amd/
-│   ├── src/autotranslate.js
+│   ├── src/manage.js
 │   ├── src/translator.js
 │   └── build/*.js, *.js.map
 ├── bundle.php

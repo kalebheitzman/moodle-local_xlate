@@ -42,6 +42,16 @@ $functions = [
         'capabilities' => 'local/xlate:manage',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ],
+    'local_xlate_delete_translation' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'delete_translation',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Delete a stored translation for a key/language pair',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/xlate:manage',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ],
     'local_xlate_get_key' => [
         'classname' => 'local_xlate_external',
         'methodname' => 'get_key',

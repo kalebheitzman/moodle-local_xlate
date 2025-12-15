@@ -643,6 +643,37 @@ class api {
             return $DB->insert_record('local_xlate_tr', $record);
         }
     }
+
+    /**
+     * Delete a stored translation for the specified key and language.
+     *
+     * Also invalidates bundle caches so downstream consumers pick up the
+     * removal without waiting for cron-driven rebuilds.
+     *
+     * @param int $keyid Numeric translation key id.
+     * @param string $lang Language code (e.g. en, es).
+     * @return bool True when a row was removed.
+     */
+    public static function delete_translation(int $keyid, string $lang): bool {
+        global $DB;
+
+        $lang = trim($lang);
+        if ($keyid <= 0 || $lang === '') {
+            return false;
+        }
+
+        $deleted = $DB->delete_records('local_xlate_tr', [
+            'keyid' => $keyid,
+            'lang' => $lang
+        ]);
+
+        if ($deleted) {
+            self::invalidate_bundle_cache($lang);
+            self::update_bundle_version($lang);
+        }
+
+        return (bool)$deleted;
+    }
     
     /**
      * Persist a translation key and translated string within a transaction.

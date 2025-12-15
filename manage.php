@@ -275,6 +275,16 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
     } catch (Exception $e) {
         redirect($PAGE->url, 'Database error: ' . $e->getMessage(), null, \core\output\notification::NOTIFY_ERROR);
     }
+} else if ($action === 'delete_translation' && confirm_sesskey()) {
+    $keyid = required_param('keyid', PARAM_INT);
+    $targetlang = required_param('target_lang', PARAM_ALPHA);
+
+    try {
+        $DB->delete_records('local_xlate_tr', ['keyid' => $keyid, 'lang' => $targetlang]);
+        redirect($PAGE->url, get_string('translation_deleted', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
+    } catch (Exception $e) {
+        redirect($PAGE->url, get_string('delete_failed', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
+    }
 }
 
 echo $OUTPUT->header();
@@ -788,20 +798,16 @@ $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
 echo html_writer::script('window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";\n" .
     'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . ";");
 
-/* Autotranslate AMD init disabled with UI card.
-$amdconfig = [...];
-try {
-    // Resume pending jobs for AMD module.
-} catch (Exception $e) {
-    // ignore
-}
-try {
-    $gloss = [];
-    $amdconfig['glossary'] = $gloss;
-} catch (\Exception $ex) {
-    $amdconfig['glossary'] = [];
-}
-$PAGE->requires->js_call_amd('local_xlate/autotranslate', 'init', [$amdconfig]);
-*/
+$amdconfig = [
+    'courseid' => $filter_courseid,
+    'batchsize' => 50,
+    'strings' => [
+        'confirmDelete' => get_string('confirm_delete_translation', 'local_xlate'),
+        'deleteFailed' => get_string('delete_failed', 'local_xlate'),
+        'deleteSuccess' => get_string('translation_deleted', 'local_xlate')
+    ]
+];
+
+$PAGE->requires->js_call_amd('local_xlate/manage', 'init', [$amdconfig]);
 
 echo $OUTPUT->footer();
