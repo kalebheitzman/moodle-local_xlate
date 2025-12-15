@@ -74,7 +74,7 @@ class autotranslate_missing_task extends scheduled_task {
         }
 
         $configuredbatch = (int)get_config('local_xlate', 'autotranslate_task_batchsize');
-        $batchsize = $configuredbatch > 0 ? $configuredbatch : 20;
+        $batchsize = $configuredbatch > 0 ? $configuredbatch : 50;
         foreach ($courseids as $courseid) {
             $courseid = (int)$courseid;
             if ($courseid <= 0) {
