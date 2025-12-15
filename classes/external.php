@@ -39,12 +39,12 @@ class local_xlate_external extends external_api {
      */
     public static function save_key_parameters() {
         return new external_function_parameters([
-            'component' => new external_value(PARAM_TEXT, 'Component identifier'),
+            'component' => new external_value(PARAM_COMPONENT, 'Component identifier'),
             'key' => new external_value(PARAM_TEXT, 'Translation key'),
-            'source' => new external_value(PARAM_RAW, 'Source text (may include inline HTML)', VALUE_DEFAULT, ''),
+            'source' => new external_value(PARAM_RAW_TRIMMED, 'Source text (may include inline HTML)', VALUE_DEFAULT, ''),
             'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
-            'translation' => new external_value(PARAM_RAW, 'Translation text (may include inline HTML)'),
-            'reviewed' => new external_value(PARAM_INT, 'Human reviewed flag', VALUE_DEFAULT, 0),
+            'translation' => new external_value(PARAM_RAW_TRIMMED, 'Translation text (may include inline HTML)'),
+            'reviewed' => new external_value(PARAM_BOOL, 'Human reviewed flag', VALUE_DEFAULT, 0),
             'courseid' => new external_value(PARAM_INT, 'Course id', VALUE_DEFAULT, 0),
             'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, '')
         ]);

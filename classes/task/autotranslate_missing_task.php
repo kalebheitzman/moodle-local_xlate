@@ -193,14 +193,22 @@ class autotranslate_missing_task extends scheduled_task {
             $bykey[(string)$row->xkey] = $row;
         }
 
+        $saved = 0;
+        $skipped = 0;
+        $failed = 0;
+
         foreach ($results as $result) {
             $id = isset($result['id']) ? (string)$result['id'] : '';
             $translated = isset($result['translated']) ? (string)$result['translated'] : '';
             if ($id === '' || $translated === '') {
+                mtrace("Course {$courseid}: skipping translation result with missing id/text for {$targetlang}");
+                $skipped++;
                 continue;
             }
 
             if (!isset($bykey[$id])) {
+                mtrace("Course {$courseid}: translation returned unknown key {$id} for {$targetlang}");
+                $skipped++;
                 continue;
             }
             $row = $bykey[$id];
@@ -216,9 +224,16 @@ class autotranslate_missing_task extends scheduled_task {
                     $courseid,
                     ''
                 );
+                $saved++;
             } catch (\Throwable $e) {
-                debugging('[local_xlate] Failed to persist autotranslate for key ' . $row->xkey . ' (' . $targetlang . '): ' . $e->getMessage(), DEBUG_DEVELOPER);
+                $failed++;
+                $message = '[local_xlate] Failed to persist autotranslate for key ' . $row->xkey . ' (' . $targetlang . '): ' . $e->getMessage();
+                debugging($message, DEBUG_DEVELOPER);
+                mtrace('  ' . $message);
             }
         }
+
+        $total = count($results);
+        mtrace("Course {$courseid}: persist summary {$targetlang} -> saved {$saved}/{$total}, skipped {$skipped}, failed {$failed}");
     }
 }

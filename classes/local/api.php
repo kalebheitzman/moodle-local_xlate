@@ -668,6 +668,11 @@ class api {
         $transaction = $DB->start_delegated_transaction();
         
         try {
+            $source = self::normalize_inline_markup($source);
+            $translation = self::normalize_inline_markup($translation);
+            if ($source === '') {
+                $source = $translation;
+            }
             // Create or update the key
             $keyid = self::create_or_update_key($component, $xkey, $source);
             
@@ -727,6 +732,18 @@ class api {
             }
             throw $e;
         }
+    }
+
+    private static function normalize_inline_markup(string $value): string {
+        if ($value === '') {
+            return $value;
+        }
+        $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $decoded = preg_replace('#<\\/([a-z0-9]+)>#i', '</$1>', $decoded);
+        $decoded = preg_replace('#<([a-z0-9]+)\\/>#i', '<$1/>', $decoded);
+        $decoded = preg_replace('#\\(/|/\\)#', '/', $decoded);
+        $decoded = str_replace(['\"', '\\'], ['"', '\\'], $decoded);
+        return $decoded;
     }
     
     /**
