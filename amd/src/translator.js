@@ -1240,6 +1240,51 @@ define(['core/ajax'], function (Ajax) {
       }
     }
   }
+
+  /**
+   * Determine whether an element's readable text is entirely provided by inline children.
+   * When true we can skip capturing the parent text so each child can generate its own key.
+   * @param {Element} element - Element to inspect.
+   * @returns {boolean} True when we should defer to inline children for capture.
+   */
+  function hasTranslatableInlineChild(element) {
+    if (!element || !element.children || !element.children.length) {
+      return false;
+    }
+
+    // If the element already has direct text nodes, keep handling it normally.
+    if (getDirectChildText(element)) {
+      return false;
+    }
+
+    var childCount = element.children.length;
+    var foundEligibleChild = false;
+
+    for (var i = 0; i < childCount; i++) {
+      var child = element.children[i];
+      if (!child || !child.tagName) {
+        continue;
+      }
+      var tag = child.tagName.toLowerCase();
+
+      // Block-level children mean the parent should remain responsible for capture.
+      if (BLOCK_CHILD_TAGS.indexOf(tag) !== -1) {
+        return false;
+      }
+
+      // Decorative inline wrappers (strong/em/etc.) piggyback on the parent.
+      if (INLINE_PIGGYBACK_TAGS.indexOf(tag) !== -1) {
+        continue;
+      }
+
+      var snippet = extractPlainText(child.innerHTML || child.textContent || '');
+      if (isTranslatableText(snippet)) {
+        foundEligibleChild = true;
+      }
+    }
+
+    return foundEligibleChild;
+  }
   /**
    * Process a candidate value for translation or capture.
    * @param {Element} element - Element being processed.
@@ -1360,6 +1405,13 @@ define(['core/ajax'], function (Ajax) {
         if (window.__XLATE__ && window.__XLATE__.isCapture) {
           xlateDebug('[XLATE][Capture] Skipping container without direct text', describeElementContext(element));
         }
+      }
+    }
+
+    if (!skipTextCapture && hasTranslatableInlineChild(element)) {
+      skipTextCapture = true;
+      if (window.__XLATE__ && window.__XLATE__.isCapture) {
+        xlateDebug('[XLATE][Capture] Deferring to inline child for text capture', describeElementContext(element));
       }
     }
 
