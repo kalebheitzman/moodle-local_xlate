@@ -714,9 +714,26 @@ if (!empty($keys)) {
                 echo html_writer::tag('label', $review_input . ' ' . get_string('reviewed', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-2');
+                echo html_writer::start_tag('div', [
+                    'class' => 'btn-group btn-group-sm',
+                    'role' => 'group'
+                ]);
                 echo html_writer::tag('button', get_string('save_translation', 'local_xlate'), [
                     'type' => 'submit',
-                    'class' => 'btn btn-sm btn-success'
+                    'class' => 'btn btn-success'
+                ]);
+                echo html_writer::tag('button', get_string('auto_translate', 'local_xlate'), [
+                    'type' => 'button',
+                    'class' => 'btn btn-warning js-xlate-auto-translate',
+                    'data-keyid' => $key->id,
+                    'data-lang' => $langcode
+                ]);
+                echo html_writer::end_tag('div');
+                echo html_writer::tag('button', get_string('delete_translation', 'local_xlate'), [
+                    'type' => 'button',
+                    'class' => 'btn btn-sm btn-danger ms-2 js-xlate-delete-translation',
+                    'data-keyid' => $key->id,
+                    'data-lang' => $langcode
                 ]);
                 echo html_writer::end_div();
                 echo html_writer::end_div();

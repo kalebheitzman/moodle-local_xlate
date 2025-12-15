@@ -40,7 +40,9 @@ $string['status'] = 'Status';
 $string['active'] = 'Active';
 $string['inactive'] = 'Inactive';
 $string['reviewed'] = 'Reviewed';
-$string['save_translation'] = 'Save Translation';
+$string['save_translation'] = 'Save';
+$string['auto_translate'] = 'Autotranslate';
+$string['delete_translation'] = 'Delete';
 // Automatic key capture strings removed because the info card was removed from the UI.
 
 // Success/error messages for management
