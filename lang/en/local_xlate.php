@@ -87,6 +87,21 @@ $string['autotranslate_course_desc'] = 'Translate all captured keys associated w
 $string['nav_manage'] = 'Manage';
 $string['nav_glossary'] = 'Glossary';
 $string['nav_usage'] = 'Usage';
+$string['inspector_toggle_label'] = 'Translation inspector';
+$string['inspector_toggle_active'] = 'Inspector enabled';
+$string['inspector_toggle_inactive'] = 'Enable inspector';
+$string['inspector_toggle_hint'] = 'Toggle the inline inspector (press Esc to exit).';
+$string['inspector_panel_title'] = 'Inline translation inspector';
+$string['inspector_open_manage'] = 'Open Manage UI';
+$string['inspector_copy_key'] = 'Copy key';
+$string['inspector_copied'] = 'Key copied to clipboard';
+$string['inspector_attr_content'] = 'Text';
+$string['inspector_attr_placeholder'] = 'Placeholder';
+$string['inspector_attr_title'] = 'Title';
+$string['inspector_attr_alt'] = 'Alt text';
+$string['inspector_attr_aria'] = 'Aria label';
+$string['inspector_empty_value'] = 'No value captured for this attribute yet.';
+$string['inspector_no_key'] = 'No translation key detected for this element.';
 
 // Glossary strings
 $string['glossary'] = 'Glossary';

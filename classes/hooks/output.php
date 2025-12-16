@@ -235,6 +235,33 @@ class output {
             'showInlineIndicators' => false,
         ];
 
+        $inspectorconfig = null;
+        if (self::can_use_inspector($page, $courseid)) {
+            $manageurl = (new \moodle_url('/local/xlate/manage.php'));
+            $inspectorconfig = [
+                'enabled' => true,
+                'manageUrl' => $manageurl->out(false),
+                'courseid' => $courseid,
+                'strings' => [
+                    'toggleLabel' => get_string('inspector_toggle_label', 'local_xlate'),
+                    'toggleActive' => get_string('inspector_toggle_active', 'local_xlate'),
+                    'toggleInactive' => get_string('inspector_toggle_inactive', 'local_xlate'),
+                    'toggleHint' => get_string('inspector_toggle_hint', 'local_xlate'),
+                    'panelTitle' => get_string('inspector_panel_title', 'local_xlate'),
+                    'openManage' => get_string('inspector_open_manage', 'local_xlate'),
+                    'copyKey' => get_string('inspector_copy_key', 'local_xlate'),
+                    'copied' => get_string('inspector_copied', 'local_xlate'),
+                    'attributeContent' => get_string('inspector_attr_content', 'local_xlate'),
+                    'attributePlaceholder' => get_string('inspector_attr_placeholder', 'local_xlate'),
+                    'attributeTitle' => get_string('inspector_attr_title', 'local_xlate'),
+                    'attributeAlt' => get_string('inspector_attr_alt', 'local_xlate'),
+                    'attributeAria' => get_string('inspector_attr_aria', 'local_xlate'),
+                    'emptyValue' => get_string('inspector_empty_value', 'local_xlate'),
+                    'noKey' => get_string('inspector_no_key', 'local_xlate')
+                ]
+            ];
+        }
+
         $script = '<script>'
             . '(function(){'
             . 'function initTranslator() {'
@@ -258,6 +285,26 @@ class output {
             . '})();'
             . '</script>';
         $hook->add_html($script);
+        if ($inspectorconfig) {
+            $hook->add_html('<script>'
+                . '(function(){'
+                . 'var cfg = ' . json_encode($inspectorconfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';'
+                . 'function initInspector(){'
+                . 'if (typeof require === "undefined") {setTimeout(initInspector, 100);return;}'
+                . 'require(["local_xlate/edit"], function(inspector){'
+                . 'if (inspector && typeof inspector.init === ' . json_encode('function') . ') {'
+                . 'inspector.init(cfg);'
+                . '}'
+                . '});'
+                . '}'
+                . 'if (document.readyState === "loading") {'
+                . 'document.addEventListener("DOMContentLoaded", initInspector);'
+                . '} else {'
+                . 'initInspector();'
+                . '}'
+                . '})();'
+                . '</script>');
+        }
         // Debug marker
         $hook->add_html('<!-- XLATE BODY HOOK FIRED -->');
 
@@ -329,6 +376,37 @@ class output {
         }
 
         $reason = 'ok';
+        return false;
+    }
+
+    /**
+     * Determine whether the current viewer can access the translation inspector overlay.
+     *
+     * @param moodle_page|null $page Active Moodle page instance.
+     * @param int $courseid Resolved course id for the page (0 when none).
+     * @return bool True when the inspector should be loaded.
+     */
+    private static function can_use_inspector(?moodle_page $page, int $courseid): bool {
+        $context = $page?->context ?? null;
+        if ($context && has_capability('local/xlate:manage', $context)) {
+            return true;
+        }
+
+        if (has_capability('local/xlate:manage', \context_system::instance())) {
+            return true;
+        }
+
+        if ($courseid > 0) {
+            try {
+                $coursecontext = \context_course::instance($courseid);
+                if (has_capability('local/xlate:managecourse', $coursecontext)) {
+                    return true;
+                }
+            } catch (\Exception $e) {
+                // Ignore missing course contexts and deny inspector access silently.
+            }
+        }
+
         return false;
     }
 

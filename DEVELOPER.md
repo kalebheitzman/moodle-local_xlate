@@ -234,6 +234,20 @@ Code notes:
   `local/xlate:viewui`.
 - Tracks coverage for each language listed in `enabled_languages`.
 
+### Translation Inspector Overlay (`amd/src/edit.js`)
+- Site managers (or course managers with `local/xlate:managecourse`) can toggle a
+  front-end inspector that highlights any element carrying `data-xlate-key-*`
+  attributes. The overlay renders a dashed outline, attribute chips (text,
+  placeholder, alt, etc.), and quick actions to copy the structural key or jump
+  straight into `/local/xlate/manage.php` pre-filtered to that key.
+- The inspector only loads on pages where the translator already runs (non-admin
+  layouts with capture enabled) and avoids Moodle's native edit mode, keeping UI
+  noise low. Hovering different nodes updates the callout in real time without
+  reflowing the page content.
+- All behaviour is implemented in `amd/src/edit.js` plus the capability gating in
+  `classes/hooks/output.php`. No extra AJAX is required—the overlay reads the same
+  `data-xlate-key-*` metadata injected by `translator.js`.
+
 ## 8. External Services
 Defined in `classes/external.php` and `db/services.php`:
 | Service | Capability | Description |
