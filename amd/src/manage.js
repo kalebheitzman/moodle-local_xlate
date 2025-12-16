@@ -137,7 +137,14 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
         if (loading) {
             if (!button.dataset.originalHtml) {
                 button.dataset.originalHtml = button.innerHTML;
-                button.dataset.originalLabel = button.textContent || 'Autotranslate';
+                var labelText = '';
+                if (button.textContent) {
+                    labelText = button.textContent.trim();
+                }
+                if (!labelText && button.getAttribute('aria-label')) {
+                    labelText = button.getAttribute('aria-label');
+                }
+                button.dataset.originalLabel = labelText || 'Autotranslate';
             }
             button.disabled = true;
             var label = button.dataset.originalLabel || '';
@@ -294,6 +301,46 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
             });
         });
     }
+
+    /**
+     * Enable Bootstrap tooltips for icon-only action buttons (Boost themes).
+     *
+     * @returns {void}
+     */
+    function enableIconTooltips() {
+        var buttons = document.querySelectorAll('.js-xlate-icon-button[data-bs-toggle="tooltip"]');
+        if (!buttons || !buttons.length || typeof require !== 'function') {
+            return;
+        }
+        require(['theme_boost/bootstrap'], function (Bootstrap) {
+            if (!Bootstrap) {
+                return;
+            }
+            var TooltipCtor = Bootstrap.Tooltip || (Bootstrap.default && Bootstrap.default.Tooltip);
+            if (!TooltipCtor) {
+                return;
+            }
+            Array.prototype.forEach.call(buttons, function (button) {
+                if (!button) {
+                    return;
+                }
+                try {
+                    if (typeof TooltipCtor.getInstance === 'function') {
+                        var instance = TooltipCtor.getInstance(button);
+                        if (instance) {
+                            instance.enable();
+                            return;
+                        }
+                    }
+                    new TooltipCtor(button);
+                } catch (e) {
+                    // Ignore tooltip instantiation errors to keep buttons usable.
+                }
+            });
+        }, function () {
+            // Non-Boost themes may not provide the Bootstrap AMD helper; fail silently.
+        });
+    }
     return {
         /**
          * Initialise the autotranslate UI bindings.
@@ -306,6 +353,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
         init: function (config) {
             attachDeleteHandlers(config);
             attachAutoTranslateHandlers(config);
+            enableIconTooltips();
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
 
             // If the server passed an active job id but the Manage page card or

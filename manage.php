@@ -190,6 +190,7 @@ $PAGE->set_context($pagecontext);
 // $PAGE->set_pagelayout('admin');
 $PAGE->set_title(get_string('admin_manage_translations', 'local_xlate'));
 $PAGE->set_heading(get_string('admin_manage_translations', 'local_xlate'));
+$PAGE->requires->css(new moodle_url('/local/xlate/styles.css'));
 
 // Determine enabled/source/target languages using the custom field helper and
 // sanitize any submitted language filter selections before the page URL is set
@@ -298,48 +299,51 @@ local_xlate_render_admin_nav('manage');
 // course-scoped autotranslate can run against the specified course.
 /* Autotranslate card intentionally disabled; preserve code for future use.
 if ($filter_courseid > 0) {
-    echo html_writer::start_div('card mb-4');
-    echo html_writer::div(get_string('autotranslate_heading', 'local_xlate'), 'card-header');
-    echo html_writer::start_div('card-body');
-    echo html_writer::start_div('row align-items-center');
-
-    echo html_writer::start_div('col-md-9');
-    echo html_writer::tag('label', get_string('autotranslate_target', 'local_xlate'), ['class' => 'me-3 mb-2 d-block']);
-    $options = [];
-    foreach ($enabledlangsarray as $langcode) {
-        if ($langcode === $displaysourcelang) {
-            continue;
-        }
-        $options[$langcode] = isset($installedlangs[$langcode]) ? $installedlangs[$langcode] . ' (' . $langcode . ')' : $langcode;
-    }
-    echo html_writer::start_div('d-flex flex-wrap gap-2', ['id' => 'local_xlate_target_container']);
-    if (empty($options)) {
-        echo html_writer::div(get_string('autotranslate_no_targets', 'local_xlate'), 'text-muted small');
-    } else {
-        foreach ($options as $langcode => $label) {
-            $id = 'local_xlate_target_' . $langcode;
-            $checked = in_array($langcode, $selectedtargets) ? 'checked' : null;
-            echo html_writer::start_div('form-check form-check-inline');
-            echo html_writer::empty_tag('input', [
-                'type' => 'checkbox',
-                'name' => 'local_xlate_target[]',
-                'id' => $id,
-                'value' => $langcode,
-                'class' => 'form-check-input',
+                $saveLabel = get_string('save_translation', 'local_xlate');
+                $autoLabel = get_string('auto_translate', 'local_xlate');
+                $deleteLabel = get_string('delete_translation', 'local_xlate');
+                echo html_writer::start_tag('div', [
+                    'class' => 'btn-group btn-group-sm',
+                    'role' => 'group'
+                ]);
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-floppy-o fa-fw d-flex align-items-center justify-content-center',
+                        'aria-hidden' => 'true'
+                    ]), [
+                    'type' => 'submit',
+                    'class' => 'btn btn-success d-inline-flex align-items-center justify-content-center js-xlate-icon-button',
+                    'title' => $saveLabel,
+                    'aria-label' => $saveLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top'
+                ]);
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-language fa-fw d-flex align-items-center justify-content-center',
+                        'aria-hidden' => 'true'
+                    ]), [
+                    'type' => 'button',
+                    'class' => 'btn btn-warning js-xlate-auto-translate js-xlate-icon-button d-inline-flex align-items-center justify-content-center',
+                    'title' => $autoLabel,
+                    'aria-label' => $autoLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top',
+                    'data-keyid' => $key->id,
+                    'data-lang' => $langcode
+                ]);
                 'checked' => $checked
-            ]);
-            echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
-            echo html_writer::end_div();
-        }
-    }
-    echo html_writer::end_div();
-
-    $progresshtml = '<div id="local_xlate_course_progress" style="display:none; margin-top:12px">'
-        . '<div class="progress" role="progressbar" aria-label="Autotranslate progress">'
-        . '<div id="local_xlate_course_progress_bar" class="progress-bar" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>'
-        . '</div>'
-        . '<div id="local_xlate_course_progress_text" style="margin-top:6px; font-size:90%">0 / 0</div>'
-        . '</div>';
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-trash fa-fw d-flex align-items-center justify-content-center',
+                        'aria-hidden' => 'true'
+                    ]), [
+                    'type' => 'button',
+                    'class' => 'btn btn-sm btn-danger ms-2 js-xlate-delete-translation js-xlate-icon-button d-inline-flex align-items-center justify-content-center',
+                    'title' => $deleteLabel,
+                    'aria-label' => $deleteLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top',
+                    'data-keyid' => $key->id,
+                    'data-lang' => $langcode
+                ]);
     echo $progresshtml;
 
     echo html_writer::end_div();
@@ -724,24 +728,51 @@ if (!empty($keys)) {
                 echo html_writer::tag('label', $review_input . ' ' . get_string('reviewed', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
                 echo html_writer::start_div('col-md-2');
+                $saveLabel = get_string('save_translation', 'local_xlate');
+                $autoLabel = get_string('auto_translate', 'local_xlate');
+                $deleteLabel = get_string('delete_translation', 'local_xlate');
                 echo html_writer::start_tag('div', [
                     'class' => 'btn-group btn-group-sm',
                     'role' => 'group'
                 ]);
-                echo html_writer::tag('button', get_string('save_translation', 'local_xlate'), [
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-floppy-o fa-fw',
+                        'aria-hidden' => 'true'
+                    ]), [
                     'type' => 'submit',
-                    'class' => 'btn btn-success'
+                    'class' => 'btn btn-success js-xlate-icon-button p-0',
+                    'title' => $saveLabel,
+                    'data-bs-title' => $saveLabel,
+                    'aria-label' => $saveLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top'
                 ]);
-                echo html_writer::tag('button', get_string('auto_translate', 'local_xlate'), [
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-language fa-fw',
+                        'aria-hidden' => 'true'
+                    ]), [
                     'type' => 'button',
-                    'class' => 'btn btn-warning js-xlate-auto-translate',
+                    'class' => 'btn btn-warning js-xlate-auto-translate js-xlate-icon-button p-0',
+                    'title' => $autoLabel,
+                    'data-bs-title' => $autoLabel,
+                    'aria-label' => $autoLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top',
                     'data-keyid' => $key->id,
                     'data-lang' => $langcode
                 ]);
                 echo html_writer::end_tag('div');
-                echo html_writer::tag('button', get_string('delete_translation', 'local_xlate'), [
+                echo html_writer::tag('button', html_writer::tag('span', '', [
+                        'class' => 'icon fa fa-trash fa-fw',
+                        'aria-hidden' => 'true'
+                    ]), [
                     'type' => 'button',
-                    'class' => 'btn btn-sm btn-danger ms-2 js-xlate-delete-translation',
+                    'class' => 'btn btn-sm btn-danger ms-2 js-xlate-delete-translation js-xlate-icon-button p-0',
+                    'title' => $deleteLabel,
+                    'data-bs-title' => $deleteLabel,
+                    'aria-label' => $deleteLabel,
+                    'data-bs-toggle' => 'tooltip',
+                    'data-bs-placement' => 'top',
                     'data-keyid' => $key->id,
                     'data-lang' => $langcode
                 ]);

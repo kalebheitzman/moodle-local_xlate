@@ -1,0 +1,19 @@
+/* Icon-only action buttons within the Manage UI */
+.js-xlate-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 0.5rem;
+}
+
+.js-xlate-icon-button .icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-size: 1.05rem;
+    margin: 0;
+}
