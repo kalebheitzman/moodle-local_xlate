@@ -131,8 +131,8 @@ define([], function () {
             '  transition:transform 0.2s ease;' +
             '}' +
             '.xlate-lang-switcher.xlate-open .xlate-lang-switcher__caret,' +
-            '.xlate-lang-switcher:hover .xlate-lang-switcher__caret,' +
-            '.xlate-lang-switcher:focus-within .xlate-lang-switcher__caret {' +
+            '.xlate-lang-switcher__control:hover .xlate-lang-switcher__caret,' +
+            '.xlate-lang-switcher__control:focus-within .xlate-lang-switcher__caret {' +
             '  transform:rotate(45deg);' +
             '}' +
             '.xlate-lang-switcher__list {' +
@@ -165,8 +165,8 @@ define([], function () {
             '  border-bottom-right-radius:0.65rem;' +
             '}' +
             '.xlate-lang-switcher.xlate-open .xlate-lang-switcher__list,' +
-            '.xlate-lang-switcher:hover .xlate-lang-switcher__list,' +
-            '.xlate-lang-switcher:focus-within .xlate-lang-switcher__list {' +
+            '.xlate-lang-switcher__control:hover .xlate-lang-switcher__list,' +
+            '.xlate-lang-switcher__control:focus-within .xlate-lang-switcher__list {' +
             '  opacity:1;' +
             '  transform:translateY(0);' +
             '  pointer-events:auto;' +
@@ -194,6 +194,27 @@ define([], function () {
             '.xlate-lang-switcher__link[aria-current="true"] {' +
             '  font-weight:600;' +
             '}' +
+            '.xlate-lang-switcher__pill {' +
+            '  border:none;' +
+            '  border-radius:1.5rem;' +
+            '  height:46px;' +
+            '  padding:0 1.25rem;' +
+            '  font-weight:600;' +
+            '  font-size:0.85rem;' +
+            '  display:inline-flex;' +
+            '  align-items:center;' +
+            '  gap:0.5rem;' +
+            '  cursor:pointer;' +
+            '  transition:background 0.2s ease, color 0.2s ease, opacity 0.2s ease;' +
+            '}' +
+            '.xlate-lang-switcher__pill:focus {' +
+            '  outline:2px solid #cbd5f5;' +
+            '  outline-offset:2px;' +
+            '}' +
+            '.xlate-lang-switcher__pill.is-disabled {' +
+            '  opacity:0.6;' +
+            '  cursor:not-allowed;' +
+            '}' +
             '.xlate-lang-switcher__notice {' +
             '  background:#374151;' +
             '  color:#f9fafb;' +
@@ -206,10 +227,6 @@ define([], function () {
             '  cursor:pointer;' +
             '  box-shadow:0 14px 32px rgba(15,23,42,0.2);' +
             '  transition:background 0.2s ease, color 0.2s ease, opacity 0.2s ease;' +
-            '}' +
-            '.xlate-lang-switcher__notice:focus {' +
-            '  outline:2px solid #cbd5f5;' +
-            '  outline-offset:2px;' +
             '}' +
             '.xlate-lang-switcher__notice:hover,' +
             '.xlate-lang-switcher__notice:focus {' +
@@ -225,6 +242,42 @@ define([], function () {
             '}' +
             '.xlate-lang-switcher__notice-label {' +
             '  white-space:nowrap;' +
+            '}' +
+            '.xlate-lang-switcher__inspector {' +
+            '  background:#111827;' +
+            '  color:#e0f2fe;' +
+            '  box-shadow:0 12px 28px rgba(15,23,42,0.35);' +
+            '  width:46px;' +
+            '  padding:0;' +
+            '  justify-content:center;' +
+            '}' +
+            '.xlate-lang-switcher__inspector.is-active {' +
+            '  background:#1d4ed8;' +
+            '  color:#e0f2fe;' +
+            '}' +
+            '.xlate-lang-switcher__inspector-icon {' +
+            '  width:1.6rem;' +
+            '  height:1.6rem;' +
+            '  border-radius:999px;' +
+            '  background:rgba(59,130,246,0.25);' +
+            '  display:inline-flex;' +
+            '  align-items:center;' +
+            '  justify-content:center;' +
+            '}' +
+            '.xlate-lang-switcher__inspector-icon svg {' +
+            '  width:1.05rem;' +
+            '  height:1.05rem;' +
+            '  fill:currentColor;' +
+            '  display:block;' +
+            '}' +
+            '.xlate-lang-switcher__inspector-icon svg + svg {' +
+            '  display:none;' +
+            '}' +
+            '.xlate-lang-switcher__inspector.is-active .xlate-lang-switcher__inspector-icon svg:first-child {' +
+            '  display:none;' +
+            '}' +
+            '.xlate-lang-switcher__inspector.is-active .xlate-lang-switcher__inspector-icon svg:last-child {' +
+            '  display:block;' +
             '}' +
             '.xlate-visually-hidden {' +
             '  position:absolute;' +
@@ -355,7 +408,7 @@ define([], function () {
         translationPillConfig = toggleConfig;
         translationPillButton = document.createElement('button');
         translationPillButton.type = 'button';
-        translationPillButton.className = 'xlate-lang-switcher__notice';
+        translationPillButton.className = 'xlate-lang-switcher__notice xlate-lang-switcher__pill';
         translationPillButton.setAttribute('aria-disabled', 'true');
         translationPillButton.setAttribute('aria-live', 'polite');
         translationPillButton.setAttribute('aria-pressed', 'false');
@@ -435,6 +488,79 @@ define([], function () {
     }
 
     /**
+     * Render the inspector toggle pill, wiring it to the inspector runtime.
+     * @param {Object} toggleConfig - Inspector toggle label/tooltip config.
+     * @returns {HTMLButtonElement|null} Rendered button when allowed.
+     */
+    function initInspectorPill(toggleConfig) {
+        if (!toggleConfig || !toggleConfig.enabled) {
+            return null;
+        }
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'xlate-lang-switcher__inspector xlate-lang-switcher__pill';
+        button.setAttribute('aria-pressed', 'false');
+        if (toggleConfig.tooltip) {
+            button.setAttribute('title', toggleConfig.tooltip);
+        }
+        button.setAttribute('aria-live', 'polite');
+        button.setAttribute('data-xlate-inspector-toggle', 'true');
+        var icon = document.createElement('span');
+        icon.className = 'xlate-lang-switcher__inspector-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        var NS = 'http://www.w3.org/2000/svg';
+        var buildPencilSvg = function () {
+            var svgEl = document.createElementNS(NS, 'svg');
+            svgEl.setAttribute('viewBox', '0 0 24 24');
+            svgEl.setAttribute('role', 'presentation');
+            var body = document.createElementNS(NS, 'path');
+            body.setAttribute('d', 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z');
+            var tip = document.createElementNS(NS, 'path');
+            tip.setAttribute('d', 'M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z');
+            svgEl.appendChild(body);
+            svgEl.appendChild(tip);
+            return svgEl;
+        };
+        var enableSvg = buildPencilSvg();
+        var disableSvg = buildPencilSvg();
+        var slash = document.createElementNS(NS, 'path');
+        slash.setAttribute('d', 'M5 19L19 5');
+        slash.setAttribute('fill', 'none');
+        slash.setAttribute('stroke', 'currentColor');
+        slash.setAttribute('stroke-width', '2');
+        slash.setAttribute('stroke-linecap', 'round');
+        disableSvg.appendChild(slash);
+        icon.appendChild(enableSvg);
+        icon.appendChild(disableSvg);
+        button.appendChild(icon);
+        var srLabel = document.createElement('span');
+        srLabel.className = 'xlate-visually-hidden';
+        var initialLabel = toggleConfig.inactiveLabel || toggleConfig.label || toggleConfig.ariaLabel || 'Enable inspector';
+        srLabel.textContent = initialLabel;
+        button.appendChild(srLabel);
+        button.setAttribute('aria-label', initialLabel);
+
+        if (typeof require === 'function') {
+            require(['local_xlate/edit'], function (inspector) {
+                if (!inspector || typeof inspector.registerToggle !== 'function') {
+                    return;
+                }
+                inspector.registerToggle(button, {
+                    render: function (active) {
+                        var next = active ?
+                            (toggleConfig.activeLabel || toggleConfig.label || '') :
+                            (toggleConfig.inactiveLabel || toggleConfig.label || '');
+                        srLabel.textContent = next;
+                        button.setAttribute('aria-label', next || toggleConfig.label || 'Inspector');
+                    }
+                });
+            });
+        }
+
+        return button;
+    }
+
+    /**
      * Initialise the floating language switcher with provided config.
     * @param {{
     *   enabled:boolean,
@@ -477,6 +603,14 @@ define([], function () {
         container.className = 'xlate-lang-switcher';
         var containerLabel = (config.ariaLabel || 'Language selector');
         container.setAttribute('aria-label', containerLabel);
+
+        var inspectorButton = null;
+        if (config.inspectorToggle && config.inspectorToggle.enabled) {
+            inspectorButton = initInspectorPill(config.inspectorToggle);
+            if (inspectorButton) {
+                container.appendChild(inspectorButton);
+            }
+        }
 
         var toggle = document.createElement('button');
         toggle.type = 'button';
@@ -569,7 +703,8 @@ define([], function () {
         setDebugState({
             stage: 'rendered',
             languages: config.languages.length,
-            translationPill: !!(config.translationToggle && config.translationToggle.enabled)
+            translationPill: !!(config.translationToggle && config.translationToggle.enabled),
+            inspectorPill: !!(config.inspectorToggle && config.inspectorToggle.enabled)
         });
 
         outsideClickHandler = function (event) {

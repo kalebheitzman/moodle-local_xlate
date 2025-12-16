@@ -1,10 +1,10 @@
 // AMD module providing an inline translation inspector overlay for captured keys.
 // Displays a dashed highlight plus controls to jump to Manage UI while browsing.
 /* eslint-disable jsdoc/require-jsdoc */
-define([], function() {
+define([], function () {
     var ATTR_KEY_PREFIX = 'data-xlate-key-';
     var ATTRIBUTE_TYPES = ['content', 'placeholder', 'title', 'alt', 'aria-label'];
-    var SELECTOR = ATTRIBUTE_TYPES.map(function(attr) {
+    var SELECTOR = ATTRIBUTE_TYPES.map(function (attr) {
         return '[' + ATTR_KEY_PREFIX + attr + ']';
     }).join(',');
     var STICKY_PADDING = 24;
@@ -13,12 +13,16 @@ define([], function() {
             enabled: false,
             manageUrl: '',
             courseid: 0,
-            strings: {}
+            strings: {},
+            inlineToggle: false
         },
         active: false,
         currentElement: null,
         currentAttribute: null,
-        attributes: []
+        attributes: [],
+        ready: false,
+        hasExternalToggle: false,
+        toggleRenderer: null
     };
     var NODES = {
         toggle: null,
@@ -43,9 +47,13 @@ define([], function() {
         if (!STATE.config.enabled) {
             return;
         }
-        ready(function() {
+        ready(function () {
             injectStyles();
-            buildToggle();
+            if (!STATE.hasExternalToggle && !STATE.config.inlineToggle) {
+                buildToggle();
+            }
+            STATE.ready = true;
+            updateToggleVisuals();
         });
     }
 
@@ -219,7 +227,7 @@ define([], function() {
     }
 
     function buildToggle() {
-        if (NODES.toggle) {
+        if (STATE.hasExternalToggle || NODES.toggle) {
             return;
         }
         var button = document.createElement('button');
@@ -229,16 +237,42 @@ define([], function() {
         button.setAttribute('aria-pressed', 'false');
         button.setAttribute('aria-label', STATE.config.strings.toggleLabel || 'Translation inspector');
         button.title = STATE.config.strings.toggleHint || '';
-        button.addEventListener('click', function(event) {
-            event.preventDefault();
-            if (STATE.active) {
-                deactivateInspector();
-            } else {
-                activateInspector();
-            }
-        });
+        button.setAttribute('data-xlate-inspector-toggle', 'true');
+        attachToggleButton(button);
+        STATE.toggleRenderer = function (active) {
+            var activeText = STATE.config.strings.toggleActive || 'Inspector enabled';
+            var inactiveText = STATE.config.strings.toggleInactive || 'Enable inspector';
+            button.textContent = active ? activeText : inactiveText;
+        };
         NODES.toggle = button;
         document.body.appendChild(button);
+        updateToggleVisuals();
+    }
+
+    function attachToggleButton(button) {
+        if (!button) {
+            return;
+        }
+        button.addEventListener('click', handleToggleClick);
+    }
+
+    function detachToggleButton(button) {
+        if (!button) {
+            return;
+        }
+        button.removeEventListener('click', handleToggleClick);
+    }
+
+    function handleToggleClick(event) {
+        event.preventDefault();
+        if (!STATE.ready || !STATE.config.enabled) {
+            return;
+        }
+        if (STATE.active) {
+            deactivateInspector();
+        } else {
+            activateInspector();
+        }
     }
 
     function activateInspector() {
@@ -275,16 +309,31 @@ define([], function() {
         if (!NODES.toggle) {
             return;
         }
-        var activeText = STATE.config.strings.toggleActive || 'Inspector enabled';
-        var inactiveText = STATE.config.strings.toggleInactive || 'Enable inspector';
+        var button = NODES.toggle;
         if (STATE.active) {
-            NODES.toggle.classList.add('is-active');
-            NODES.toggle.textContent = activeText;
-            NODES.toggle.setAttribute('aria-pressed', 'true');
+            button.classList.add('is-active');
+            button.setAttribute('aria-pressed', 'true');
         } else {
-            NODES.toggle.classList.remove('is-active');
-            NODES.toggle.textContent = inactiveText;
-            NODES.toggle.setAttribute('aria-pressed', 'false');
+            button.classList.remove('is-active');
+            button.setAttribute('aria-pressed', 'false');
+        }
+        if (button.classList) {
+            if (!STATE.ready) {
+                button.classList.add('is-disabled');
+            } else {
+                button.classList.remove('is-disabled');
+            }
+        }
+        if (typeof button.disabled !== 'undefined') {
+            button.disabled = !STATE.ready;
+        }
+        button.setAttribute('aria-disabled', STATE.ready ? 'false' : 'true');
+        if (STATE.toggleRenderer) {
+            STATE.toggleRenderer(STATE.active);
+        } else {
+            var activeText = STATE.config.strings.toggleActive || 'Inspector enabled';
+            var inactiveText = STATE.config.strings.toggleInactive || 'Enable inspector';
+            button.textContent = STATE.active ? activeText : inactiveText;
         }
     }
 
@@ -351,7 +400,8 @@ define([], function() {
         return !!(
             node.closest('.xlate-inspector-toolbar') ||
             node.closest('.xlate-inspector-callout') ||
-            node.closest('.xlate-inspector-toggle')
+            node.closest('.xlate-inspector-toggle') ||
+            node.closest('[data-xlate-inspector-toggle]')
         );
     }
 
@@ -502,7 +552,7 @@ define([], function() {
         toolbar.innerHTML = '';
         var attributes = document.createElement('div');
         attributes.className = 'xlate-inspector-attributes';
-        STATE.attributes.forEach(function(attr) {
+        STATE.attributes.forEach(function (attr) {
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'xlate-inspector-attr';
@@ -511,7 +561,7 @@ define([], function() {
             }
             btn.textContent = getAttributeLabel(attr.type);
             btn.dataset.xlateAttr = attr.type;
-            btn.addEventListener('click', function(event) {
+            btn.addEventListener('click', function (event) {
                 event.preventDefault();
                 STATE.currentAttribute = attr.type;
                 refreshOverlay();
@@ -532,7 +582,7 @@ define([], function() {
         copyBtn.type = 'button';
         copyBtn.className = 'xlate-inspector-action';
         copyBtn.textContent = STATE.config.strings.copyKey || 'Copy key';
-        copyBtn.addEventListener('click', function(event) {
+        copyBtn.addEventListener('click', function (event) {
             event.preventDefault();
             if (current && current.key) {
                 copyToClipboard(current.key);
@@ -655,9 +705,9 @@ define([], function() {
             return;
         }
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(value).then(function() {
+            navigator.clipboard.writeText(value).then(function () {
                 showToast(STATE.config.strings.copied || 'Key copied');
-            }).catch(function() {
+            }).catch(function () {
                 fallbackCopy(value);
             });
             return;
@@ -692,7 +742,7 @@ define([], function() {
         toast.textContent = message;
         toast.classList.add('is-visible');
         window.clearTimeout(showToast.timeout);
-        showToast.timeout = window.setTimeout(function() {
+        showToast.timeout = window.setTimeout(function () {
             toast.classList.remove('is-visible');
         }, 2000);
     }
@@ -714,7 +764,30 @@ define([], function() {
         node.classList.remove('is-visible');
     }
 
+    function registerToggle(button, options) {
+        if (!button) {
+            return;
+        }
+        STATE.hasExternalToggle = true;
+        if (NODES.toggle && NODES.toggle !== button) {
+            if (NODES.toggle.parentNode) {
+                NODES.toggle.parentNode.removeChild(NODES.toggle);
+            }
+            detachToggleButton(NODES.toggle);
+        }
+        NODES.toggle = button;
+        button.setAttribute('data-xlate-inspector-toggle', 'true');
+        if (options && typeof options.render === 'function') {
+            STATE.toggleRenderer = options.render;
+        } else {
+            STATE.toggleRenderer = null;
+        }
+        attachToggleButton(button);
+        updateToggleVisuals();
+    }
+
     return {
-        init: init
+        init: init,
+        registerToggle: registerToggle
     };
 });

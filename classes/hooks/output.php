@@ -177,6 +177,9 @@ class output {
             'languages' => $languageentries,
             'ariaLabel' => get_string('langswitcher_aria_label', 'local_xlate'),
             'toggleAriaLabel' => get_string('langswitcher_toggle_aria_label', 'local_xlate', (object)['language' => $currentlanguage]),
+            'inspectorToggle' => [
+                'enabled' => false,
+            ],
             'translationToggle' => [
                 'enabled' => $istargetlang,
                 'label' => get_string('langswitcher_notice_label', 'local_xlate'),
@@ -187,6 +190,43 @@ class output {
                 'help' => get_string('langswitcher_notice_help', 'local_xlate')
             ]
         ];
+
+        $inspectorconfig = null;
+        if (self::can_use_inspector($page, $courseid)) {
+            $manageurl = (new \moodle_url('/local/xlate/manage.php'));
+            $inspectorconfig = [
+                'enabled' => true,
+                'manageUrl' => $manageurl->out(false),
+                'courseid' => $courseid,
+                'inlineToggle' => true,
+                'strings' => [
+                    'toggleLabel' => get_string('inspector_toggle_label', 'local_xlate'),
+                    'toggleActive' => get_string('inspector_toggle_active', 'local_xlate'),
+                    'toggleInactive' => get_string('inspector_toggle_inactive', 'local_xlate'),
+                    'toggleHint' => get_string('inspector_toggle_hint', 'local_xlate'),
+                    'panelTitle' => get_string('inspector_panel_title', 'local_xlate'),
+                    'openManage' => get_string('inspector_open_manage', 'local_xlate'),
+                    'copyKey' => get_string('inspector_copy_key', 'local_xlate'),
+                    'copied' => get_string('inspector_copied', 'local_xlate'),
+                    'attributeContent' => get_string('inspector_attr_content', 'local_xlate'),
+                    'attributePlaceholder' => get_string('inspector_attr_placeholder', 'local_xlate'),
+                    'attributeTitle' => get_string('inspector_attr_title', 'local_xlate'),
+                    'attributeAlt' => get_string('inspector_attr_alt', 'local_xlate'),
+                    'attributeAria' => get_string('inspector_attr_aria', 'local_xlate'),
+                    'emptyValue' => get_string('inspector_empty_value', 'local_xlate'),
+                    'noKey' => get_string('inspector_no_key', 'local_xlate')
+                ]
+            ];
+
+            $language_switcher['inspectorToggle'] = [
+                'enabled' => true,
+                'label' => get_string('langswitcher_inspector_label', 'local_xlate'),
+                'inactiveLabel' => get_string('langswitcher_inspector_inactive', 'local_xlate'),
+                'activeLabel' => get_string('langswitcher_inspector_active', 'local_xlate'),
+                'ariaLabel' => get_string('langswitcher_inspector_aria_label', 'local_xlate'),
+                'tooltip' => get_string('inspector_toggle_hint', 'local_xlate'),
+            ];
+        }
 
         // Output capture/exclude selectors as global JS variables
         $capture_selectors = get_config('local_xlate', 'capture_selectors');
@@ -234,33 +274,6 @@ class output {
             'languageSwitcher' => $language_switcher,
             'showInlineIndicators' => false,
         ];
-
-        $inspectorconfig = null;
-        if (self::can_use_inspector($page, $courseid)) {
-            $manageurl = (new \moodle_url('/local/xlate/manage.php'));
-            $inspectorconfig = [
-                'enabled' => true,
-                'manageUrl' => $manageurl->out(false),
-                'courseid' => $courseid,
-                'strings' => [
-                    'toggleLabel' => get_string('inspector_toggle_label', 'local_xlate'),
-                    'toggleActive' => get_string('inspector_toggle_active', 'local_xlate'),
-                    'toggleInactive' => get_string('inspector_toggle_inactive', 'local_xlate'),
-                    'toggleHint' => get_string('inspector_toggle_hint', 'local_xlate'),
-                    'panelTitle' => get_string('inspector_panel_title', 'local_xlate'),
-                    'openManage' => get_string('inspector_open_manage', 'local_xlate'),
-                    'copyKey' => get_string('inspector_copy_key', 'local_xlate'),
-                    'copied' => get_string('inspector_copied', 'local_xlate'),
-                    'attributeContent' => get_string('inspector_attr_content', 'local_xlate'),
-                    'attributePlaceholder' => get_string('inspector_attr_placeholder', 'local_xlate'),
-                    'attributeTitle' => get_string('inspector_attr_title', 'local_xlate'),
-                    'attributeAlt' => get_string('inspector_attr_alt', 'local_xlate'),
-                    'attributeAria' => get_string('inspector_attr_aria', 'local_xlate'),
-                    'emptyValue' => get_string('inspector_empty_value', 'local_xlate'),
-                    'noKey' => get_string('inspector_no_key', 'local_xlate')
-                ]
-            ];
-        }
 
         $script = '<script>'
             . '(function(){'
