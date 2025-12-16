@@ -803,8 +803,14 @@ $amdconfig = [
     'batchsize' => 50,
     'strings' => [
         'confirmDelete' => get_string('confirm_delete_translation', 'local_xlate'),
+        'confirmDeleteTitle' => get_string('confirm_delete_title', 'local_xlate'),
+        'confirmDeleteAction' => get_string('confirm_delete_action', 'local_xlate'),
+        'confirmDeleteCancel' => get_string('cancel'),
         'deleteFailed' => get_string('delete_failed', 'local_xlate'),
-        'deleteSuccess' => get_string('translation_deleted', 'local_xlate')
+        'deleteSuccess' => get_string('translation_deleted', 'local_xlate'),
+        'autoTranslateFailed' => get_string('autotranslate_inline_failed', 'local_xlate'),
+        'autoTranslateReady' => get_string('autotranslate_inline_success', 'local_xlate'),
+        'autoTranslateSaved' => get_string('auto_translate_saved', 'local_xlate')
     ]
 ];
 

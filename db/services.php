@@ -94,6 +94,16 @@ $functions = [
         'capabilities' => 'local/xlate:manage',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ],
+    'local_xlate_autotranslate_key' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'autotranslate_key',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Fetch an inline autotranslation for a single key',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => '',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ],
     'local_xlate_autotranslate_progress' => [
         'classname' => 'local_xlate_external',
         'methodname' => 'autotranslate_progress',

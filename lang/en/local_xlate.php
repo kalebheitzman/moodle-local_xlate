@@ -42,10 +42,17 @@ $string['inactive'] = 'Inactive';
 $string['reviewed'] = 'Reviewed';
 $string['save_translation'] = 'Save';
 $string['auto_translate'] = 'Autotranslate';
+$string['auto_translate_saved'] = 'Autotranslation saved and marked active.';
 $string['delete_translation'] = 'Delete';
 $string['translation_deleted'] = 'Translation deleted.';
 $string['delete_failed'] = 'Unable to delete translation.';
 $string['confirm_delete_translation'] = 'Delete this translation?';
+$string['confirm_delete_title'] = 'Delete translation';
+$string['confirm_delete_action'] = 'Confirm';
+$string['autotranslate_inline_failed'] = 'Unable to autotranslate this key right now. Please try again.';
+$string['autotranslate_inline_success'] = 'Autotranslation added. Review the text and click Save to keep it.';
+$string['autotranslate_disabled'] = 'Autotranslation is disabled for this site.';
+$string['autotranslate_failed'] = 'Autotranslate request failed.';
 // Automatic key capture strings removed because the info card was removed from the UI.
 
 // Success/error messages for management

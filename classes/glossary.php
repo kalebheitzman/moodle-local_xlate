@@ -53,6 +53,48 @@ class glossary {
     }
 
     /**
+     * Build glossary term/replacement pairs for a source/target language combination.
+     *
+     * @param string $source_lang Source language code.
+     * @param string $target_lang Target language code.
+     * @param int $limit Maximum number of entries to return.
+     * @return array<int,array{term:string,replacement:string}> Glossary payload suitable for translation prompts.
+     */
+    public static function get_pairs_for_language_pair(string $source_lang, string $target_lang, int $limit = 200): array {
+        global $DB;
+
+        $source_lang = trim($source_lang);
+        $target_lang = trim($target_lang);
+        if ($source_lang === '' || $target_lang === '') {
+            return [];
+        }
+
+        $sql = "SELECT id, source_text, target_text
+                  FROM {local_xlate_glossary}
+                 WHERE source_lang = :s AND target_lang = :t
+              ORDER BY id ASC";
+        $records = $DB->get_records_sql($sql, ['s' => $source_lang, 't' => $target_lang], 0, $limit);
+
+        $pairs = [];
+        foreach ($records as $record) {
+            $term = trim((string)($record->source_text ?? ''));
+            $replacement = trim((string)($record->target_text ?? ''));
+            if ($term === '' || $replacement === '') {
+                continue;
+            }
+            $pairs[] = [
+                'term' => $term,
+                'replacement' => $replacement
+            ];
+            if (count($pairs) >= $limit) {
+                break;
+            }
+        }
+
+        return $pairs;
+    }
+
+    /**
      * Insert a new glossary entry.
      *
      * @param array|\stdClass $data Row fields matching the glossary table schema.

@@ -22,6 +22,29 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     }
 
     /**
+     * Find the closest form ancestor for an element (with IE fallback).
+     *
+     * @param {HTMLElement} element Origin element.
+     * @returns {HTMLFormElement|null} Resolved form element.
+     */
+    function findParentForm(element) {
+        if (!element) {
+            return null;
+        }
+        if (typeof element.closest === 'function') {
+            return element.closest('form');
+        }
+        var node = element;
+        while (node && node.tagName && node.tagName.toLowerCase() !== 'form') {
+            node = node.parentNode;
+        }
+        if (node && node.tagName && node.tagName.toLowerCase() === 'form') {
+            return node;
+        }
+        return null;
+    }
+
+    /**
      * Clear translation input/checkbox fields tied to a delete button.
      *
      * @param {HTMLElement} button Delete button element.
@@ -31,14 +54,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
         if (!button) {
             return;
         }
-        var form = button.closest ? button.closest('form') : null;
-        if (!form) {
-            var node = button.parentNode;
-            while (node && node.tagName && node.tagName.toLowerCase() !== 'form') {
-                node = node.parentNode;
-            }
-            form = node;
-        }
+        var form = findParentForm(button);
         if (!form) {
             return;
         }
@@ -108,6 +124,122 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     }
 
     /**
+     * Swap button text for a spinner while an action is running.
+     *
+     * @param {HTMLButtonElement} button Target button.
+     * @param {boolean} loading Whether to show loading state.
+     * @returns {void}
+     */
+    function toggleButtonLoading(button, loading) {
+        if (!button) {
+            return;
+        }
+        if (loading) {
+            if (!button.dataset.originalHtml) {
+                button.dataset.originalHtml = button.innerHTML;
+                button.dataset.originalLabel = button.textContent || 'Autotranslate';
+            }
+            button.disabled = true;
+            var label = button.dataset.originalLabel || '';
+            var spinner = '' +
+                '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>';
+            button.innerHTML = spinner + label;
+        } else {
+            if (button.dataset.originalHtml) {
+                button.innerHTML = button.dataset.originalHtml;
+                delete button.dataset.originalHtml;
+            }
+            if (button.dataset.originalLabel) {
+                delete button.dataset.originalLabel;
+            }
+            button.disabled = false;
+        }
+    }
+
+    /**
+     * Request an inline autotranslation for the button's key/language pair.
+     *
+     * @param {HTMLButtonElement} button Autotranslate button element.
+     * @param {Object} config Module configuration.
+     * @returns {void}
+     */
+    function requestAutotranslation(button, config) {
+        if (!button) {
+            return;
+        }
+        var keyid = parseInt(button.getAttribute('data-keyid'), 10) || 0;
+        var targetlang = button.getAttribute('data-lang') || '';
+        if (!keyid || !targetlang) {
+            return;
+        }
+        var form = findParentForm(button);
+        var textarea = form ? form.querySelector('[name="translation"]') : null;
+        var statusToggle = form ? form.querySelector('input[name="status"]') : null;
+        var reviewedToggle = form ? form.querySelector('input[name="reviewed"]') : null;
+
+        var args = {
+            keyid: keyid,
+            targetlang: targetlang,
+            autosave: true
+        };
+        var courseid = (config && config.courseid) ? parseInt(config.courseid, 10) || 0 : 0;
+        if (courseid > 0) {
+            args.courseid = courseid;
+        }
+
+        toggleButtonLoading(button, true);
+
+        Ajax.call([{
+            methodname: 'local_xlate_autotranslate_key',
+            args: args
+        }])[0].then(function (res) {
+            toggleButtonLoading(button, false);
+            if (!(res && res.success && typeof res.translation === 'string')) {
+                var failureMessage = getString(config, 'autoTranslateFailed', 'Autotranslate failed.');
+                if (res && res.error) {
+                    failureMessage += '\n' + res.error;
+                }
+                notification.alert(failureMessage);
+                return;
+            }
+            if (textarea) {
+                textarea.value = res.translation;
+                try {
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                } catch (e) {
+                    var evt = document.createEvent('Event');
+                    evt.initEvent('input', true, true);
+                    textarea.dispatchEvent(evt);
+                }
+            }
+            if (reviewedToggle) {
+                reviewedToggle.checked = false;
+            }
+            if (statusToggle) {
+                statusToggle.checked = true;
+            }
+            var successKey = res && res.saved ? 'autoTranslateSaved' : 'autoTranslateReady';
+            var successFallback = successKey === 'autoTranslateSaved'
+                ? 'Autotranslation saved and marked active.'
+                : 'Autotranslation inserted. Review and save.';
+            var successMessage = getString(config, successKey, successFallback);
+            notification.addNotification({
+                message: successMessage,
+                type: 'success'
+            });
+        }).catch(function (err) {
+            toggleButtonLoading(button, false);
+            var failureMessage = getString(config, 'autoTranslateFailed', 'Autotranslate failed.');
+            if (err && err.message) {
+                failureMessage += '\n' + err.message;
+            } else if (err && err.error) {
+                failureMessage += '\n' + err.error;
+            }
+            notification.alert(failureMessage);
+        });
+    }
+
+    /**
      * Wire up delete buttons to the AJAX workflow.
      *
      * @param {Object} config Module configuration payload.
@@ -119,12 +251,46 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
             return;
         }
         var confirmMessage = getString(config, 'confirmDelete', 'Delete this translation?');
+        var confirmTitle = getString(config, 'confirmDeleteTitle', 'Delete translation');
+        var confirmAction = getString(config, 'confirmDeleteAction', 'Confirm');
+        var cancelLabel = getString(config, 'confirmDeleteCancel', 'Cancel');
         Array.prototype.forEach.call(buttons, function (button) {
             button.addEventListener('click', function (event) {
                 event.preventDefault();
-                notification.confirm(confirmMessage, function () {
-                    deleteTranslation(button, config);
-                });
+                if (button.disabled) {
+                    return;
+                }
+                notification.confirm(
+                    confirmTitle,
+                    confirmMessage,
+                    confirmAction,
+                    cancelLabel,
+                    function () {
+                        deleteTranslation(button, config);
+                    }
+                );
+            });
+        });
+    }
+
+    /**
+     * Wire autotranslate buttons to inline translation requests.
+     *
+     * @param {Object} config Module configuration payload.
+     * @returns {void}
+     */
+    function attachAutoTranslateHandlers(config) {
+        var buttons = document.querySelectorAll('.js-xlate-auto-translate');
+        if (!buttons || !buttons.length) {
+            return;
+        }
+        Array.prototype.forEach.call(buttons, function (button) {
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
+                if (button.disabled) {
+                    return;
+                }
+                requestAutotranslation(button, config);
             });
         });
     }
@@ -139,6 +305,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
          */
         init: function (config) {
             attachDeleteHandlers(config);
+            attachAutoTranslateHandlers(config);
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
 
             // If the server passed an active job id but the Manage page card or

@@ -514,6 +514,189 @@ class local_xlate_external extends external_api {
     }
 
     /**
+     * Describe the parameters accepted by {@see self::autotranslate_key()}.
+     *
+     * @return external_function_parameters Parameter schema for inline translations.
+     */
+    public static function autotranslate_key_parameters() {
+        return new external_function_parameters([
+            'keyid' => new external_value(PARAM_INT, 'Translation key id'),
+            'targetlang' => new external_value(PARAM_ALPHANUMEXT, 'Target language code'),
+            'courseid' => new external_value(PARAM_INT, 'Optional course id that selected the key', VALUE_DEFAULT, 0),
+            'autosave' => new external_value(PARAM_BOOL, 'Persist translation immediately with status=active', VALUE_DEFAULT, 0)
+        ]);
+    }
+
+    /**
+     * Generate an inline autotranslation for a single key/language pair.
+     *
+     * Invoked by the Manage UI to provide instant AI proposals without
+     * persisting data. Validates capabilities (site or course scoped),
+     * ensures the target language is enabled, then calls the translation
+     * backend synchronously and returns the suggested text.
+     *
+     * @param int $keyid Translation key identifier.
+     * @param string $targetlang Target language code.
+    * @param int $courseid Optional course context for capability/lang defaults.
+    * @param bool $autosave When true, persist the translated text immediately as active.
+     * @return array{success:bool,translation:string,targetlang:string}
+     */
+    public static function autotranslate_key($keyid, $targetlang, $courseid = 0, $autosave = 0) {
+        global $DB, $CFG;
+
+        $params = self::validate_parameters(self::autotranslate_key_parameters(), [
+            'keyid' => $keyid,
+            'targetlang' => $targetlang,
+            'courseid' => $courseid,
+            'autosave' => $autosave
+        ]);
+
+        $systemcontext = context_system::instance();
+        self::validate_context($systemcontext);
+
+        $coursecontext = null;
+        $resolvedcourseid = (int)$params['courseid'];
+        if ($resolvedcourseid > 0) {
+            try {
+                $course = get_course($resolvedcourseid);
+                $coursecontext = \context_course::instance($course->id);
+            } catch (\Exception $e) {
+                $resolvedcourseid = 0;
+                $coursecontext = null;
+            }
+        }
+
+        if ($coursecontext && has_capability('local/xlate:managecourse', $coursecontext)) {
+            require_capability('local/xlate:managecourse', $coursecontext);
+        } else {
+            require_capability('local/xlate:manage', $systemcontext);
+        }
+
+        if (!get_config('local_xlate', 'autotranslate_enabled')) {
+            throw new \moodle_exception('autotranslate_disabled', 'local_xlate');
+        }
+
+        $key = $DB->get_record('local_xlate_key', ['id' => (int)$params['keyid']]);
+        if (!$key) {
+            throw new \invalid_parameter_exception('Invalid translation key.');
+        }
+
+        $source = (string)($key->source ?? '');
+        if ($source === '') {
+            throw new \invalid_parameter_exception('Translation key is missing source text.');
+        }
+
+        $langconfig = \local_xlate\customfield_helper::resolve_languages($resolvedcourseid ?: null);
+        $sourcelang = $langconfig['source'] ?? $CFG->lang;
+        $enabledlangs = $langconfig['enabled'] ?? [];
+
+        $normalizedtarget = \core_text::strtolower(trim($params['targetlang']));
+        if ($normalizedtarget === '') {
+            throw new \invalid_parameter_exception('Target language is required.');
+        }
+
+        $installedlangs = array_keys(get_string_manager()->get_list_of_translations());
+        if (!in_array($normalizedtarget, $installedlangs, true)) {
+            throw new \invalid_parameter_exception('Unknown target language.');
+        }
+
+        $normalizedenabled = array_map(function ($code) {
+            return \core_text::strtolower($code);
+        }, $enabledlangs);
+        if (!in_array($normalizedtarget, $normalizedenabled, true)) {
+            throw new \invalid_parameter_exception('Target language is not enabled on this page.');
+        }
+
+        if (\core_text::strtolower($sourcelang) === $normalizedtarget) {
+            throw new \invalid_parameter_exception('Target language must differ from source language.');
+        }
+
+        $items = [[
+            'id' => (string)$key->xkey,
+            'component' => (string)$key->component,
+            'key' => (string)$key->xkey,
+            'source_text' => $source,
+            'courseid' => $resolvedcourseid,
+            'context' => ''
+        ]];
+
+        $glossarypairs = \local_xlate\glossary::get_pairs_for_language_pair($sourcelang, $normalizedtarget, 200);
+
+        $requestid = 'inline_' . $key->id . '_' . $normalizedtarget . '_' . substr(md5(microtime(true)), 0, 8);
+
+        try {
+            $result = \local_xlate\translation\backend::translate_batch(
+                $requestid,
+                $sourcelang,
+                $normalizedtarget,
+                $items,
+                $glossarypairs,
+                []
+            );
+        } catch (\Exception $e) {
+            throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, $e->getMessage());
+        }
+
+        if (empty($result) || empty($result['ok']) || empty($result['results']) || !is_array($result['results'])) {
+            $errors = '';
+            if (!empty($result['errors'])) {
+                $errors = is_array($result['errors']) ? implode(', ', $result['errors']) : (string)$result['errors'];
+            }
+            throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, $errors);
+        }
+
+        $translated = '';
+        $returnedlang = $normalizedtarget;
+        foreach ($result['results'] as $row) {
+            $rowid = isset($row['id']) ? (string)$row['id'] : '';
+            if ($rowid === (string)$key->xkey || $rowid === (string)$key->id) {
+                $translated = isset($row['translated']) ? (string)$row['translated'] : '';
+                if (!empty($row['lang'])) {
+                    $returnedlang = (string)$row['lang'];
+                }
+                break;
+            }
+        }
+
+        if ($translated === '') {
+            throw new \moodle_exception('autotranslate_failed', 'local_xlate');
+        }
+
+        $saved = false;
+        if (!empty($params['autosave'])) {
+            try {
+                \local_xlate\local\api::save_translation((int)$key->id, $normalizedtarget, $translated, 1, 0);
+                $saved = true;
+            } catch (\Throwable $e) {
+                throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, 'Unable to save translation: ' . $e->getMessage());
+            }
+        }
+
+        return [
+            'success' => true,
+            'translation' => $translated,
+            'targetlang' => $returnedlang,
+            'reviewed' => false,
+            'saved' => $saved
+        ];
+    }
+
+    /**
+     * Describe the response structure returned by {@see self::autotranslate_key()}.
+     *
+     * @return external_single_structure API response definition for clients.
+     */
+    public static function autotranslate_key_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success flag'),
+            'translation' => new external_value(PARAM_TEXT, 'Suggested translation'),
+            'targetlang' => new external_value(PARAM_ALPHANUMEXT, 'Target language code'),
+            'reviewed' => new external_value(PARAM_BOOL, 'Machine translations are not reviewed'),
+            'saved' => new external_value(PARAM_BOOL, 'True when autosave requested and succeeded', VALUE_DEFAULT, 0)
+        ]);
+    }
+
+    /**
      * Describe the parameters accepted by {@see self::autotranslate_course_enqueue()}.
      *
      * @return external_function_parameters Parameter schema covering course id and options.

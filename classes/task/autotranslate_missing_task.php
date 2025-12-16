@@ -124,12 +124,14 @@ class autotranslate_missing_task extends scheduled_task {
                         ];
                     }
 
+                    $glossarypairs = \local_xlate\glossary::get_pairs_for_language_pair($sourcelang, $targetlang, 200);
+
                     $result = \local_xlate\translation\backend::translate_batch(
                         'course-auto-' . $courseid . '-' . $targetlang . '-' . uniqid('', true),
                         $sourcelang,
                         $targetlang,
                         $items,
-                        [],
+                        $glossarypairs,
                         []
                     );
 
