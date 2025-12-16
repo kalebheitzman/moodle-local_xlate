@@ -134,23 +134,30 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
         if (!button) {
             return;
         }
+        var isIconButton = button.classList && button.classList.contains('js-xlate-icon-button');
         if (loading) {
             if (!button.dataset.originalHtml) {
                 button.dataset.originalHtml = button.innerHTML;
-                var labelText = '';
-                if (button.textContent) {
-                    labelText = button.textContent.trim();
+                if (!isIconButton) {
+                    var labelText = '';
+                    if (button.textContent) {
+                        labelText = button.textContent.trim();
+                    }
+                    if (!labelText && button.getAttribute('aria-label')) {
+                        labelText = button.getAttribute('aria-label');
+                    }
+                    button.dataset.originalLabel = labelText || 'Autotranslate';
                 }
-                if (!labelText && button.getAttribute('aria-label')) {
-                    labelText = button.getAttribute('aria-label');
-                }
-                button.dataset.originalLabel = labelText || 'Autotranslate';
             }
             button.disabled = true;
-            var label = button.dataset.originalLabel || '';
-            var spinner = '' +
-                '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>';
-            button.innerHTML = spinner + label;
+            if (isIconButton) {
+                button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            } else {
+                var label = button.dataset.originalLabel || '';
+                var spinner = '' +
+                    '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>';
+                button.innerHTML = spinner + label;
+            }
         } else {
             if (button.dataset.originalHtml) {
                 button.innerHTML = button.dataset.originalHtml;
