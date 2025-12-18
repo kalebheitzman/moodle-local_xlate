@@ -528,5 +528,11 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025121503, 'local', 'xlate');
     }
 
+    if ($oldversion < 2025121800) {
+        \local_xlate\customfield_helper::setup_customfields();
+
+        upgrade_plugin_savepoint(true, 2025121800, 'local', 'xlate');
+    }
+
     return true;
 }

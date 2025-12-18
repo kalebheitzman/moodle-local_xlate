@@ -193,8 +193,8 @@ define([], function () {
             'color:#93c5fd;' +
             '}' +
             '.xlate-inspector-callout-text{' +
-            'max-height:10rem;' +
-            'overflow:auto;' +
+            'max-height:none;' +
+            'overflow:visible;' +
             'white-space:pre-wrap;' +
             '}' +
             '.xlate-inspector-toast{' +
@@ -391,7 +391,7 @@ define([], function () {
         if (!node) {
             return false;
         }
-        if (node === NODES.toolbar || node === NODES.callout || node === NODES.toggle) {
+        if (node === NODES.toolbar || node === NODES.callout) {
             return true;
         }
         if (!node.closest) {
@@ -399,9 +399,7 @@ define([], function () {
         }
         return !!(
             node.closest('.xlate-inspector-toolbar') ||
-            node.closest('.xlate-inspector-callout') ||
-            node.closest('.xlate-inspector-toggle') ||
-            node.closest('[data-xlate-inspector-toggle]')
+            node.closest('.xlate-inspector-callout')
         );
     }
 

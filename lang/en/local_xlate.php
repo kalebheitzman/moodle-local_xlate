@@ -125,10 +125,13 @@ $string['admin_manage_glossary'] = 'Xlate: Manage Glossary';
 $string['admin_usage'] = 'Xlate: Usage';
 
 // Course custom fields
+$string['xlate_course_enable'] = 'Xlate: Enable translations';
+$string['xlate_course_enable_help'] = 'Master toggle for this course. When disabled, translator scripts, CLI jobs, and cleanup tasks skip the course entirely.';
 $string['xlate_course_source_lang'] = 'Xlate: Source Language';
 $string['xlate_course_source_lang_help'] = 'The primary language for content in this course.';
 $string['xlate_course_target_langs'] = 'Xlate: Target Languages';
 $string['xlate_course_target_langs_help'] = 'Select which languages this course should be translated into.';
+$string['xlate_course_disabled'] = 'Local Xlate is disabled for this course.';
 
 // Settings UI strings
 $string['settings_intro'] = 'Core configuration for the Xlate plugin.';

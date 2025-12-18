@@ -30,12 +30,21 @@ defined('MOODLE_INTERNAL') || die();
  * Helper class for creating and managing custom fields.
  */
 class customfield_helper {
+    private const ENABLE_FIELD = 'xlate_enable';
+
     /**
      * Cached list of installed languages keyed by lang code.
      *
      * @var array<string,string>
      */
     protected static $installedlangs = [];
+
+    /**
+     * Cached enable-field id lookup.
+     *
+     * @var int|null
+     */
+    protected static $enablefieldid = null;
 
     /**
      * Create or update xlate custom fields category and fields.
@@ -48,11 +57,59 @@ class customfield_helper {
         // Get or create the Xlate category for course custom fields
         $category = self::get_or_create_category();
 
+        // Create enable toggle first so it appears before other fields.
+        self::create_enable_field($category);
+
         // Create source language field (select)
         self::create_source_language_field($category);
 
         // Create target languages field (multiselect)
         self::create_target_languages_field($category);
+
+        // Ensure expected ordering (toggle, source, then targets).
+        self::ensure_field_sortorder($category->get('id'), self::ENABLE_FIELD, 0);
+        self::ensure_field_sortorder($category->get('id'), 'xlate_source_lang', 1);
+    }
+
+    /**
+     * Create the enable/disable checkbox field.
+     *
+     * @param \core_customfield\category_controller $category
+     * @return void
+     */
+    protected static function create_enable_field(\core_customfield\category_controller $category): void {
+        global $DB;
+
+        $existing = $DB->get_record('customfield_field', [
+            'categoryid' => $category->get('id'),
+            'shortname' => self::ENABLE_FIELD
+        ]);
+
+        if ($existing) {
+            self::$enablefieldid = (int)$existing->id;
+            return;
+        }
+
+        $data = (object)[
+            'type' => 'checkbox',
+            'name' => get_string('xlate_course_enable', 'local_xlate'),
+            'shortname' => self::ENABLE_FIELD,
+            'description' => get_string('xlate_course_enable_help', 'local_xlate'),
+            'descriptionformat' => FORMAT_HTML,
+            'categoryid' => $category->get('id'),
+            'sortorder' => 0,
+            'configdata' => json_encode([
+                'required' => 0,
+                'uniquevalues' => 0,
+                'locked' => 0,
+                'visibility' => 2,
+                'checkbydefault' => 0,
+            ]),
+        ];
+
+        $field = \core_customfield\field_controller::create(0, $data);
+        $field->save();
+        self::$enablefieldid = (int)$field->get('id');
     }
 
     /**
@@ -248,6 +305,10 @@ class customfield_helper {
             return null;
         }
 
+        if (!self::is_course_enabled($courseid)) {
+            return null;
+        }
+
         $sourcelang = self::get_course_source_lang($courseid);
         $targetlangs = self::get_course_target_langs($courseid);
 
@@ -284,6 +345,77 @@ class customfield_helper {
         }
         
         return array_values(array_unique($targetlangs));
+    }
+
+    /**
+     * Determine whether the course-level toggle allows Xlate to run.
+     *
+     * @param int $courseid
+     * @return bool True when course is enabled or toggle missing.
+     */
+    public static function is_course_enabled(int $courseid): bool {
+        if ($courseid <= 0) {
+            return true;
+        }
+
+        $handler = \core_customfield\handler::get_handler('core_course', 'course');
+        $datas = $handler->get_instance_data($courseid);
+
+        foreach ($datas as $data) {
+            $field = $data->get_field();
+            if ($field->get('shortname') !== self::ENABLE_FIELD) {
+                continue;
+            }
+
+            $value = $data->get_value();
+            if ($value === '' || $value === null) {
+                return true;
+            }
+
+            return (bool)$value;
+        }
+
+        return true;
+    }
+
+    /**
+     * Fetch the list of courses that currently allow Local Xlate to run.
+     *
+     * @return array<int,int> Sequential array of course ids.
+     */
+    public static function get_enabled_course_ids(): array {
+        global $DB;
+
+        $courseids = $DB->get_fieldset_select('course', 'id', 'id > 0');
+        if (empty($courseids)) {
+            return [];
+        }
+
+        $courseids = array_map('intval', $courseids);
+
+        $fieldid = self::get_enable_field_id();
+        if (!$fieldid) {
+            return $courseids;
+        }
+
+        $records = $DB->get_records('customfield_data', ['fieldid' => $fieldid], '', 'instanceid,intvalue');
+        if (empty($records)) {
+            return $courseids;
+        }
+
+        $disabled = [];
+        foreach ($records as $record) {
+            $value = isset($record->intvalue) ? (int)$record->intvalue : 0;
+            if ($value !== 1) {
+                $disabled[] = (int)$record->instanceid;
+            }
+        }
+
+        if (empty($disabled)) {
+            return $courseids;
+        }
+
+        return array_values(array_diff($courseids, $disabled));
     }
 
     /**
@@ -370,6 +502,56 @@ class customfield_helper {
         }
 
         return self::$installedlangs;
+    }
+
+    /**
+     * Ensure a field keeps a predictable sort order within the category.
+     *
+     * @param int $categoryid
+     * @param string $shortname
+     * @param int $sortorder
+     * @return void
+     */
+    protected static function ensure_field_sortorder(int $categoryid, string $shortname, int $sortorder): void {
+        global $DB;
+
+        $field = $DB->get_record('customfield_field', [
+            'categoryid' => $categoryid,
+            'shortname' => $shortname
+        ], 'id,sortorder');
+
+        if (!$field) {
+            return;
+        }
+
+        if ((int)$field->sortorder === $sortorder) {
+            return;
+        }
+
+        $field->sortorder = $sortorder;
+        $DB->update_record('customfield_field', $field);
+    }
+
+    /**
+     * Resolve the enable/disable checkbox field id.
+     *
+     * @return int|null
+     */
+    protected static function get_enable_field_id(): ?int {
+        global $DB;
+
+        if (self::$enablefieldid !== null) {
+            return self::$enablefieldid ?: null;
+        }
+
+        $record = $DB->get_record('customfield_field', ['shortname' => self::ENABLE_FIELD], 'id');
+        if ($record) {
+            self::$enablefieldid = (int)$record->id;
+            return self::$enablefieldid;
+        }
+
+        self::$enablefieldid = 0;
+        return null;
     }
 
     /**

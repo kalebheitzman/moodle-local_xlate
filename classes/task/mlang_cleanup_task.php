@@ -56,7 +56,16 @@ class mlang_cleanup_task extends \core\task\scheduled_task {
     public function execute() {
         global $DB;
         mtrace('[mlang_cleanup_task] Starting scheduled mlang cleanup...');
-        $report = \local_xlate\mlang_migration::migrate($DB, ['execute' => true]);
+        $enabledcourses = \local_xlate\customfield_helper::get_enabled_course_ids();
+        if (empty($enabledcourses)) {
+            mtrace('[mlang_cleanup_task] No courses have Enable Xlate turned on; skipping cleanup run.');
+            return;
+        }
+
+        $report = \local_xlate\mlang_migration::migrate($DB, [
+            'execute' => true,
+            'courseids' => $enabledcourses
+        ]);
         mtrace('[mlang_cleanup_task] Completed. Changed: ' . ($report['changed'] ?? 0));
         // Optionally, log/report more details or errors here.
     }

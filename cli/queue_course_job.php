@@ -58,6 +58,11 @@ if (!$courseid) {
     exit(1);
 }
 
+if (!\local_xlate\customfield_helper::is_course_enabled($courseid)) {
+    echo "Error: Course $courseid has Xlate disabled via the custom field. Enable it before queueing jobs.\n";
+    exit(1);
+}
+
 // Get course source language from custom fields
 $coursesourcelang = \local_xlate\customfield_helper::get_course_source_lang($courseid);
 if (!$coursesourcelang) {

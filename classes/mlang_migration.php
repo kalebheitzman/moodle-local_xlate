@@ -308,9 +308,10 @@ class mlang_migration {
      *  - tables => map of table => column list
      *  - chunk => rows per loop
      *  - preferred => 'other' | 'sitelang' | language code
-     *  - execute => bool (default false, dry-run)
+    *  - execute => bool (default false, dry-run)
      *  - sample => int (max samples to include in report)
      *  - max_changes => int (optional cap on number of rows to update)
+    *  - courseids => array<int,int> Optional list of allowed course ids; tables without a course mapping are skipped.
      *
      * @param \moodle_database $DB Database handle used for migration.
      * @param array<string,mixed> $options Migration options.
@@ -331,6 +332,12 @@ class mlang_migration {
         $maxchanges = isset($options['max_changes']) ? (int)$options['max_changes'] : 0;
 
         $report = ['run' => date('c'), 'changed' => 0, 'samples' => []];
+        $courseidsfilter = [];
+        if (!empty($options['courseids']) && is_array($options['courseids'])) {
+            $courseidsfilter = array_values(array_unique(array_filter(array_map('intval', $options['courseids']), static function($id) {
+                return $id > 0;
+            })));
+        }
 
         // Output candidate list to a file for review
         $candidatefile = sys_get_temp_dir() . '/mlang_migration_candidates_' . time() . '.txt';
@@ -346,17 +353,48 @@ class mlang_migration {
         // Now process as before
         foreach ($tables as $table => $cols) {
             $colslist = implode(', ', array_map(function($c) { return $c; }, $cols));
+            $coursecol = null;
+            $coursealias = null;
+            if (!empty($courseidsfilter)) {
+                try {
+                    $columns = $DB->get_columns($table);
+                } catch (\Throwable $e) {
+                    $columns = [];
+                }
+                if (isset($columns['course'])) {
+                    $coursecol = 'course';
+                } else if (isset($columns['courseid'])) {
+                    $coursecol = 'courseid';
+                }
+
+                if ($coursecol === null) {
+                    debugging('[local_xlate] Skipping table ' . $table . ' during migrate: cannot enforce course filter.', DEBUG_DEVELOPER);
+                    continue;
+                }
+                $coursealias = '__xlate_course';
+            }
+
+            $selectcols = 'id, ' . $colslist;
+            if ($coursecol !== null) {
+                $selectcols .= ', ' . $coursecol . ' AS ' . $coursealias;
+            }
             $lastid = 0;
             $table_update_count = 0;
             $table_exception = null;
             while (true) {
                 try {
-                    $sql = "SELECT id, $colslist FROM {{$table}} WHERE id > :lastid ORDER BY id ASC LIMIT $chunk";
+                    $sql = "SELECT $selectcols FROM {{$table}} WHERE id > :lastid ORDER BY id ASC LIMIT $chunk";
                     $rows = $DB->get_records_sql($sql, ['lastid' => $lastid]);
                     if (empty($rows)) {
                         break;
                     }
                     foreach ($rows as $row) {
+                        if (!empty($courseidsfilter) && $coursecol !== null) {
+                            $rowcourse = isset($row->{$coursealias}) ? (int)$row->{$coursealias} : 0;
+                            if ($rowcourse <= 0 || !in_array($rowcourse, $courseidsfilter, true)) {
+                                continue;
+                            }
+                        }
                         foreach ($cols as $col) {
                             if (!isset($row->{$col}) || $row->{$col} === null) {
                                 continue;

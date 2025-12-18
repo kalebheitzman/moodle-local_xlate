@@ -156,6 +156,8 @@ Notes and safety:
 
 A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automatically (default: nightly) to detect and remove legacy `{mlang ...}` and `<span class="multilang">` tags from new or imported content. No manual intervention is needed for ongoing hygiene.
 
+Courses must have the **Enable Xlate** custom field checked for the cleanup to run; toggling it off preserves existing `{mlang}` markup for that course.
+
 - You can run the task manually with:
   ```bash
   sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\mlang_cleanup_task'
@@ -175,7 +177,7 @@ A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automa
 6. Use the **Manage Translations** button to review captured keys and provide
 	translations.
 6b. Use the **Xlate: Manage Glossary** button (under the same Local plugins → Xlate area) to add or edit glossary entries that influence automated and manual translations.
-6c. Configure each course’s Xlate custom fields (source select + target checkboxes). When a course lacks a source language, the translator bootstrap, CLI scripts, and scheduled tasks automatically skip it.
+6c. Configure each course’s Xlate custom fields: toggle **Enable Xlate**, pick a source language, then choose the target checkboxes. When a course lacks a source language or the toggle is off, the translator bootstrap, CLI scripts, and scheduled tasks automatically skip it.
 6d. Review **Exclude path prefixes** if you need to add more admin-only routes (one per line). Pages matching these prefixes never load the translator.
 
 7. Autotranslation (OpenAI)

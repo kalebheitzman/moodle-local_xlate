@@ -66,6 +66,15 @@ class output {
             ]);
             return;
         }
+
+        $courseid = self::resolve_courseid($page);
+        if ($courseid > 0 && !\local_xlate\customfield_helper::is_course_enabled($courseid)) {
+            self::debug('Skipping head injection: course toggle disabled', [
+                'courseid' => $courseid,
+                'pagetype' => $page?->pagetype,
+            ]);
+            return;
+        }
         
         $hook->add_html('<style>html.xlate-loading body{visibility:hidden}</style>');
         // Debug marker
@@ -109,20 +118,15 @@ class output {
         // Get context information from the current page
         $contextid = $page->context->id;
         $pagetype = $page->pagetype;
-        $courseid = 0;
+        $courseid = self::resolve_courseid($page);
+        $courseenabled = $courseid > 0 ? \local_xlate\customfield_helper::is_course_enabled($courseid) : true;
 
-        // Extract course ID based on context
-        if ($page->context->contextlevel == CONTEXT_COURSE) {
-            $courseid = $page->context->instanceid;
-        } else if ($page->context->contextlevel == CONTEXT_MODULE) {
-            // For activity contexts, get the course from the course module
-            $cm = get_coursemodule_from_id('', $page->context->instanceid);
-            if ($cm) {
-                $courseid = $cm->course;
-            }
-        } else if (isset($page->course) && $page->course->id > 1) {
-            // Fallback to $page->course if available and not site course
-            $courseid = $page->course->id;
+        if ($courseid > 0 && !$courseenabled) {
+            self::debug('Skipping body injection: course toggle disabled', [
+                'courseid' => $courseid,
+                'pagetype' => $page?->pagetype,
+            ]);
+            return;
         }
 
         $lang = current_language();
@@ -273,6 +277,7 @@ class output {
             'bundleurl' => $bundleurl->out(false),
             'languageSwitcher' => $language_switcher,
             'showInlineIndicators' => false,
+            'courseEnabled' => $courseenabled,
         ];
 
         $script = '<script>'
@@ -459,6 +464,38 @@ class output {
             $normalized[] = rtrim($path);
         }
         return array_unique($normalized);
+    }
+
+    /**
+     * Resolve the current course id from the Moodle page/context.
+     */
+    private static function resolve_courseid(?moodle_page $page = null): int {
+        $page = $page ?? self::resolve_page(null);
+
+        if (!$page) {
+            return 0;
+        }
+
+        try {
+            if ($page->context && $page->context->contextlevel == CONTEXT_COURSE) {
+                return (int)$page->context->instanceid;
+            }
+
+            if ($page->context && $page->context->contextlevel == CONTEXT_MODULE) {
+                $cm = get_coursemodule_from_id('', $page->context->instanceid);
+                if ($cm && !empty($cm->course)) {
+                    return (int)$cm->course;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ignore lookup issues and fall through to other hints.
+        }
+
+        if (isset($page->course) && !empty($page->course->id) && $page->course->id > 0) {
+            return (int)$page->course->id;
+        }
+
+        return 0;
     }
 
     /**

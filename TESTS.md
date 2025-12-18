@@ -22,8 +22,9 @@ This document outlines the recommended checks before releasing or deploying the 
 ### B. Course Configuration
 
 - [ ] In a course, open **Course settings → Custom fields → Xlate**:
-  - [ ] Select a source language and choose at least one target. Save.
+  - [ ] Check **Enable Xlate**, select a source language, and choose at least one target. Save.
   - [ ] Confirm `local_xlate_customfield_helper::get_course_config()` resolves the selection (CLI: `php local/xlate/cli/list_translatable_courses.php`).
+- [ ] Uncheck **Enable Xlate** and reload the course page—translator assets must *not* load even if source/target languages remain configured.
 - [ ] Remove the source language and reload the course page—translator assets must *not* load.
 - [ ] Configure a second course with different targets to ensure per-course isolation.
 

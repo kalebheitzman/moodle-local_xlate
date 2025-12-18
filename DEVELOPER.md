@@ -104,12 +104,12 @@ versioning flow.
 
 ### Course language configuration & gating
 
-- `classes/customfield_helper.php` provisions the **Xlate** course customfield category with a select (`xlate_source_lang`) and one checkbox per installed language (`xlate_target_<code>`). The helper also provides `get_course_config()` so every runtime component can resolve source/target languages consistently.
+- `classes/customfield_helper.php` provisions the **Xlate** course customfield category with a master checkbox (`xlate_enable`), a source select (`xlate_source_lang`), and one checkbox per installed language (`xlate_target_<code>`). The helper also provides `get_course_config()` so every runtime component can resolve source/target languages consistently.
 - CLI helpers:
   - `cli/recreate_customfields.php` recreates the category/fields when you need a clean slate (for example, after changing the default option order).
   - `cli/sync_source_language_indices.php` repairs existing data when the select option order changes by mapping stored integers back to real locale codes.
   - `cli/list_translatable_courses.php` and `cli/autotranslate_dryrun.php` surface per-course configuration so you can confirm which courses are ready for automation.
-- Runtime gating happens in `classes/hooks/output.php` and every task/CLI that calls `customfield_helper::get_course_config()`: if a course has no source language configured, the translator hooks, scheduled task, adhoc jobs, and CLI utilities all skip it automatically.
+- Runtime gating happens in `classes/hooks/output.php` and every task/CLI that calls `customfield_helper::get_course_config()`: if a course disables the new toggle or has no source language configured, the translator hooks, scheduled task, adhoc jobs, and CLI utilities all skip it automatically.
 - Administrative guardrails live in the same hook: if `$PAGE->pagelayout` is `admin/maintenance/report`, the user toggles editing, or the path matches the configurable `excluded_paths` list (newline-delimited prefixes under plugin settings), no CSS/JS is injected. The default deny list covers `/admin/`, edit forms (`/course/modedit.php`, `/course/edit.php`, etc.), grade edit screens, user profile editors, and other staff-only workflows.
 
 ## 3. Automatic Capture (AMD Module)

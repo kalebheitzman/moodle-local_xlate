@@ -126,6 +126,12 @@ if ($coursecontext) {
 
 $courseparam = $coursecontext ? $coursecontext->instanceid : 0;
 
+if ($courseparam > 0 && !\local_xlate\customfield_helper::is_course_enabled($courseparam)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'course_disabled']);
+    exit;
+}
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, max-age=120');
 

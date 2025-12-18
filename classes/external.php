@@ -572,6 +572,10 @@ class local_xlate_external extends external_api {
             require_capability('local/xlate:manage', $systemcontext);
         }
 
+        if ($resolvedcourseid > 0 && !\local_xlate\customfield_helper::is_course_enabled($resolvedcourseid)) {
+            throw new \moodle_exception('xlate_course_disabled', 'local_xlate');
+        }
+
         if (!get_config('local_xlate', 'autotranslate_enabled')) {
             throw new \moodle_exception('autotranslate_disabled', 'local_xlate');
         }
