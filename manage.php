@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/tablelib.php');
 /**
  * Render pagination controls
  */
-function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
+function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $reviewed_filter = '', $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
     $langfilter = is_array($langfilter) ? $langfilter : [];
@@ -40,6 +40,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         'perpage' => $perpage,
         'search' => $search,
         'status_filter' => $status_filter,
+        'reviewed_filter' => $reviewed_filter,
         'courseid' => $courseid
     ];
     if ($langfiltersubmitted) {
@@ -161,6 +162,7 @@ $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
+$reviewed_filter = optional_param('reviewed_filter', '', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
 $langfilterraw = optional_param_array('langfilter', [], PARAM_ALPHANUMEXT);
 $langfiltersubmitted = optional_param('langfiltersubmitted', 0, PARAM_BOOL);
@@ -228,6 +230,7 @@ $pageparams = [
     'perpage' => $perpage,
     'search' => $search,
     'status_filter' => $status_filter,
+    'reviewed_filter' => $reviewed_filter,
     'courseid' => $filter_courseid
 ];
 if ($langfiltersubmitted) {
@@ -376,10 +379,10 @@ echo html_writer::empty_tag('input', [
     'name' => 'langfiltersubmitted',
     'value' => '1'
 ]);
-echo html_writer::start_div('row');
+echo html_writer::start_div('row g-3 align-items-end');
 
 // Search box
-echo html_writer::start_div('col-md-3');
+echo html_writer::start_div('col-12 col-md-3');
 echo html_writer::tag('label', get_string('search', 'local_xlate'), ['for' => 'search']);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
@@ -394,7 +397,7 @@ echo html_writer::end_div();
 // (component filter removed)
 
 // Status filter
-echo html_writer::start_div('col-md-2');
+echo html_writer::start_div('col-6 col-md-2');
 echo html_writer::tag('label', get_string('status', 'local_xlate'), ['for' => 'status_filter']);
 $status_options = [
     '' => get_string('all_statuses', 'local_xlate'),
@@ -405,15 +408,26 @@ $status_options = [
 echo html_writer::select($status_options, 'status_filter', $status_filter, false, ['class' => 'form-control']);
 echo html_writer::end_div();
 
+// Reviewed filter
+echo html_writer::start_div('col-6 col-md-2');
+echo html_writer::tag('label', get_string('reviewed_filter_label', 'local_xlate'), ['for' => 'reviewed_filter']);
+$reviewed_options = [
+    '' => get_string('reviewed_filter_any', 'local_xlate'),
+    'reviewed' => get_string('reviewed_filter_reviewed', 'local_xlate'),
+    'unreviewed' => get_string('reviewed_filter_unreviewed', 'local_xlate')
+];
+echo html_writer::select($reviewed_options, 'reviewed_filter', $reviewed_filter, false, ['class' => 'form-control']);
+echo html_writer::end_div();
+
 // Per page
-echo html_writer::start_div('col-md-2');
+echo html_writer::start_div('col-6 col-md-2');
 echo html_writer::tag('label', get_string('per_page', 'local_xlate'), ['for' => 'perpage']);
 $perpage_options = [5 => '5', 10 => '10', 25 => '25', 50 => '50', 100 => '100'];
 echo html_writer::select($perpage_options, 'perpage', $perpage, false, ['class' => 'form-control']);
 echo html_writer::end_div();
 
 // Course filter
-echo html_writer::start_div('col-md-2');
+echo html_writer::start_div('col-6 col-md-2');
 echo html_writer::tag('label', get_string('courseid', 'local_xlate'), ['for' => 'courseid']);
 echo html_writer::empty_tag('input', [
     'type' => 'number',
@@ -426,11 +440,10 @@ echo html_writer::empty_tag('input', [
 echo html_writer::end_div();
 
 // Search button
-echo html_writer::start_div('col-md-3');
-echo html_writer::tag('label', '&nbsp;');
+echo html_writer::start_div('col-12 col-md-1 d-flex align-items-end');
 echo html_writer::tag('button', get_string('filter', 'local_xlate'), [
     'type' => 'submit',
-    'class' => 'btn btn-primary form-control'
+    'class' => 'btn btn-primary w-100'
 ]);
 echo html_writer::end_div();
 
@@ -499,6 +512,12 @@ $where_clause = '';
 if (!empty($filter_courseid) && $filter_courseid > 0) {
     $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id AND kc.courseid = ?)";
     $params[] = $filter_courseid;
+}
+
+if ($reviewed_filter === 'reviewed') {
+    $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND trf.reviewed = 1)";
+} else if ($reviewed_filter === 'unreviewed') {
+    $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND (trf.reviewed = 0 OR trf.reviewed IS NULL))";
 }
 
 if (!empty($where_conditions)) {
@@ -588,6 +607,7 @@ if (!empty($keys)) {
                 $total_count,
                 $search,
                 $status_filter,
+                $reviewed_filter,
                 $filter_courseid,
                 $langfilterselection,
                 $langfiltersubmitted
@@ -799,6 +819,7 @@ if (!empty($keys)) {
                 $total_count,
                 $search,
                 $status_filter,
+                $reviewed_filter,
                 $filter_courseid,
                 $langfilterselection,
                 $langfiltersubmitted
