@@ -30,6 +30,54 @@ define([], function () {
         toolbar: null,
         callout: null
     };
+    var INSPECTOR_STORAGE_KEY = 'local_xlate_inspector_state';
+
+    function readInspectorPreference() {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+        try {
+            var storage = window.localStorage;
+            if (!storage) {
+                return null;
+            }
+            var value = storage.getItem(INSPECTOR_STORAGE_KEY);
+            if (value === 'on') {
+                return true;
+            }
+            if (value === 'off') {
+                return false;
+            }
+        } catch (e) {
+            return null;
+        }
+        return null;
+    }
+
+    function persistInspectorPreference(active) {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        try {
+            var storage = window.localStorage;
+            if (!storage) {
+                return;
+            }
+            storage.setItem(INSPECTOR_STORAGE_KEY, active ? 'on' : 'off');
+        } catch (e) {
+            // Ignore storage failures
+        }
+    }
+
+    function restoreInspectorPreference() {
+        if (STATE.active) {
+            return;
+        }
+        var stored = readInspectorPreference();
+        if (stored === true) {
+            activateInspector({ silent: true });
+        }
+    }
 
     function ready(fn) {
         if (document.readyState === 'loading') {
@@ -54,6 +102,7 @@ define([], function () {
             }
             STATE.ready = true;
             updateToggleVisuals();
+            restoreInspectorPreference();
         });
     }
 
@@ -275,7 +324,7 @@ define([], function () {
         }
     }
 
-    function activateInspector() {
+    function activateInspector(options) {
         if (STATE.active) {
             return;
         }
@@ -287,7 +336,10 @@ define([], function () {
         document.addEventListener('keydown', handleKeydown, true);
         document.documentElement.classList.add('xlate-inspector-active');
         updateToggleVisuals();
-        showToast(STATE.config.strings.toggleActive || 'Inspector enabled');
+        persistInspectorPreference(true);
+        if (!options || !options.silent) {
+            showToast(STATE.config.strings.toggleActive || 'Inspector enabled');
+        }
     }
 
     function deactivateInspector() {
@@ -302,6 +354,7 @@ define([], function () {
         document.removeEventListener('keydown', handleKeydown, true);
         document.documentElement.classList.remove('xlate-inspector-active');
         updateToggleVisuals();
+        persistInspectorPreference(false);
         clearCurrent();
     }
 

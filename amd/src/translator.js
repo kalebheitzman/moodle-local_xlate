@@ -538,6 +538,54 @@ define(['core/ajax'], function (Ajax) {
     return window.__XLATE__.showTranslations !== false;
   }
 
+  var VISIBILITY_STORAGE_KEY = 'local_xlate_visibility';
+
+  /**
+   * Read the persisted translation visibility preference, if any.
+   * @returns {boolean|null} True for translated, false for originals, null when unset.
+   */
+  function readVisibilityPreference() {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      var storage = window.localStorage;
+      if (!storage) {
+        return null;
+      }
+      var stored = storage.getItem(VISIBILITY_STORAGE_KEY);
+      if (stored === 'translated') {
+        return true;
+      }
+      if (stored === 'original') {
+        return false;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * Persist the translation overlay preference for the current context.
+   * @param {boolean} visible - Desired translation visibility.
+   * @returns {void}
+   */
+  function persistVisibilityPreference(visible) {
+    if (typeof visible !== 'boolean' || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      var storage = window.localStorage;
+      if (!storage) {
+        return;
+      }
+      storage.setItem(VISIBILITY_STORAGE_KEY, visible ? 'translated' : 'original');
+    } catch (e) {
+      // Ignore storage failures
+    }
+  }
+
   /**
    * Retrieve the captured source string for a translation key when available.
    * @param {string} key - Structural key identifier.
@@ -662,6 +710,7 @@ define(['core/ajax'], function (Ajax) {
    */
   function applyVisibilityState(newValue) {
     window.__XLATE__.showTranslations = newValue;
+    persistVisibilityPreference(newValue);
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.classList.toggle('xlate-original-visible', !newValue);
     }
@@ -2133,15 +2182,22 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
+    var courseId = resolveCourseId();
+
     window.__XLATE__ = createXlateState(config);
-    window.__XLATE__.showTranslations = true;
+
+    var storedVisibility = readVisibilityPreference();
+    var initialVisibility = (storedVisibility === null) ? true : storedVisibility;
+
+    window.__XLATE__.showTranslations = initialVisibility;
+    persistVisibilityPreference(initialVisibility);
     window.__XLATE__.setTranslationVisibility = setTranslationVisibility;
     window.__XLATE__.toggleTranslations = function () {
       setTranslationVisibility();
     };
     window.__XLATE__.canToggleTranslations = !window.__XLATE__.isCapture && window.__XLATE__.isTargetLang !== false;
     if (typeof document !== 'undefined' && document.documentElement) {
-      document.documentElement.classList.remove('xlate-original-visible');
+      document.documentElement.classList.toggle('xlate-original-visible', !initialVisibility);
     }
     dispatchXlateEvent('xlate:ready', {
       isTargetLang: window.__XLATE__.isTargetLang,
@@ -2149,7 +2205,6 @@ define(['core/ajax'], function (Ajax) {
     });
     dispatchXlateEvent('xlate:visibilitychange', { visible: shouldShowTranslations() });
 
-    var courseId = resolveCourseId();
     xlateDebug('[XLATE] Initializing:', {
       currentLang: config.lang,
       sourceLang: window.__XLATE__.sourceLang,
