@@ -23,7 +23,8 @@ define(['core/ajax'], function (Ajax) {
         ready: false,
         hasExternalToggle: false,
         toggleRenderer: null,
-        pendingCritical: false
+        pendingCritical: false,
+        hideTimeout: null
     };
     var NODES = {
         toggle: null,
@@ -178,7 +179,6 @@ define(['core/ajax'], function (Ajax) {
             'font-size:0.875rem;' +
             '}' +
             '.xlate-inspector-toolbar{' +
-            'display:flex;' +
             'flex-wrap:wrap;' +
             'gap:0.5rem;' +
             'align-items:center;' +
@@ -421,8 +421,10 @@ define(['core/ajax'], function (Ajax) {
             return;
         }
         if (isOverlayNode(event.target)) {
+            cancelPendingClear();
             return;
         }
+        cancelPendingClear();
         var candidate = event.target.closest ? event.target.closest(SELECTOR) : null;
         if (!candidate) {
             if (isWithinStickyZone()) {
@@ -452,7 +454,7 @@ define(['core/ajax'], function (Ajax) {
         if (nextTarget && STATE.currentElement && STATE.currentElement.contains(nextTarget)) {
             return;
         }
-        clearCurrent();
+        scheduleClear();
     }
 
     function handlePointerOver(event) {
@@ -461,8 +463,10 @@ define(['core/ajax'], function (Ajax) {
         }
         var target = event.target;
         if (isOverlayNode(target)) {
+            cancelPendingClear();
             return;
         }
+        cancelPendingClear();
         var candidate = target && target.closest ? target.closest(SELECTOR) : null;
         if (candidate === STATE.currentElement) {
             return;
@@ -993,12 +997,32 @@ define(['core/ajax'], function (Ajax) {
     }
 
     function clearCurrent() {
+        cancelPendingClear();
         STATE.currentElement = null;
         STATE.attributes = [];
         STATE.currentAttribute = null;
         hideNode('highlight');
         hideNode('toolbar');
         hideNode('callout');
+    }
+
+    function scheduleClear() {
+        cancelPendingClear();
+        if (typeof window === 'undefined') {
+            clearCurrent();
+            return;
+        }
+        STATE.hideTimeout = window.setTimeout(function () {
+            STATE.hideTimeout = null;
+            clearCurrent();
+        }, 1500);
+    }
+
+    function cancelPendingClear() {
+        if (STATE.hideTimeout && typeof window !== 'undefined') {
+            window.clearTimeout(STATE.hideTimeout);
+            STATE.hideTimeout = null;
+        }
     }
 
     function hideNode(key) {
