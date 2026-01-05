@@ -1893,6 +1893,8 @@ define(['core/ajax'], function (Ajax) {
       sourceMap: {},
       sourceStrings: {},
       reviewMap: {},
+      criticalMap: {},
+      keyIdMap: {},
       bundleUrl: config.bundleurl || '',
       version: config.version || '',
       cacheKey: '',
@@ -1991,7 +1993,9 @@ define(['core/ajax'], function (Ajax) {
         return {
           translations: payload.translations,
           reviewed: payload.reviewed || {},
-          sources: payload.sources || payload.sourceStrings || {}
+          sources: payload.sources || payload.sourceStrings || {},
+          critical: payload.critical || {},
+          keyids: payload.keyids || {}
         };
       }
 
@@ -1999,7 +2003,9 @@ define(['core/ajax'], function (Ajax) {
         return {
           translations: payload,
           reviewed: {},
-          sources: {}
+          sources: {},
+          critical: {},
+          keyids: {}
         };
       }
     } catch (e) {
@@ -2047,7 +2053,9 @@ define(['core/ajax'], function (Ajax) {
         var translations = (map && map.translations) ? map.translations : map;
         var sourceMap = (map && map.sourceMap) ? map.sourceMap : {};
         var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+        var criticalMap = (map && map.critical && typeof map.critical === 'object') ? map.critical : {};
         var sourceStrings = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
+        var keyIdMap = (map && map.keyids && typeof map.keyids === 'object') ? map.keyids : {};
         var associations = (map && map.associations) ? map.associations : {};
         if (!translations || typeof translations !== 'object') {
           translations = {};
@@ -2056,6 +2064,8 @@ define(['core/ajax'], function (Ajax) {
         window.__XLATE__.sourceMap = sourceMap;
         window.__XLATE__.sourceStrings = sourceStrings;
         window.__XLATE__.reviewMap = reviewMap;
+        window.__XLATE__.criticalMap = criticalMap;
+        window.__XLATE__.keyIdMap = keyIdMap;
 
         var existingCount = Object.keys(translations).length;
         xlateDebug('[XLATE] Bundle returned', existingCount, 'existing translations');
@@ -2106,6 +2116,8 @@ define(['core/ajax'], function (Ajax) {
         window.__XLATE__.map = cachedPayload.translations;
         window.__XLATE__.reviewMap = cachedPayload.reviewed;
         window.__XLATE__.sourceStrings = cachedPayload.sources || {};
+        window.__XLATE__.criticalMap = cachedPayload.critical || {};
+        window.__XLATE__.keyIdMap = cachedPayload.keyids || {};
         processedElements = new WeakSet();
         run(cachedPayload.translations);
       }
@@ -2122,7 +2134,9 @@ define(['core/ajax'], function (Ajax) {
         .then(function (map) {
           var translations = (map && map.translations) ? map.translations : map;
           var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+          var criticalMap = (map && map.critical && typeof map.critical === 'object') ? map.critical : {};
           var sourceStrings = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
+          var keyIdMap = (map && map.keyids && typeof map.keyids === 'object') ? map.keyids : {};
           if (!translations || typeof translations !== 'object') {
             translations = {};
           }
@@ -2130,7 +2144,9 @@ define(['core/ajax'], function (Ajax) {
             localStorage.setItem(cacheKey, JSON.stringify({
               translations: translations,
               reviewed: reviewMap,
-              sources: sourceStrings
+              sources: sourceStrings,
+              critical: criticalMap,
+              keyids: keyIdMap
             }));
           } catch (e) {
             // Ignore
@@ -2138,6 +2154,8 @@ define(['core/ajax'], function (Ajax) {
           window.__XLATE__.map = translations;
           window.__XLATE__.reviewMap = reviewMap;
           window.__XLATE__.sourceStrings = sourceStrings;
+          window.__XLATE__.criticalMap = criticalMap;
+          window.__XLATE__.keyIdMap = keyIdMap;
           processedElements = new WeakSet();
           run(translations);
           return true;

@@ -53,13 +53,13 @@ class api {
      * @param \context|null $context Context used to derive component filters; defaults to system.
      * @param string $pagetype Optional pagetype hint (e.g. `mod-forum-view`).
      * @param int $courseid Optional course to scope associations.
-     * @return array{translations:array<string,string>,sources:array<string,string>,reviewed:array<string,int>} Map of xkey => translation + source metadata.
+    * @return array{translations:array<string,string>,sources:array<string,string>,reviewed:array<string,int>,critical:array<string,int>,keyids:array<string,int>} Map of xkey => translation + source metadata.
      */
     public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0): array {
         global $DB;
 
         if (empty($keys)) {
-            return ['translations' => [], 'sources' => [], 'reviewed' => []];
+            return ['translations' => [], 'sources' => [], 'reviewed' => [], 'critical' => [], 'keyids' => []];
         }
 
         // Sanitize keys: allow only base36-ish keys up to 64 chars to be safe
@@ -76,7 +76,7 @@ class api {
         $clean = array_slice(array_values(array_unique($clean)), 0, 2000);
 
         if (empty($clean)) {
-            return ['translations' => [], 'sources' => [], 'reviewed' => []];
+            return ['translations' => [], 'sources' => [], 'reviewed' => [], 'critical' => [], 'keyids' => []];
         }
 
         // Build IN clause safely
@@ -119,20 +119,23 @@ class api {
         $map = [];
         $sources = [];
         $reviewedmap = [];
+        $keyids = [];
         if (empty($recs)) {
-            return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap];
+            return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap, 'critical' => [], 'keyids' => []];
         }
 
         $trids = [];
         foreach ($recs as $rec) {
+            $keyids[$rec->xkey] = (int)$rec->id;
             if (!empty($rec->firsttrid)) {
                 $trids[] = (int)$rec->firsttrid;
             }
         }
 
+        $criticalmap = [];
         if (!empty($trids)) {
             list($trsql, $trparams) = $DB->get_in_or_equal($trids, SQL_PARAMS_NAMED, 'tr');
-            $sql = "SELECT t.id, k.xkey, k.source, t.text, t.reviewed
+            $sql = "SELECT t.id, k.id AS keyid, k.xkey, k.source, k.critical, t.text, t.reviewed
                       FROM {local_xlate_tr} t
                       JOIN {local_xlate_key} k ON k.id = t.keyid
                      WHERE t.id $trsql";
@@ -141,10 +144,12 @@ class api {
                 $map[$row->xkey] = $row->text;
                 $sources[$row->xkey] = $row->source ?? '';
                 $reviewedmap[$row->xkey] = (int)$row->reviewed;
+                $criticalmap[$row->xkey] = (int)$row->critical;
+                $keyids[$row->xkey] = (int)$row->keyid;
             }
         }
 
-        return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap];
+        return ['translations' => $map, 'sources' => $sources, 'reviewed' => $reviewedmap, 'critical' => $criticalmap, 'keyids' => $keyids];
     }
 
     /**
@@ -157,7 +162,7 @@ class api {
      * @param string $lang Target language code.
      * @param array<int,string> $keys Stable translation keys to resolve.
      * @param int $courseid Optional course to include association status for.
-    * @return array{translations:array<string,string>,sources:array<string,string>,sourceMap:array<string,string>,associations?:array<string,bool>} Structured bundle response.
+    * @return array{translations:array<string,string>,sources:array<string,string>,sourceMap:array<string,string>,critical:array<string,int>,keyids:array<string,int>,associations?:array<string,bool>} Structured bundle response.
      */
     public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
         global $DB;
@@ -181,7 +186,9 @@ class api {
             }
         }
 
-    $result = ['translations' => $translations, 'sourceMap' => $sourceMap, 'sources' => $sources, 'reviewed' => $reviewedmap];
+    $criticalmap = $bundle['critical'] ?? [];
+    $keyidmap = $bundle['keyids'] ?? [];
+    $result = ['translations' => $translations, 'sourceMap' => $sourceMap, 'sources' => $sources, 'reviewed' => $reviewedmap, 'critical' => $criticalmap, 'keyids' => $keyidmap];
 
         // If courseid present, compute associations map
         if (!empty($courseid) && is_int($courseid) && $courseid > 0) {
@@ -234,7 +241,7 @@ class api {
      * @param \context|null $context Active execution context (defaults to system).
      * @param \stdClass|null $user Optional user object (defaults to global $USER).
      * @param int $courseid Optional course for scoping results.
-     * @return array{translations:array<string,string>,sourceMap:array<string,string>} Cached bundle payload.
+    * @return array{translations:array<string,string>,sourceMap:array<string,string>,critical:array<string,int>,keyids:array<string,int>} Cached bundle payload.
      */
     public static function get_page_bundle(string $lang, string $pagetype = '', ?\context $context = null, ?\stdClass $user = null, int $courseid = 0): array {
         global $DB, $USER;
@@ -271,14 +278,14 @@ class api {
             $params['courseid'] = $courseid;
         }
 
-    $sql = "SELECT k.id, k.xkey, k.source, t.text, k.component, t.reviewed
+    $sql = "SELECT k.id, k.xkey, k.source, k.critical, t.text, k.component, t.reviewed
                   FROM {local_xlate_key} k
                   JOIN {local_xlate_tr} t ON t.keyid = k.id
                  WHERE t.lang = :lang AND t.status = 1 $componentsql $coursewhere";
         
         $recs = $DB->get_records_sql($sql, $params);
         
-    $bundle = ['translations' => [], 'sourceMap' => [], 'reviewed' => []];
+    $bundle = ['translations' => [], 'sourceMap' => [], 'reviewed' => [], 'critical' => [], 'keyids' => []];
         foreach ($recs as $r) {
             $bundle['translations'][$r->xkey] = $r->text;
             $normalized = self::normalise_source($r->source ?? '');
@@ -286,6 +293,8 @@ class api {
                 $bundle['sourceMap'][$normalized] = $r->xkey;
             }
             $bundle['reviewed'][$r->xkey] = (int)$r->reviewed;
+            $bundle['critical'][$r->xkey] = (int)$r->critical;
+            $bundle['keyids'][$r->xkey] = (int)$r->id;
         }
         
         // Cache for shorter time due to context sensitivity
@@ -477,9 +486,10 @@ class api {
      * @param string $component Moodle component identifier.
      * @param string $xkey Translation key identifier.
      * @param string $source Optional source string to store alongside the key.
-     * @return int Database ID for the key record.
-     */
-    public static function create_or_update_key(string $component, string $xkey, string $source = ''): int {
+    * @param int|null $critical Optional critical flag to store (null to preserve existing value).
+    * @return int Database ID for the key record.
+    */
+    public static function create_or_update_key(string $component, string $xkey, string $source = '', ?int $critical = null): int {
         global $DB;
         
         $existing = self::get_key_by_component_xkey($component, $xkey);
@@ -489,6 +499,9 @@ class api {
             // Update existing key
             $existing->source = $source;
             $existing->mtime = $now;
+            if ($critical !== null) {
+                $existing->critical = (int)$critical;
+            }
             $DB->update_record('local_xlate_key', $existing);
             return $existing->id;
         } else {
@@ -497,10 +510,74 @@ class api {
                 'component' => $component,
                 'xkey' => $xkey,
                 'source' => $source,
-                'mtime' => $now
+                'mtime' => $now,
+                'ctime' => $now,
+                'critical' => ($critical !== null) ? (int)$critical : 0
             ];
             return $DB->insert_record('local_xlate_key', $record);
         }
+    }
+
+    /**
+     * Update the critical flag for a key identified by numeric id.
+     *
+     * @param int $keyid Local Xlate key id.
+     * @param bool $critical Desired critical state.
+     * @return bool True when the record was updated.
+     */
+    public static function set_key_critical_by_id(int $keyid, bool $critical): bool {
+        global $DB;
+
+        if ($keyid <= 0) {
+            return false;
+        }
+
+        $record = $DB->get_record('local_xlate_key', ['id' => $keyid], '*', IGNORE_MISSING);
+        if (!$record) {
+            return false;
+        }
+
+        $record->critical = $critical ? 1 : 0;
+        $record->mtime = time();
+        $DB->update_record('local_xlate_key', $record);
+
+        return true;
+    }
+
+    /**
+     * Update the critical flag for every key sharing the supplied xkey.
+     *
+     * @param string $xkey Stable translation key hash.
+     * @param bool $critical Desired critical state.
+     * @return array{success:bool,updated:int,keyids:array<int>} Outcome metadata for callers.
+     */
+    public static function set_key_critical_by_xkey(string $xkey, bool $critical): array {
+        global $DB;
+
+        $xkey = trim($xkey);
+        if ($xkey === '') {
+            return ['success' => false, 'updated' => 0, 'keyids' => []];
+        }
+
+        $records = $DB->get_records('local_xlate_key', ['xkey' => $xkey]);
+        if (empty($records)) {
+            return ['success' => false, 'updated' => 0, 'keyids' => []];
+        }
+
+        $updated = 0;
+        $keyids = [];
+        $criticalvalue = $critical ? 1 : 0;
+        $now = time();
+
+        foreach ($records as $record) {
+            $record->critical = $criticalvalue;
+            $record->mtime = $now;
+            $DB->update_record('local_xlate_key', $record);
+            $updated++;
+            $keyids[] = (int)$record->id;
+        }
+
+        return ['success' => $updated > 0, 'updated' => $updated, 'keyids' => $keyids];
     }
 
     /**
@@ -690,10 +767,11 @@ class api {
      * @param int $reviewed Reviewer flag persisted on the translation row.
      * @param int $courseid Optional course association to record.
      * @param string $context Optional context string stored with the association.
+     * @param int|null $critical Optional critical flag override for the key.
      * @return int Key ID for the saved translation.
      * @throws \Throwable Propagates lower-level database exceptions for caller handling.
      */
-    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = ''): int {
+    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = '', ?int $critical = null): int {
         global $DB;
         
         $transaction = $DB->start_delegated_transaction();
@@ -705,7 +783,7 @@ class api {
                 $source = $translation;
             }
             // Create or update the key
-            $keyid = self::create_or_update_key($component, $xkey, $source);
+            $keyid = self::create_or_update_key($component, $xkey, $source, $critical);
             
             // Save the translation (propagate reviewed flag)
             self::save_translation($keyid, $lang, $translation, 1, $reviewed);

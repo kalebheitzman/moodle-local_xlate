@@ -218,7 +218,13 @@ class output {
                     'attributeAlt' => get_string('inspector_attr_alt', 'local_xlate'),
                     'attributeAria' => get_string('inspector_attr_aria', 'local_xlate'),
                     'emptyValue' => get_string('inspector_empty_value', 'local_xlate'),
-                    'noKey' => get_string('inspector_no_key', 'local_xlate')
+                    'noKey' => get_string('inspector_no_key', 'local_xlate'),
+                    'criticalBadge' => get_string('critical_badge_label', 'local_xlate'),
+                    'markCritical' => get_string('critical_flag_mark', 'local_xlate'),
+                    'unmarkCritical' => get_string('critical_flag_unmark', 'local_xlate'),
+                    'criticalMarked' => get_string('critical_flag_marked', 'local_xlate'),
+                    'criticalCleared' => get_string('critical_flag_cleared', 'local_xlate'),
+                    'criticalError' => get_string('critical_flag_error', 'local_xlate')
                 ]
             ];
 

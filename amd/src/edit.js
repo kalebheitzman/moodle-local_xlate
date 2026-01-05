@@ -1,13 +1,13 @@
 // AMD module providing an inline translation inspector overlay for captured keys.
 // Displays a dashed highlight plus controls to jump to Manage UI while browsing.
 /* eslint-disable jsdoc/require-jsdoc */
-define([], function () {
+define(['core/ajax'], function (Ajax) {
     var ATTR_KEY_PREFIX = 'data-xlate-key-';
     var ATTRIBUTE_TYPES = ['content', 'placeholder', 'title', 'alt', 'aria-label'];
     var SELECTOR = ATTRIBUTE_TYPES.map(function (attr) {
         return '[' + ATTR_KEY_PREFIX + attr + ']';
     }).join(',');
-    var STICKY_PADDING = 24;
+    var CRITICAL_SERVICE = 'local_xlate_set_critical';
     var STATE = {
         config: {
             enabled: false,
@@ -22,7 +22,8 @@ define([], function () {
         attributes: [],
         ready: false,
         hasExternalToggle: false,
-        toggleRenderer: null
+        toggleRenderer: null,
+        pendingCritical: false
     };
     var NODES = {
         toggle: null,
@@ -230,6 +231,29 @@ define([], function () {
             '.xlate-inspector-action:hover{' +
             'background:rgba(255,255,255,.18);' +
             '}' +
+            '.xlate-inspector-critical{' +
+            'display:flex;' +
+            'gap:0.35rem;' +
+            'flex-wrap:wrap;' +
+            'align-items:center;' +
+            '}' +
+            '.xlate-inspector-critical-badge{' +
+            'font-size:0.7rem;' +
+            'text-transform:uppercase;' +
+            'letter-spacing:0.05em;' +
+            'padding:0.15rem 0.6rem;' +
+            'border-radius:999px;' +
+            'background:rgba(220,53,69,.15);' +
+            'color:#fca5a5;' +
+            '}' +
+            '.xlate-inspector-critical-badge.is-inactive{' +
+            'background:rgba(255,255,255,.08);' +
+            'color:#e2e8f0;' +
+            '}' +
+            '.xlate-inspector-critical-toggle.is-loading{' +
+            'opacity:0.6;' +
+            'pointer-events:none;' +
+            '}' +
             '.xlate-inspector-callout{' +
             'font-size:0.85rem;' +
             'gap:0.35rem;' +
@@ -331,6 +355,7 @@ define([], function () {
         STATE.active = true;
         document.addEventListener('pointermove', handlePointerMove, true);
         document.addEventListener('pointerleave', handlePointerLeave, true);
+        document.addEventListener('pointerover', handlePointerOver, true);
         window.addEventListener('scroll', handleViewportChange, true);
         window.addEventListener('resize', handleViewportChange, true);
         document.addEventListener('keydown', handleKeydown, true);
@@ -349,6 +374,7 @@ define([], function () {
         STATE.active = false;
         document.removeEventListener('pointermove', handlePointerMove, true);
         document.removeEventListener('pointerleave', handlePointerLeave, true);
+        document.removeEventListener('pointerover', handlePointerOver, true);
         window.removeEventListener('scroll', handleViewportChange, true);
         window.removeEventListener('resize', handleViewportChange, true);
         document.removeEventListener('keydown', handleKeydown, true);
@@ -399,7 +425,7 @@ define([], function () {
         }
         var candidate = event.target.closest ? event.target.closest(SELECTOR) : null;
         if (!candidate) {
-            if (isWithinStickyZone(event)) {
+            if (isWithinStickyZone()) {
                 return;
             }
             clearCurrent();
@@ -415,12 +441,40 @@ define([], function () {
         if (!STATE.active) {
             return;
         }
-        if (isOverlayNode(event.relatedTarget)) {
+        var source = event.target && event.target.closest ? event.target.closest(SELECTOR) : null;
+        if (!source || source !== STATE.currentElement) {
             return;
         }
-        if (!event.relatedTarget) {
-            clearCurrent();
+        var nextTarget = event.relatedTarget || null;
+        if (isOverlayNode(nextTarget)) {
+            return;
         }
+        if (nextTarget && STATE.currentElement && STATE.currentElement.contains(nextTarget)) {
+            return;
+        }
+        clearCurrent();
+    }
+
+    function handlePointerOver(event) {
+        if (!STATE.active) {
+            return;
+        }
+        var target = event.target;
+        if (isOverlayNode(target)) {
+            return;
+        }
+        var candidate = target && target.closest ? target.closest(SELECTOR) : null;
+        if (candidate === STATE.currentElement) {
+            return;
+        }
+        if (!candidate) {
+            if (isWithinStickyZone()) {
+                return;
+            }
+            clearCurrent();
+            return;
+        }
+        setCurrentElement(candidate);
     }
 
     function handleViewportChange() {
@@ -456,23 +510,8 @@ define([], function () {
         );
     }
 
-    function isWithinStickyZone(event) {
-        if (!STATE.currentElement) {
-            return false;
-        }
-        if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-            return false;
-        }
-        var rect = STATE.currentElement.getBoundingClientRect();
-        if (!rect) {
-            return false;
-        }
-        var x = event.clientX;
-        var y = event.clientY;
-        return x >= rect.left - STICKY_PADDING &&
-            x <= rect.right + STICKY_PADDING &&
-            y >= rect.top - STICKY_PADDING &&
-            y <= rect.bottom + STICKY_PADDING;
+    function isWithinStickyZone() {
+        return false;
     }
 
     function setCurrentElement(element) {
@@ -562,6 +601,72 @@ define([], function () {
         return (div.textContent || div.innerText || '').trim();
     }
 
+    function getCriticalMap() {
+        if (typeof window === 'undefined') {
+            return {};
+        }
+        if (!window.__XLATE__) {
+            window.__XLATE__ = {};
+        }
+        if (!window.__XLATE__.criticalMap || typeof window.__XLATE__.criticalMap !== 'object') {
+            window.__XLATE__.criticalMap = {};
+        }
+        return window.__XLATE__.criticalMap;
+    }
+
+    function getKeyIdMap() {
+        if (typeof window === 'undefined') {
+            return {};
+        }
+        if (!window.__XLATE__) {
+            window.__XLATE__ = {};
+        }
+        if (!window.__XLATE__.keyIdMap || typeof window.__XLATE__.keyIdMap !== 'object') {
+            window.__XLATE__.keyIdMap = {};
+        }
+        return window.__XLATE__.keyIdMap;
+    }
+
+    function getKeyId(key) {
+        if (!key) {
+            return 0;
+        }
+        var map = getKeyIdMap();
+        if (!map || typeof map !== 'object') {
+            return 0;
+        }
+        var value = map[key];
+        if (!value) {
+            return 0;
+        }
+        return parseInt(value, 10) || 0;
+    }
+
+    function isKeyCritical(key) {
+        if (!key) {
+            return false;
+        }
+        var map = getCriticalMap();
+        if (!map) {
+            return false;
+        }
+        if (Object.prototype.hasOwnProperty.call(map, key)) {
+            return !!map[key];
+        }
+        return false;
+    }
+
+    function setCriticalMapValue(key, enabled) {
+        if (!key) {
+            return;
+        }
+        var map = getCriticalMap();
+        map[key] = enabled ? 1 : 0;
+        if (typeof window !== 'undefined' && window.__XLATE__) {
+            window.__XLATE__.criticalMap = map;
+        }
+    }
+
     function refreshOverlay() {
         if (!STATE.currentElement) {
             clearCurrent();
@@ -648,6 +753,35 @@ define([], function () {
         manageLink.target = '_blank';
         manageLink.rel = 'noopener noreferrer';
         meta.appendChild(manageLink);
+
+        if (current && current.key) {
+            var keyValue = current.key;
+            var currentlyCritical = isKeyCritical(keyValue);
+            var badge = document.createElement('span');
+            badge.className = 'xlate-inspector-critical-badge';
+            if (!currentlyCritical) {
+                badge.classList.add('is-inactive');
+            }
+            badge.textContent = STATE.config.strings.criticalBadge || 'Critical';
+
+            var criticalWrap = document.createElement('div');
+            criticalWrap.className = 'xlate-inspector-critical';
+            criticalWrap.appendChild(badge);
+
+            var desiredState = !currentlyCritical;
+            var criticalBtn = document.createElement('button');
+            criticalBtn.type = 'button';
+            criticalBtn.className = 'xlate-inspector-action xlate-inspector-critical-toggle';
+            criticalBtn.textContent = desiredState
+                ? (STATE.config.strings.markCritical || 'Mark critical')
+                : (STATE.config.strings.unmarkCritical || 'Clear critical');
+            criticalBtn.addEventListener('click', function (event) {
+                event.preventDefault();
+                toggleCriticalState(keyValue, desiredState, event.currentTarget);
+            });
+            criticalWrap.appendChild(criticalBtn);
+            meta.appendChild(criticalWrap);
+        }
         toolbar.appendChild(meta);
 
         toolbar.classList.add('is-visible');
@@ -749,6 +883,66 @@ define([], function () {
             resolved.searchParams.set('search', key);
         }
         return resolved.toString();
+    }
+
+    function getCourseId() {
+        if (STATE.config && STATE.config.courseid) {
+            return STATE.config.courseid;
+        }
+        if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+            return parseInt(window.XLATE_COURSEID, 10) || 0;
+        }
+        return 0;
+    }
+
+    function toggleCriticalState(key, shouldBeCritical, button) {
+        if (!key || !Ajax || typeof Ajax.call !== 'function') {
+            showToast(STATE.config.strings.criticalError || 'Unable to update critical flag');
+            return;
+        }
+        if (STATE.pendingCritical) {
+            return;
+        }
+        STATE.pendingCritical = true;
+        if (button) {
+            button.classList.add('is-loading');
+            button.disabled = true;
+        }
+        var keyId = getKeyId(key);
+        var request = Ajax.call([{
+            methodname: CRITICAL_SERVICE,
+            args: {
+                key: key,
+                critical: shouldBeCritical ? 1 : 0,
+                courseid: getCourseId(),
+                keyid: keyId
+            }
+        }])[0];
+
+        var reset = function () {
+            STATE.pendingCritical = false;
+            if (button) {
+                button.classList.remove('is-loading');
+                button.disabled = false;
+            }
+        };
+
+        request.done(function (response) {
+            reset();
+            if (!response || !response.success) {
+                showToast(STATE.config.strings.criticalError || 'Unable to update critical flag');
+                return;
+            }
+            setCriticalMapValue(key, !!shouldBeCritical);
+            var message = shouldBeCritical
+                ? (STATE.config.strings.criticalMarked || 'Marked as critical')
+                : (STATE.config.strings.criticalCleared || 'Critical flag cleared');
+            showToast(message);
+            refreshOverlay();
+        }).fail(function () {
+            reset();
+            showToast(STATE.config.strings.criticalError || 'Unable to update critical flag');
+        });
     }
 
     function copyToClipboard(value) {

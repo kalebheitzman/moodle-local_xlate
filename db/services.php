@@ -42,6 +42,16 @@ $functions = [
         'capabilities' => 'local/xlate:manage',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ],
+    'local_xlate_set_critical' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'set_critical',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Update the critical flag for a translation key',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/xlate:manage',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ],
     'local_xlate_delete_translation' => [
         'classname' => 'local_xlate_external',
         'methodname' => 'delete_translation',

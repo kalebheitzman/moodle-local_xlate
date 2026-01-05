@@ -31,7 +31,7 @@ require_once($CFG->libdir . '/tablelib.php');
 /**
  * Render pagination controls
  */
-function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $reviewed_filter = '', $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
+function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $reviewed_filter = '', $critical_filter = '', $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
     $langfilter = is_array($langfilter) ? $langfilter : [];
@@ -41,6 +41,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
         'search' => $search,
         'status_filter' => $status_filter,
         'reviewed_filter' => $reviewed_filter,
+        'critical_filter' => $critical_filter,
         'courseid' => $courseid
     ];
     if ($langfiltersubmitted) {
@@ -163,6 +164,7 @@ $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
 $reviewed_filter = optional_param('reviewed_filter', '', PARAM_ALPHA);
+$critical_filter = optional_param('critical_filter', '', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
 $langfilterraw = optional_param_array('langfilter', [], PARAM_ALPHANUMEXT);
 $langfiltersubmitted = optional_param('langfiltersubmitted', 0, PARAM_BOOL);
@@ -231,6 +233,7 @@ $pageparams = [
     'search' => $search,
     'status_filter' => $status_filter,
     'reviewed_filter' => $reviewed_filter,
+    'critical_filter' => $critical_filter,
     'courseid' => $filter_courseid
 ];
 if ($langfiltersubmitted) {
@@ -288,6 +291,21 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
         redirect($PAGE->url, get_string('translation_deleted', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
     } catch (Exception $e) {
         redirect($PAGE->url, get_string('delete_failed', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
+    }
+} else if ($action === 'set_critical' && confirm_sesskey()) {
+    $keyid = required_param('keyid', PARAM_INT);
+    $criticalvalue = required_param('critical', PARAM_INT) ? 1 : 0;
+
+    try {
+        $updated = \local_xlate\local\api::set_key_critical_by_id($keyid, (bool)$criticalvalue);
+        if (!$updated) {
+            throw new \moodle_exception('critical_flag_error', 'local_xlate');
+        }
+
+        $message = $criticalvalue ? get_string('critical_flag_marked', 'local_xlate') : get_string('critical_flag_cleared', 'local_xlate');
+        redirect($PAGE->url, $message, null, \core\output\notification::NOTIFY_SUCCESS);
+    } catch (Exception $e) {
+        redirect($PAGE->url, get_string('critical_flag_error', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
     }
 }
 
@@ -382,7 +400,7 @@ echo html_writer::empty_tag('input', [
 echo html_writer::start_div('row g-3 align-items-end');
 
 // Search box
-echo html_writer::start_div('col-12 col-md-3');
+echo html_writer::start_div('col-12 col-xl-3');
 echo html_writer::tag('label', get_string('search', 'local_xlate'), ['for' => 'search']);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
@@ -397,7 +415,7 @@ echo html_writer::end_div();
 // (component filter removed)
 
 // Status filter
-echo html_writer::start_div('col-6 col-md-2');
+echo html_writer::start_div('col-6 col-xl-2');
 echo html_writer::tag('label', get_string('status', 'local_xlate'), ['for' => 'status_filter']);
 $status_options = [
     '' => get_string('all_statuses', 'local_xlate'),
@@ -409,7 +427,7 @@ echo html_writer::select($status_options, 'status_filter', $status_filter, false
 echo html_writer::end_div();
 
 // Reviewed filter
-echo html_writer::start_div('col-6 col-md-2');
+echo html_writer::start_div('col-6 col-xl-2');
 echo html_writer::tag('label', get_string('reviewed_filter_label', 'local_xlate'), ['for' => 'reviewed_filter']);
 $reviewed_options = [
     '' => get_string('reviewed_filter_any', 'local_xlate'),
@@ -419,15 +437,26 @@ $reviewed_options = [
 echo html_writer::select($reviewed_options, 'reviewed_filter', $reviewed_filter, false, ['class' => 'form-control']);
 echo html_writer::end_div();
 
+// Critical filter
+echo html_writer::start_div('col-6 col-xl-2');
+echo html_writer::tag('label', get_string('critical_filter_label', 'local_xlate'), ['for' => 'critical_filter']);
+$critical_options = [
+    '' => get_string('critical_filter_any', 'local_xlate'),
+    'critical' => get_string('critical_filter_only', 'local_xlate'),
+    'noncritical' => get_string('critical_filter_noncritical', 'local_xlate')
+];
+echo html_writer::select($critical_options, 'critical_filter', $critical_filter, false, ['class' => 'form-control']);
+echo html_writer::end_div();
+
 // Per page
-echo html_writer::start_div('col-6 col-md-2');
+echo html_writer::start_div('col-6 col-xl-1');
 echo html_writer::tag('label', get_string('per_page', 'local_xlate'), ['for' => 'perpage']);
 $perpage_options = [5 => '5', 10 => '10', 25 => '25', 50 => '50', 100 => '100'];
 echo html_writer::select($perpage_options, 'perpage', $perpage, false, ['class' => 'form-control']);
 echo html_writer::end_div();
 
 // Course filter
-echo html_writer::start_div('col-6 col-md-2');
+echo html_writer::start_div('col-6 col-xl-1');
 echo html_writer::tag('label', get_string('courseid', 'local_xlate'), ['for' => 'courseid']);
 echo html_writer::empty_tag('input', [
     'type' => 'number',
@@ -440,7 +469,7 @@ echo html_writer::empty_tag('input', [
 echo html_writer::end_div();
 
 // Search button
-echo html_writer::start_div('col-12 col-md-1 d-flex align-items-end');
+echo html_writer::start_div('col-12 col-xl-1 d-flex align-items-end');
 echo html_writer::tag('button', get_string('filter', 'local_xlate'), [
     'type' => 'submit',
     'class' => 'btn btn-primary w-100'
@@ -490,6 +519,68 @@ echo html_writer::end_tag('form');
 echo html_writer::end_div();
 echo html_writer::end_div();
 
+$activefilters = [];
+if ($search !== '') {
+    $activefilters[] = html_writer::tag(
+        'span',
+        s(get_string('filter_chip_search', 'local_xlate', $search)),
+        ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']
+    );
+}
+if ($status_filter === 'translated') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_status_translated', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+} else if ($status_filter === 'partial') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_status_partial', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+} else if ($status_filter === 'untranslated') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_status_untranslated', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+}
+if ($reviewed_filter === 'reviewed') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_reviewed_only', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+} else if ($reviewed_filter === 'unreviewed') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_reviewed_unreviewed', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+}
+if ($critical_filter === 'critical') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_critical_only', 'local_xlate')), ['class' => 'badge rounded-pill bg-danger text-white px-3 py-2']);
+} else if ($critical_filter === 'noncritical') {
+    $activefilters[] = html_writer::tag('span', s(get_string('filter_chip_critical_noncritical', 'local_xlate')), ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']);
+}
+if (!empty($filter_courseid)) {
+    $activefilters[] = html_writer::tag(
+        'span',
+        s(get_string('filter_chip_course', 'local_xlate', $filter_courseid)),
+        ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']
+    );
+}
+$totallangs = count($enabledlangsarray);
+if ($totallangs > 0 && !empty($langfilterselection) && count($langfilterselection) < $totallangs) {
+    $activefilters[] = html_writer::tag(
+        'span',
+        s(get_string('filter_chip_languages', 'local_xlate', (object)[
+            'selected' => count($langfilterselection),
+            'total' => $totallangs
+        ])),
+        ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']
+    );
+}
+
+if (!empty($activefilters)) {
+    $resetparams = [
+        'perpage' => $perpage,
+        'courseid' => $filter_courseid
+    ];
+    $reseturl = new moodle_url('/local/xlate/manage.php', $resetparams);
+
+    echo html_writer::start_div('card mb-4 shadow-sm border-0 bg-light');
+    echo html_writer::div(get_string('filter_summary_active', 'local_xlate'), 'card-header py-2 small text-uppercase text-muted bg-transparent');
+    echo html_writer::start_div('card-body d-flex flex-wrap align-items-center gap-2');
+    foreach ($activefilters as $chip) {
+        echo $chip;
+    }
+    echo html_writer::link($reseturl, get_string('filter_chip_clear', 'local_xlate'), ['class' => 'btn btn-sm btn-link ms-auto text-decoration-none']);
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+}
+
 // Build the main query with filters
 $where_conditions = [];
 $params = [];
@@ -518,6 +609,12 @@ if ($reviewed_filter === 'reviewed') {
     $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND trf.reviewed = 1)";
 } else if ($reviewed_filter === 'unreviewed') {
     $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND (trf.reviewed = 0 OR trf.reviewed IS NULL))";
+}
+
+if ($critical_filter === 'critical') {
+    $where_conditions[] = 'k.critical = 1';
+} else if ($critical_filter === 'noncritical') {
+    $where_conditions[] = 'k.critical = 0';
 }
 
 if (!empty($where_conditions)) {
@@ -608,6 +705,7 @@ if (!empty($keys)) {
                 $search,
                 $status_filter,
                 $reviewed_filter,
+                $critical_filter,
                 $filter_courseid,
                 $langfilterselection,
                 $langfiltersubmitted
@@ -621,11 +719,56 @@ if (!empty($keys)) {
     
     foreach ($keys as $key) {
         echo html_writer::start_div('card mb-3');
-        echo html_writer::start_div('card-header d-flex justify-content-between');
+        echo html_writer::start_div('card-header d-flex justify-content-between align-items-center flex-wrap gap-2');
+
+        echo html_writer::start_div('d-flex align-items-center gap-2 flex-wrap');
         echo html_writer::tag('strong', $key->component . '.' . $key->xkey);
+        if (!empty($key->critical)) {
+            echo html_writer::tag('span', get_string('critical_badge_label', 'local_xlate'), ['class' => 'badge bg-danger text-uppercase']);
+        }
+        echo html_writer::end_div();
+
+        echo html_writer::start_div('d-flex align-items-center gap-2 flex-wrap');
         echo html_writer::tag('small', 'Translated: ' . $key->translation_count . '/' . count($enabledlangsarray));
+
+        $togglevalue = !empty($key->critical) ? 0 : 1;
+        $togglelabel = !empty($key->critical)
+            ? get_string('critical_flag_unmark', 'local_xlate')
+            : get_string('critical_flag_mark', 'local_xlate');
+        $toggleclass = !empty($key->critical) ? 'btn-outline-danger' : 'btn-outline-secondary';
+
+        echo html_writer::start_tag('form', [
+            'method' => 'post',
+            'action' => $PAGE->url,
+            'class' => 'd-inline-flex align-items-center'
+        ]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'set_critical']);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'critical', 'value' => $togglevalue]);
+        echo html_writer::tag('button', $togglelabel, [
+            'type' => 'submit',
+            'class' => 'btn btn-sm ' . $toggleclass
+        ]);
+        echo html_writer::end_tag('form');
+
+        echo html_writer::end_div();
+
         echo html_writer::end_div();
         
+        $metarow = [];
+        $capturedtime = !empty($key->ctime) ? (int)$key->ctime : 0;
+        if ($capturedtime > 0) {
+            $metarow[] = s(get_string('key_metadata_captured', 'local_xlate', userdate($capturedtime)));
+        }
+        if (!empty($key->mtime)) {
+            $metarow[] = s(get_string('key_metadata_updated', 'local_xlate', userdate($key->mtime)));
+        }
+        $metarow[] = s(get_string('key_metadata_id', 'local_xlate', $key->id));
+        if (!empty($metarow)) {
+            echo html_writer::div(implode(' • ', $metarow), 'text-muted small px-3 pb-2');
+        }
+
         echo html_writer::start_div('card-body');
         // Show source text in a row styled like the translation fields.
         $orderedlangs = $enabledlangsarray;
@@ -820,6 +963,7 @@ if (!empty($keys)) {
                 $search,
                 $status_filter,
                 $reviewed_filter,
+                $critical_filter,
                 $filter_courseid,
                 $langfilterselection,
                 $langfiltersubmitted

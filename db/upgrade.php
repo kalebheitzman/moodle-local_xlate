@@ -534,5 +534,45 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025121800, 'local', 'xlate');
     }
 
+    // Add critical flag to local_xlate_key so administrators can tag high-priority text.
+    if ($oldversion < 2026010501) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_key');
+
+        // Some legacy installs may not yet have the ctime column, so fall back to mtime.
+        $afterfield = 'mtime';
+        $ctimefield = new xmldb_field('ctime');
+        if ($dbman->field_exists($table, $ctimefield)) {
+            $afterfield = 'ctime';
+        }
+
+        $field = new xmldb_field('critical', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', $afterfield);
+
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            try {
+                $dbman->add_field($table, $field);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add critical flag to local_xlate_key: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        $criticalexists = $dbman->field_exists($table, new xmldb_field('critical'));
+        if ($criticalexists) {
+            try {
+                $DB->execute("UPDATE {local_xlate_key} SET critical = 0 WHERE critical IS NULL");
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to backfill critical flag defaults: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026010501, 'local', 'xlate');
+    }
+
+    if ($oldversion < 2026010502) {
+        upgrade_plugin_savepoint(true, 2026010502, 'local', 'xlate');
+    }
+
     return true;
 }

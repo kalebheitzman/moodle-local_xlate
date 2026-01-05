@@ -39,14 +39,15 @@ class local_xlate_external extends external_api {
      */
     public static function save_key_parameters() {
         return new external_function_parameters([
-            'component' => new external_value(PARAM_COMPONENT, 'Component identifier'),
+            'component' => new external_value(PARAM_TEXT, 'Component identifier'),
             'key' => new external_value(PARAM_TEXT, 'Translation key'),
             'source' => new external_value(PARAM_RAW_TRIMMED, 'Source text (may include inline HTML)', VALUE_DEFAULT, ''),
             'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
             'translation' => new external_value(PARAM_RAW_TRIMMED, 'Translation text (may include inline HTML)'),
             'reviewed' => new external_value(PARAM_BOOL, 'Human reviewed flag', VALUE_DEFAULT, 0),
             'courseid' => new external_value(PARAM_INT, 'Course id', VALUE_DEFAULT, 0),
-            'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, '')
+            'context' => new external_value(PARAM_TEXT, 'Optional capture context', VALUE_DEFAULT, ''),
+            'critical' => new external_value(PARAM_BOOL, 'Critical text flag', VALUE_DEFAULT, 0)
         ]);
     }
 
@@ -66,9 +67,10 @@ class local_xlate_external extends external_api {
      * @param int $reviewed Whether the translation has a human review flag set.
      * @param int $courseid Course id to associate with the key (0 for global scope).
      * @param string $context Optional capture context string for auditing.
+     * @param int $critical Whether to mark the key as critical.
      * @return array Response payload containing success flag and key id.
      */
-    public static function save_key($component, $key, $source, $lang, $translation, $reviewed = 0, $courseid = 0, $context = '') {
+    public static function save_key($component, $key, $source, $lang, $translation, $reviewed = 0, $courseid = 0, $context = '', $critical = 0) {
         global $USER;
 
         $params = self::validate_parameters(self::save_key_parameters(), [
@@ -79,7 +81,8 @@ class local_xlate_external extends external_api {
             'translation' => $translation,
             'reviewed' => $reviewed,
             'courseid' => $courseid,
-            'context' => $context
+            'context' => $context,
+            'critical' => $critical
         ]);
 
         $context = context_system::instance();
@@ -94,7 +97,8 @@ class local_xlate_external extends external_api {
             $params['translation'],
             (int)$params['reviewed'],
             (int)$params['courseid'],
-            $params['context']
+            $params['context'],
+            (int)$params['critical']
         );
 
         return [
@@ -112,6 +116,113 @@ class local_xlate_external extends external_api {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success'),
             'keyid' => new external_value(PARAM_INT, 'Key ID')
+        ]);
+    }
+
+    /**
+     * Describe the parameters accepted by {@see self::set_critical()}.
+     *
+     * @return external_function_parameters Parameter schema for inspector toggles.
+     */
+    public static function set_critical_parameters() {
+        return new external_function_parameters([
+            'key' => new external_value(PARAM_RAW_TRIMMED, 'Translation key hash'),
+            'critical' => new external_value(PARAM_BOOL, 'Critical flag state'),
+            'courseid' => new external_value(PARAM_INT, 'Optional course id for capability checks', VALUE_DEFAULT, 0),
+            'keyid' => new external_value(PARAM_INT, 'Optional numeric key id for direct updates', VALUE_DEFAULT, 0)
+        ]);
+    }
+
+    /**
+     * Update the critical flag for a translation key via its hash.
+     *
+    * @param string $key Translation key hash captured in the DOM.
+    * @param bool $critical Desired critical state.
+    * @param int $courseid Optional course id for capability checks.
+     * @param int $keyid Optional numeric key id for direct updates.
+     * @return array Response payload consumed by the inspector UI.
+     */
+    public static function set_critical($key, $critical, $courseid = 0, $keyid = 0) {
+        $params = self::validate_parameters(self::set_critical_parameters(), [
+            'key' => $key,
+            'critical' => $critical,
+            'courseid' => $courseid,
+            'keyid' => $keyid
+        ]);
+
+        $courseid = (int)$params['courseid'];
+        $keyid = (int)$params['keyid'];
+        $systemcontext = context_system::instance();
+        $context = $systemcontext;
+        $requiredcapability = 'local/xlate:manage';
+
+        if (!has_capability('local/xlate:manage', $systemcontext)) {
+            $coursecontext = null;
+            if ($courseid > 0) {
+                try {
+                    $coursecontext = \context_course::instance($courseid, IGNORE_MISSING);
+                } catch (\Exception $e) {
+                    $coursecontext = null;
+                }
+            }
+
+            if ($coursecontext && has_capability('local/xlate:managecourse', $coursecontext)) {
+                $context = $coursecontext;
+                $requiredcapability = 'local/xlate:managecourse';
+            } else {
+                $context = $systemcontext;
+            }
+        }
+
+        self::validate_context($context);
+        require_capability($requiredcapability, $context);
+
+        $result = null;
+        if ($keyid > 0) {
+            $updated = \local_xlate\local\api::set_key_critical_by_id($keyid, (bool)$params['critical']);
+            if ($updated) {
+                $result = [
+                    'success' => true,
+                    'updated' => 1,
+                    'keyids' => [$keyid]
+                ];
+            }
+        }
+
+        if (!$result) {
+            $result = \local_xlate\local\api::set_key_critical_by_xkey($params['key'], (bool)$params['critical']);
+        }
+
+        if (empty($result['success'])) {
+            throw new \invalid_parameter_exception('Unable to update the critical flag for the requested key.');
+        }
+
+        return [
+            'success' => true,
+            'key' => $params['key'],
+            'critical' => (bool)$params['critical'],
+            'updated' => (int)($result['updated'] ?? ($result['success'] ? 1 : 0)),
+            'keyids' => array_map('intval', $result['keyids'] ?? ($keyid > 0 ? [$keyid] : []))
+        ];
+    }
+
+    /**
+     * Describe the response returned by {@see self::set_critical()}.
+     *
+     * @return external_single_structure Response definition for AJAX clients.
+     */
+    public static function set_critical_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'key' => new external_value(PARAM_RAW_TRIMMED, 'Translation key hash'),
+            'critical' => new external_value(PARAM_BOOL, 'Updated critical flag state'),
+            'updated' => new external_value(PARAM_INT, 'Number of affected key records'),
+            'keyids' => new external_multiple_structure(
+                new external_value(PARAM_INT, 'Key id adjusted'),
+                'List of key ids toggled',
+                VALUE_DEFAULT,
+                []
+            )
         ]);
     }
 
@@ -218,7 +329,8 @@ class local_xlate_external extends external_api {
                 'component' => new external_value(PARAM_TEXT, 'Component'),
                 'xkey' => new external_value(PARAM_TEXT, 'Translation key'),
                 'source' => new external_value(PARAM_TEXT, 'Source text'),
-                'mtime' => new external_value(PARAM_INT, 'Modified time')
+                'mtime' => new external_value(PARAM_INT, 'Modified time'),
+                'critical' => new external_value(PARAM_BOOL, 'Critical text flag', VALUE_OPTIONAL)
             ], 'Key data', VALUE_OPTIONAL)
         ]);
     }
