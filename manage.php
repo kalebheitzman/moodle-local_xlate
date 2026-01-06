@@ -820,7 +820,14 @@ if (!empty($keys)) {
             if ($is_source) {
                 echo html_writer::start_div('row align-items-center mb-2');
             } else {
-                echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url, 'class' => 'mb-2']);
+                $formattrs = [
+                    'method' => 'post',
+                    'action' => $PAGE->url,
+                    'class' => 'mb-2 js-xlate-translation-form',
+                    'data-keyid' => $key->id,
+                    'data-lang' => $langcode
+                ];
+                echo html_writer::start_tag('form', $formattrs);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save_translation']);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'keyid', 'value' => $key->id]);
@@ -840,7 +847,7 @@ if (!empty($keys)) {
                 $rows = max(3, min(8, $sourcelines, ceil(strlen($key->source)/80)));
                 $textarea_attrs = [
                     'name' => 'translation',
-                    'class' => 'form-control',
+                    'class' => 'form-control' . ($is_source ? '' : ' js-xlate-translation-field'),
                     'rows' => $rows,
                     'dir' => $dir,
                     'style' => 'text-align:' . $align
@@ -857,7 +864,7 @@ if (!empty($keys)) {
                 $input_attrs = [
                     'name' => 'translation',
                     'type' => 'text',
-                    'class' => 'form-control',
+                    'class' => 'form-control' . ($is_source ? '' : ' js-xlate-translation-field'),
                     'dir' => $dir,
                     'style' => 'text-align:' . $align
                 ];
@@ -887,7 +894,7 @@ if (!empty($keys)) {
                     'name' => 'status',
                     'value' => '1',
                     'checked' => $checked ? 'checked' : null,
-                    'class' => 'me-1'
+                    'class' => 'me-1 js-xlate-toggle'
                 ]);
                 echo html_writer::tag('label', $active_input . ' ' . get_string('active', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
@@ -899,11 +906,11 @@ if (!empty($keys)) {
                     'name' => 'reviewed',
                     'value' => '1',
                     'checked' => $rchecked ? 'checked' : null,
-                    'class' => 'me-1'
+                    'class' => 'me-1 js-xlate-toggle'
                 ]);
                 echo html_writer::tag('label', $review_input . ' ' . get_string('reviewed', 'local_xlate'), ['class' => 'form-check-label mb-0 text-nowrap small']);
                 echo html_writer::end_div();
-                echo html_writer::start_div('col-md-2');
+                echo html_writer::start_div('col-md-2 d-flex align-items-center gap-2 flex-wrap');
                 $saveLabel = get_string('save_translation', 'local_xlate');
                 $autoLabel = get_string('auto_translate', 'local_xlate');
                 $deleteLabel = get_string('delete_translation', 'local_xlate');
@@ -916,7 +923,7 @@ if (!empty($keys)) {
                         'aria-hidden' => 'true'
                     ]), [
                     'type' => 'submit',
-                    'class' => 'btn btn-success js-xlate-icon-button p-0',
+                    'class' => 'btn btn-success js-xlate-icon-button js-xlate-save-button p-0',
                     'title' => $saveLabel,
                     'data-bs-title' => $saveLabel,
                     'aria-label' => $saveLabel,
@@ -953,6 +960,11 @@ if (!empty($keys)) {
                     'data-lang' => $langcode
                 ]);
                 echo html_writer::end_div();
+                echo html_writer::tag('span', '', [
+                    'class' => 'badge rounded-pill text-bg-success js-xlate-save-indicator d-none',
+                    'role' => 'status',
+                    'aria-live' => 'polite'
+                ]);
                 echo html_writer::end_div();
                 echo html_writer::end_tag('form');
             }
@@ -1019,7 +1031,10 @@ $amdconfig = [
         'deleteSuccess' => get_string('translation_deleted', 'local_xlate'),
         'autoTranslateFailed' => get_string('autotranslate_inline_failed', 'local_xlate'),
         'autoTranslateReady' => get_string('autotranslate_inline_success', 'local_xlate'),
-        'autoTranslateSaved' => get_string('auto_translate_saved', 'local_xlate')
+        'autoTranslateSaved' => get_string('auto_translate_saved', 'local_xlate'),
+        'saveSuccess' => get_string('translation_saved', 'local_xlate'),
+        'saveFailed' => get_string('translation_save_failed', 'local_xlate'),
+        'saveIndicator' => get_string('translation_saved_short', 'local_xlate')
     ]
 ];
 

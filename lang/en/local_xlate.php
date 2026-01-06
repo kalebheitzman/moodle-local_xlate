@@ -57,6 +57,8 @@ $string['autotranslate_failed'] = 'Autotranslate request failed.';
 
 // Success/error messages for management
 $string['translation_saved'] = 'Translation saved successfully';
+$string['translation_saved_short'] = 'Saved';
+$string['translation_save_failed'] = 'Unable to save translation.';
 $string['translation_empty'] = 'Translation text cannot be empty';
 
 // Search and filtering

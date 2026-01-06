@@ -71,6 +71,194 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     }
 
     /**
+     * Serialize a translation form into an AJAX payload.
+     *
+     * @param {HTMLFormElement} form Translation form element.
+     * @returns {{keyid:number,lang:string,translation:string,status:number,reviewed:number}|null}
+     */
+    function serializeTranslationForm(form) {
+        if (!form) {
+            return null;
+        }
+        var keyid = parseInt(form.getAttribute('data-keyid'), 10) || 0;
+        var lang = form.getAttribute('data-lang') || '';
+        if (!keyid || !lang) {
+            return null;
+        }
+        var translationField = form.querySelector('[name="translation"]');
+        var statusToggle = form.querySelector('input[name="status"]');
+        var reviewedToggle = form.querySelector('input[name="reviewed"]');
+        return {
+            keyid: keyid,
+            lang: lang,
+            translation: translationField ? translationField.value : '',
+            status: statusToggle && statusToggle.checked ? 1 : 0,
+            reviewed: reviewedToggle && reviewedToggle.checked ? 1 : 0
+        };
+    }
+
+    /**
+     * Toggle disabled state for autosave checkboxes during network calls.
+     *
+     * @param {HTMLFormElement} form Translation form.
+     * @param {boolean} disabled Whether to disable toggles.
+     * @returns {void}
+     */
+    function setAutosaveTogglesDisabled(form, disabled) {
+        if (!form) {
+            return;
+        }
+        var toggles = form.querySelectorAll('.js-xlate-toggle');
+        if (!toggles || !toggles.length) {
+            return;
+        }
+        Array.prototype.forEach.call(toggles, function (toggle) {
+            toggle.disabled = !!disabled;
+        });
+    }
+
+    /**
+     * Flash a small inline indicator next to the save controls.
+     *
+     * @param {HTMLFormElement} form Translation form.
+     * @param {string} message Text to display.
+     * @param {boolean} success Whether this is a success badge (default) or error badge.
+     * @returns {void}
+     */
+    function flashSaveIndicator(form, message, success) {
+        if (!form) {
+            return;
+        }
+        var indicator = form.querySelector('.js-xlate-save-indicator');
+        if (!indicator) {
+            indicator = document.createElement('span');
+            indicator.className = 'badge rounded-pill js-xlate-save-indicator';
+            indicator.setAttribute('role', 'status');
+            indicator.setAttribute('aria-live', 'polite');
+            form.appendChild(indicator);
+        }
+        indicator.classList.remove('d-none');
+        indicator.classList.remove('text-bg-success', 'text-bg-danger');
+        indicator.classList.add(success === false ? 'text-bg-danger' : 'text-bg-success');
+        indicator.textContent = message || '';
+        clearTimeout(indicator._xlateTimer);
+        indicator._xlateTimer = setTimeout(function () {
+            indicator.classList.add('d-none');
+        }, 2500);
+    }
+
+    /**
+     * Briefly highlight the translation field to confirm a save.
+     *
+     * @param {HTMLFormElement} form Translation form element.
+     * @returns {void}
+     */
+    function highlightTranslationField(form) {
+        if (!form) {
+            return;
+        }
+        var field = form.querySelector('.js-xlate-translation-field');
+        if (!field) {
+            return;
+        }
+        field.classList.add('xlate-field-saved');
+        clearTimeout(field._xlateSavedTimer);
+        field._xlateSavedTimer = setTimeout(function () {
+            field.classList.remove('xlate-field-saved');
+        }, 2000);
+    }
+
+    /**
+     * Persist a translation form via AJAX and surface user feedback.
+     *
+     * @param {HTMLFormElement} form Translation form.
+     * @param {Object} options Additional behaviour flags.
+     * @param {HTMLElement} [options.source] Element initiating the save.
+     * @param {boolean} [options.showToast] Whether to display a toast notification.
+     * @param {Object} config Module configuration.
+     * @returns {void}
+     */
+    function saveTranslationForm(form, options, config) {
+        options = options || {};
+        var payload = serializeTranslationForm(form);
+        if (!payload) {
+            return;
+        }
+        if (form.dataset && form.dataset.saving === '1') {
+            form.dataset.pendingSave = '1';
+            form._xlatePendingOptions = options;
+            return;
+        }
+        if (form.dataset) {
+            form.dataset.saving = '1';
+        }
+        var source = options.source || null;
+        var sourceIsButton = source && source.tagName && source.tagName.toLowerCase() === 'button';
+        if (sourceIsButton) {
+            toggleButtonLoading(source, true);
+        }
+        setAutosaveTogglesDisabled(form, true);
+        var showToast = !!options.showToast;
+        if (source && source.classList && source.classList.contains('js-xlate-toggle')) {
+            showToast = false;
+        }
+
+        var request = Ajax.call([{
+            methodname: 'local_xlate_save_translation',
+            args: payload
+        }])[0];
+
+        var handleSuccess = function () {
+            highlightTranslationField(form);
+            if (showToast) {
+                var toastMessage = getString(config, 'saveSuccess', 'Translation saved successfully.');
+                notification.addNotification({
+                    message: toastMessage,
+                    type: 'success'
+                });
+            }
+        };
+
+        var handleFailure = function (err) {
+            var baseFailureMessage = getString(config, 'saveFailed', 'Unable to save translation.');
+            var failureMessage = baseFailureMessage;
+            if (err && err.message) {
+                failureMessage += '\n' + err.message;
+            } else if (err && err.error) {
+                failureMessage += '\n' + err.error;
+            }
+            notification.alert(failureMessage);
+            flashSaveIndicator(form, baseFailureMessage, false);
+        };
+
+        var finishSave = function () {
+            if (form.dataset) {
+                delete form.dataset.saving;
+            }
+            if (sourceIsButton) {
+                toggleButtonLoading(source, false);
+            }
+            setAutosaveTogglesDisabled(form, false);
+            if (form.dataset && form.dataset.pendingSave === '1') {
+                delete form.dataset.pendingSave;
+                var nextOptions = form._xlatePendingOptions || {};
+                delete form._xlatePendingOptions;
+                saveTranslationForm(form, nextOptions, config);
+            }
+        };
+
+        var chain = request.then(handleSuccess).catch(function (err) {
+            handleFailure(err);
+        });
+
+        if (typeof chain.finally === 'function') {
+            chain.finally(finishSave);
+        } else {
+            chain.then(finishSave, finishSave);
+        }
+    }
+
+    /**
      * Invoke the delete translation web service for a button context.
      *
      * @param {HTMLElement} button Button initiating the delete request.
@@ -310,6 +498,37 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
     }
 
     /**
+     * Enable AJAX submit + autosave behaviour for translation forms.
+     *
+     * @param {Object} config Module configuration.
+     * @returns {void}
+     */
+    function attachTranslationFormHandlers(config) {
+        var forms = document.querySelectorAll('.js-xlate-translation-form');
+        if (!forms || !forms.length) {
+            return;
+        }
+        Array.prototype.forEach.call(forms, function (form) {
+            form.addEventListener('submit', function (event) {
+                if (event) {
+                    event.preventDefault();
+                }
+                var saveButton = form.querySelector('.js-xlate-save-button');
+                saveTranslationForm(form, { source: saveButton, showToast: true }, config);
+            });
+            var toggles = form.querySelectorAll('.js-xlate-toggle');
+            if (!toggles || !toggles.length) {
+                return;
+            }
+            Array.prototype.forEach.call(toggles, function (toggle) {
+                toggle.addEventListener('change', function () {
+                    saveTranslationForm(form, { source: toggle, showToast: false }, config);
+                });
+            });
+        });
+    }
+
+    /**
      * Enable Bootstrap tooltips for icon-only action buttons (Boost themes).
      *
      * @returns {void}
@@ -358,6 +577,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
          * @returns {void}
          */
         init: function (config) {
+            attachTranslationFormHandlers(config);
             attachDeleteHandlers(config);
             attachAutoTranslateHandlers(config);
             enableIconTooltips();

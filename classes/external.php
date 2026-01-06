@@ -274,6 +274,70 @@ class local_xlate_external extends external_api {
     }
 
     /**
+     * Describe the parameters accepted by {@see self::save_translation()}.
+     *
+     * @return external_function_parameters Parameter schema for inline saves.
+     */
+    public static function save_translation_parameters() {
+        return new external_function_parameters([
+            'keyid' => new external_value(PARAM_INT, 'Translation key id'),
+            'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
+            'translation' => new external_value(PARAM_RAW, 'Translated text (HTML allowed)', VALUE_DEFAULT, ''),
+            'status' => new external_value(PARAM_BOOL, 'Publication status flag', VALUE_DEFAULT, 0),
+            'reviewed' => new external_value(PARAM_BOOL, 'Reviewed flag', VALUE_DEFAULT, 0)
+        ]);
+    }
+
+    /**
+     * Save or update a translation row for the Manage UI via AJAX.
+     *
+     * @param int $keyid Key identifier.
+     * @param string $lang Language code.
+     * @param string $translation Translation text.
+     * @param int $status Publication status flag.
+     * @param int $reviewed Reviewed flag.
+     * @return array Response payload consumed by the Manage UI.
+     */
+    public static function save_translation($keyid, $lang, $translation = '', $status = 0, $reviewed = 0) {
+        $params = self::validate_parameters(self::save_translation_parameters(), [
+            'keyid' => $keyid,
+            'lang' => $lang,
+            'translation' => $translation,
+            'status' => $status,
+            'reviewed' => $reviewed
+        ]);
+
+        $context = context_system::instance();
+        self::validate_context($context);
+        require_capability('local/xlate:manage', $context);
+
+        $translationid = \local_xlate\local\api::save_translation(
+            (int)$params['keyid'],
+            $params['lang'],
+            (string)$params['translation'],
+            (int)$params['status'],
+            (int)$params['reviewed']
+        );
+
+        return [
+            'success' => true,
+            'translationid' => (int)$translationid
+        ];
+    }
+
+    /**
+     * Describe the response returned by {@see self::save_translation()}.
+     *
+     * @return external_single_structure Response schema for AJAX clients.
+     */
+    public static function save_translation_returns() {
+        return new external_single_structure([
+            'success' => new external_value(PARAM_BOOL, 'Operation success'),
+            'translationid' => new external_value(PARAM_INT, 'Translation row id')
+        ]);
+    }
+
+    /**
      * Describe the parameters accepted by {@see self::get_key()}.
      *
      * @return external_function_parameters Parameter schema for validation.

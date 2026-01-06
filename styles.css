@@ -17,3 +17,12 @@
     font-size: 1.05rem;
     margin: 0;
 }
+
+.js-xlate-translation-field {
+    transition: background-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.js-xlate-translation-field.xlate-field-saved {
+    background-color: #e6f4ea;
+    box-shadow: 0 0 0 1px #a8d5b4 inset;
+}

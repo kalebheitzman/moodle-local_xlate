@@ -62,6 +62,16 @@ $functions = [
         'capabilities' => 'local/xlate:manage',
         'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
     ],
+    'local_xlate_save_translation' => [
+        'classname' => 'local_xlate_external',
+        'methodname' => 'save_translation',
+        'classpath' => 'local/xlate/classes/external.php',
+        'description' => 'Save a translation record via AJAX',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/xlate:manage',
+        'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE]
+    ],
     'local_xlate_get_key' => [
         'classname' => 'local_xlate_external',
         'methodname' => 'get_key',
