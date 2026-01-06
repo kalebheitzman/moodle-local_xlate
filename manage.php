@@ -226,6 +226,11 @@ if ($langfiltersubmitted) {
     }
 }
 $langfilterlookup = array_flip($langfilterselection);
+$reviewfilterenabled = (count($langfilterselection) === 1);
+if (!$reviewfilterenabled) {
+    $reviewed_filter = '';
+}
+$reviewfilterlang = $reviewfilterenabled ? reset($langfilterselection) : null;
 
 $pageparams = [
     'page' => $page,
@@ -426,7 +431,7 @@ $status_options = [
 echo html_writer::select($status_options, 'status_filter', $status_filter, false, ['class' => 'form-control']);
 echo html_writer::end_div();
 
-// Reviewed filter
+// Reviewed filter (enabled only when a single target language is selected)
 echo html_writer::start_div('col-6 col-xl-2');
 echo html_writer::tag('label', get_string('reviewed_filter_label', 'local_xlate'), ['for' => 'reviewed_filter']);
 $reviewed_options = [
@@ -434,7 +439,11 @@ $reviewed_options = [
     'reviewed' => get_string('reviewed_filter_reviewed', 'local_xlate'),
     'unreviewed' => get_string('reviewed_filter_unreviewed', 'local_xlate')
 ];
-echo html_writer::select($reviewed_options, 'reviewed_filter', $reviewed_filter, false, ['class' => 'form-control']);
+$reviewedselectattrs = ['class' => 'form-control', 'id' => 'reviewed_filter'];
+if (!$reviewfilterenabled) {
+    $reviewedselectattrs['disabled'] = 'disabled';
+}
+echo html_writer::select($reviewed_options, 'reviewed_filter', $reviewed_filter, false, $reviewedselectattrs);
 echo html_writer::end_div();
 
 // Critical filter
@@ -570,8 +579,8 @@ if (!empty($activefilters)) {
     ];
     $reseturl = new moodle_url('/local/xlate/manage.php', $resetparams);
 
-    echo html_writer::start_div('card mb-4 shadow-sm border-0 bg-light');
-    echo html_writer::div(get_string('filter_summary_active', 'local_xlate'), 'card-header py-2 small text-uppercase text-muted bg-transparent');
+    echo html_writer::start_div('card mb-4');
+    echo html_writer::div(get_string('filter_summary_active', 'local_xlate'), 'card-header py-2 small text-uppercase text-muted');
     echo html_writer::start_div('card-body d-flex flex-wrap align-items-center gap-2');
     foreach ($activefilters as $chip) {
         echo $chip;
@@ -605,10 +614,14 @@ if (!empty($filter_courseid) && $filter_courseid > 0) {
     $params[] = $filter_courseid;
 }
 
-if ($reviewed_filter === 'reviewed') {
-    $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND trf.reviewed = 1)";
-} else if ($reviewed_filter === 'unreviewed') {
-    $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.status = 1 AND (trf.reviewed = 0 OR trf.reviewed IS NULL))";
+if ($reviewfilterenabled && !empty($reviewfilterlang)) {
+    if ($reviewed_filter === 'reviewed') {
+        $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.lang = ? AND trf.status = 1 AND trf.reviewed = 1)";
+        $params[] = $reviewfilterlang;
+    } else if ($reviewed_filter === 'unreviewed') {
+        $where_conditions[] = "EXISTS (SELECT 1 FROM {local_xlate_tr} trf WHERE trf.keyid = k.id AND trf.lang = ? AND trf.status = 1 AND (trf.reviewed = 0 OR trf.reviewed IS NULL))";
+        $params[] = $reviewfilterlang;
+    }
 }
 
 if ($critical_filter === 'critical') {
@@ -766,7 +779,7 @@ if (!empty($keys)) {
         }
         $metarow[] = s(get_string('key_metadata_id', 'local_xlate', $key->id));
         if (!empty($metarow)) {
-            echo html_writer::div(implode(' • ', $metarow), 'text-muted small px-3 pb-2');
+            echo html_writer::div(implode(' • ', $metarow), 'text-muted small px-3 pt-1 pb-2');
         }
 
         echo html_writer::start_div('card-body');
