@@ -570,8 +570,8 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026010501, 'local', 'xlate');
     }
 
-    if ($oldversion < 2026010505) {
-        upgrade_plugin_savepoint(true, 2026010505, 'local', 'xlate');
+    if ($oldversion < 2026010900) {
+        upgrade_plugin_savepoint(true, 2026010900, 'local', 'xlate');
     }
 
     return true;
