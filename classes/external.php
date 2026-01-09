@@ -920,73 +920,14 @@ class local_xlate_external extends external_api {
         self::validate_context($context);
         require_capability('local/xlate:manage', $context);
 
-        // Check if course has xlate language configuration
-        $config = \local_xlate\customfield_helper::get_course_config((int)$params['courseid']);
-        if ($config === null) {
-            throw new \moodle_exception('Course has no xlate language configuration. Please set source and target languages in course settings.');
+        $result = \local_xlate\local\course_job_manager::enqueue_course_job((int)$params['courseid'], $params['options'], isset($USER->id) ? (int)$USER->id : 0);
+
+        if (empty($result['success'])) {
+            $message = isset($result['error']) ? $result['error'] : 'Unable to enqueue autotranslate course job.';
+            throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, $message);
         }
 
-        $sourcelang = $config['source'];
-
-        $installedlangs = array_keys(get_string_manager()->get_list_of_translations());
-        $requestedtargets = [];
-        if (!empty($params['options']['targetlang'])) {
-            $requestedtargets = (array)$params['options']['targetlang'];
-        } elseif (!empty($params['options']['targetlangs'])) {
-            $requestedtargets = (array)$params['options']['targetlangs'];
-        }
-        $requestedtargets = array_values(array_unique(array_filter(array_map('trim', $requestedtargets), function ($code) {
-            return $code !== '';
-        })));
-        if (!empty($requestedtargets)) {
-            $requestedtargets = array_values(array_intersect($requestedtargets, $installedlangs));
-        }
-        $requestedtargets = array_values(array_filter($requestedtargets, function ($code) use ($sourcelang) {
-            return $code && $code !== $sourcelang;
-        }));
-
-        $defaultTargets = array_values(array_filter($config['targets'], function ($code) use ($sourcelang) {
-            return $code && $code !== $sourcelang;
-        }));
-
-        $targetlangs = !empty($requestedtargets) ? $requestedtargets : $defaultTargets;
-
-        if (empty($targetlangs)) {
-            throw new \moodle_exception('Course has no target languages configured. Please select at least one target language in course settings or the Manage UI card.');
-        }
-
-        // Count total keys associated with the course
-        $total = 0;
-        try {
-            $total = $DB->count_records('local_xlate_key_course', ['courseid' => $params['courseid']]);
-        } catch (\Exception $e) {
-            $total = 0;
-        }
-
-        // Merge course config into options
-        $merged_options = $params['options'] ?: [];
-        $merged_options['sourcelang'] = $sourcelang;
-        $merged_options['targetlangs'] = $targetlangs;
-
-        $record = new \stdClass();
-        $record->courseid = (int)$params['courseid'];
-        $record->userid = isset($USER->id) ? (int)$USER->id : 0;
-        $record->status = 'pending';
-        $record->total = (int)$total;
-        $record->processed = 0;
-        $record->batchsize = isset($params['options']['batchsize']) ? (int)$params['options']['batchsize'] : 50;
-        $record->options = json_encode($merged_options);
-        $record->lastid = 0;
-        $record->ctime = time();
-        $record->mtime = time();
-
-        $jobid = $DB->insert_record('local_xlate_course_job', $record);
-
-        $task = new \local_xlate\task\translate_course_task();
-        $task->set_custom_data((object)['jobid' => $jobid]);
-        $taskid = \core\task\manager::queue_adhoc_task($task);
-
-        return ['success' => true, 'jobid' => $jobid, 'taskid' => $taskid];
+        return $result;
     }
 
     /**

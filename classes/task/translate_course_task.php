@@ -96,14 +96,38 @@ class translate_course_task extends adhoc_task {
         $batchsize = (int)($job->batchsize ?: 50);
         $lastid = (int)$job->lastid;
 
+        $targetlangs = [];
+        if (!empty($options['targetlangs'])) {
+            $targetlangs = (array)$options['targetlangs'];
+        } elseif (!empty($options['targetlang'])) {
+            $targetlangs = (array)$options['targetlang'];
+        }
+        $targetlangs = array_values(array_unique(array_filter(array_map('trim', $targetlangs))));
+
+        $onlymissing = !empty($options['onlymissing']);
+        $missinglang = null;
+        if ($onlymissing && count($targetlangs) === 1) {
+            $missinglang = (string)$targetlangs[0];
+        }
+
         // Select next set of key-course associations for this course.
         $sql = "SELECT kc.id as kc_id, kc.keyid, k.component, k.xkey, k.source
                   FROM {local_xlate_key_course} kc
-                  JOIN {local_xlate_key} k ON k.id = kc.keyid
-                 WHERE kc.courseid = :courseid AND kc.id > :lastid
-              ORDER BY kc.id ASC";
+                  JOIN {local_xlate_key} k ON k.id = kc.keyid";
 
         $params = ['courseid' => (int)$job->courseid, 'lastid' => $lastid];
+        if ($missinglang !== null) {
+            $sql .= " LEFT JOIN {local_xlate_tr} t ON t.keyid = kc.keyid AND t.lang = :missinglang";
+            $params['missinglang'] = $missinglang;
+        }
+
+        $sql .= " WHERE kc.courseid = :courseid AND kc.id > :lastid";
+        if ($missinglang !== null) {
+            $sql .= " AND (t.id IS NULL OR t.status <> 1)";
+        }
+
+        $sql .= " ORDER BY kc.id ASC";
+
         $records = $DB->get_records_sql($sql, $params, 0, $batchsize);
 
         if (empty($records)) {
@@ -132,7 +156,6 @@ class translate_course_task extends adhoc_task {
 
         // Determine source and target languages from course custom fields first, then fall back to options.
         $config = \local_xlate\customfield_helper::get_course_config((int)$job->courseid);
-        
         if ($config === null) {
             // Course has no xlate configuration - skip translation
             mtrace("Course {$job->courseid} has no xlate language configuration. Marking job complete.");
@@ -141,16 +164,11 @@ class translate_course_task extends adhoc_task {
             $DB->update_record('local_xlate_course_job', $job);
             return;
         }
-        
-        $sourcelang = $config['source'];
 
-        $targetlangs = [];
-        if (!empty($options['targetlangs']) && is_array($options['targetlangs'])) {
-            $targetlangs = $options['targetlangs'];
-        } elseif (!empty($config['targets'])) {
+        $sourcelang = $options['sourcelang'] ?? $config['source'];
+
+        if (empty($targetlangs)) {
             $targetlangs = $config['targets'];
-        } elseif (!empty($options['targetlang'])) {
-            $targetlangs = is_array($options['targetlang']) ? $options['targetlang'] : [$options['targetlang']];
         }
 
         $targetlangs = array_values(array_unique(array_filter($targetlangs, function ($code) use ($sourcelang) {

@@ -221,6 +221,13 @@ if ($hassiteconfig) {
         ));
 
         $ADMIN->add('localplugins', new admin_externalpage(
+            'local_xlate_queue',
+            get_string('admin_manage_queue', 'local_xlate'),
+            new moodle_url('/local/xlate/queue.php'),
+            'local/xlate:manage'
+        ));
+
+        $ADMIN->add('localplugins', new admin_externalpage(
             'local_xlate_glossary',
             get_string('admin_manage_glossary', 'local_xlate'),
             new moodle_url('/local/xlate/glossary.php'),

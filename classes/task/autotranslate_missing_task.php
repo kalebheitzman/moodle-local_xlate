@@ -98,56 +98,29 @@ class autotranslate_missing_task extends scheduled_task {
             }
 
             foreach ($targetlangs as $targetlang) {
-                $processed = 0;
-                do {
-                    $missing = self::get_missing_course_translations($courseid, $targetlang, $batchsize);
-                    if (empty($missing)) {
-                        if ($processed === 0) {
-                            mtrace("Course {$courseid}: no pending keys for {$targetlang}.");
-                        }
-                        break;
-                    }
+                $missingcount = self::count_missing_course_translations($courseid, $targetlang);
+                if ($missingcount === 0) {
+                    mtrace("Course {$courseid}: no pending keys for {$targetlang}.");
+                    continue;
+                }
 
-                    $chunkcount = count($missing);
-                    $processed += $chunkcount;
-                    mtrace("Course {$courseid}: translating {$chunkcount} keys into {$targetlang} (total this run: {$processed}).");
+                if (\local_xlate\local\course_job_manager::has_pending_job($courseid, [$targetlang], true)) {
+                    mtrace("Course {$courseid}: pending job already exists for {$targetlang}, skipping enqueue.");
+                    continue;
+                }
 
-                    $items = [];
-                    foreach ($missing as $row) {
-                        $items[] = [
-                            'id' => (string)$row->xkey,
-                            'key' => (string)$row->xkey,
-                            'component' => (string)$row->component,
-                            'source_text' => (string)$row->source,
-                            'context' => '',
-                            'placeholders' => []
-                        ];
-                    }
+                $result = \local_xlate\local\course_job_manager::enqueue_course_job($courseid, [
+                    'batchsize' => $batchsize,
+                    'targetlangs' => [$targetlang],
+                    'onlymissing' => true,
+                ], 0, $missingcount);
 
-                    $glossarypairs = \local_xlate\glossary::get_pairs_for_language_pair($sourcelang, $targetlang, 200);
-
-                    $result = \local_xlate\translation\backend::translate_batch(
-                        'course-auto-' . $courseid . '-' . $targetlang . '-' . uniqid('', true),
-                        $sourcelang,
-                        $targetlang,
-                        $items,
-                        $glossarypairs,
-                        []
-                    );
-
-                    if (empty($result['ok']) || empty($result['results'])) {
-                        mtrace("Course {$courseid}: backend error for {$targetlang}: " . json_encode($result['errors'] ?? []));
-                        break;
-                    }
-
-                    self::persist_batch_results($missing, $result['results'], $targetlang, $courseid);
-
-                    if (class_exists('core_php_time_limit')) {
-                        \core_php_time_limit::raise(60);
-                    } else {
-                        @set_time_limit(60);
-                    }
-                } while ($chunkcount === $batchsize);
+                if (!empty($result['success'])) {
+                    mtrace("Course {$courseid}: queued job {$result['jobid']} for {$targetlang} ({$missingcount} pending keys).");
+                } else {
+                    $error = isset($result['error']) ? $result['error'] : 'Unknown error.';
+                    mtrace("Course {$courseid}: failed to queue job for {$targetlang}: {$error}");
+                }
             }
         }
 
@@ -162,80 +135,16 @@ class autotranslate_missing_task extends scheduled_task {
      * @param int $limit Maximum records to fetch.
      * @return array<int,\stdClass> Records containing key metadata.
      */
-    protected static function get_missing_course_translations(int $courseid, string $targetlang, int $limit): array {
+    protected static function count_missing_course_translations(int $courseid, string $targetlang): int {
         global $DB;
 
-        $sql = "SELECT k.id, k.xkey, k.source, k.component
+        $sql = "SELECT COUNT(1)
                   FROM {local_xlate_key_course} kc
                   JOIN {local_xlate_key} k ON k.id = kc.keyid
              LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
-                 WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)
-              ORDER BY k.id ASC";
+                 WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)";
 
         $params = ['courseid' => $courseid, 'targetlang' => $targetlang];
-        return $DB->get_records_sql($sql, $params, 0, $limit);
-    }
-
-    /**
-     * Persist backend results for a single course/target combo.
-     *
-     * @param array<int,\stdClass> $pendingRows Rows returned from get_missing_course_translations.
-     * @param array<int,array> $results Backend results array.
-     * @param string $targetlang Target language code.
-     * @param int $courseid Course identifier.
-     * @return void
-     */
-    protected static function persist_batch_results(array $pendingRows, array $results, string $targetlang, int $courseid): void {
-        if (empty($pendingRows) || empty($results)) {
-            return;
-        }
-
-        $bykey = [];
-        foreach ($pendingRows as $row) {
-            $bykey[(string)$row->xkey] = $row;
-        }
-
-        $saved = 0;
-        $skipped = 0;
-        $failed = 0;
-
-        foreach ($results as $result) {
-            $id = isset($result['id']) ? (string)$result['id'] : '';
-            $translated = isset($result['translated']) ? (string)$result['translated'] : '';
-            if ($id === '' || $translated === '') {
-                mtrace("Course {$courseid}: skipping translation result with missing id/text for {$targetlang}");
-                $skipped++;
-                continue;
-            }
-
-            if (!isset($bykey[$id])) {
-                mtrace("Course {$courseid}: translation returned unknown key {$id} for {$targetlang}");
-                $skipped++;
-                continue;
-            }
-            $row = $bykey[$id];
-
-            try {
-                \local_xlate\local\api::save_key_with_translation(
-                    (string)$row->component,
-                    (string)$row->xkey,
-                    (string)$row->source,
-                    $targetlang,
-                    $translated,
-                    0,
-                    $courseid,
-                    ''
-                );
-                $saved++;
-            } catch (\Throwable $e) {
-                $failed++;
-                $message = '[local_xlate] Failed to persist autotranslate for key ' . $row->xkey . ' (' . $targetlang . '): ' . $e->getMessage();
-                debugging($message, DEBUG_DEVELOPER);
-                mtrace('  ' . $message);
-            }
-        }
-
-        $total = count($results);
-        mtrace("Course {$courseid}: persist summary {$targetlang} -> saved {$saved}/{$total}, skipped {$skipped}, failed {$failed}");
+        return (int)$DB->get_field_sql($sql, $params);
     }
 }

@@ -31,17 +31,24 @@
  * @return string
  */
 function local_xlate_admin_nav_html($active = ''): string {
+    $courseid = optional_param('courseid', 0, PARAM_INT);
+    $sharedparams = $courseid > 0 ? ['courseid' => $courseid] : [];
+
     $tabs = [
         'manage' => [
-            'url' => new moodle_url('/local/xlate/manage.php'),
+            'url' => new moodle_url('/local/xlate/manage.php', $sharedparams),
             'label' => get_string('nav_manage', 'local_xlate'),
         ],
+        'queue' => [
+            'url' => new moodle_url('/local/xlate/queue.php', $sharedparams),
+            'label' => get_string('nav_queue', 'local_xlate'),
+        ],
         'glossary' => [
-            'url' => new moodle_url('/local/xlate/glossary.php'),
+            'url' => new moodle_url('/local/xlate/glossary.php', $sharedparams),
             'label' => get_string('nav_glossary', 'local_xlate'),
         ],
         'usage' => [
-            'url' => new moodle_url('/local/xlate/usage.php'),
+            'url' => new moodle_url('/local/xlate/usage.php', $sharedparams),
             'label' => get_string('nav_usage', 'local_xlate'),
         ],
         'settings' => [

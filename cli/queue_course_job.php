@@ -72,35 +72,16 @@ if (!$coursesourcelang) {
 }
 
 // Count keys
-$total = $DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
-
-/** @var stdClass $record row persisted to local_xlate_course_job */
-$record = new stdClass();
-$record->courseid = $courseid;
-$record->userid = isset($USER->id) ? (int)$USER->id : 0;
-$record->status = 'pending';
-$record->total = $total;
-$record->processed = 0;
-$record->batchsize = $batchsize;
-/**
- * @var array{batchsize:int,targetlang:array<int,string>,sourcelang:string} $options
- *     Persisted job options consumed by \local_xlate\task\translate_course_task.
- */
-$options = [
+$result = \local_xlate\local\course_job_manager::enqueue_course_job($courseid, [
     'batchsize' => $batchsize,
-    'targetlang' => $targetlangs,
-    'sourcelang' => $coursesourcelang
-];
-$record->options = json_encode($options);
-$record->lastid = 0;
-$record->ctime = time();
-$record->mtime = time();
+    'targetlangs' => $targetlangs,
+], isset($USER->id) ? (int)$USER->id : 0);
 
-$jobid = $DB->insert_record('local_xlate_course_job', $record);
-echo "Inserted job id: {$jobid} (courseid={$courseid}, total={$total})\n";
+if (empty($result['success'])) {
+    $error = isset($result['error']) ? $result['error'] : 'Unknown error while queueing job.';
+    echo "Error: {$error}\n";
+    exit(1);
+}
 
-/** @var \local_xlate\task\translate_course_task $task */
-$task = new \local_xlate\task\translate_course_task();
-$task->set_custom_data((object)['jobid' => $jobid]);
-\core\task\manager::queue_adhoc_task($task);
-echo "Queued adhoc task for job {$jobid}\n";
+echo "Inserted job id: {$result['jobid']} (courseid={$courseid})\n";
+echo "Queued adhoc task for job {$result['jobid']}\n";
