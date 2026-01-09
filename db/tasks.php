@@ -42,6 +42,16 @@ $tasks = [
         'disabled' => 0,
     ],
     [
+        'classname' => 'local_xlate\task\html_tag_cleanup_task',
+        'blocking' => 0,
+        'minute' => '15',
+        'hour' => '*/6',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+        'disabled' => 0,
+    ],
+    [
         'classname' => 'local_xlate\task\autotranslate_missing_task',
         'blocking' => 0,
         'minute' => '*/5',

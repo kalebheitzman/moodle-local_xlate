@@ -1,6 +1,7 @@
 <?php
 $string['autotranslate_missing_task'] = 'Scheduled autotranslation for missing keys';
 $string['mlangcleanuptask'] = 'Scheduled MLang cleanup (legacy multilang tags)';
+$string['htmlcleanuptask'] = 'Scheduled HTML translation cleanup';
 $string['pluginname'] = 'Xlate (client-side translations)';
 $string['enable'] = 'Enable Xlate';
 $string['enable_desc'] = 'Turn on/off client-side translation injection.';
