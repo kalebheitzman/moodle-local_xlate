@@ -22,6 +22,14 @@ defined('MOODLE_INTERNAL') || die();
  * Utilities for normalising HTML fragments stored in translation texts.
  */
 class translation_cleanup {
+    private const BATCH_SIZE = 500;
+    private const CONTROL_CHAR_PATTERN = '/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/u';
+    private const SEQUENCE_REPLACEMENTS = [
+        '\\/' => '/',
+        '</\\' => '</',
+        '<\\' => '<',
+        '\\>' => '>',
+    ];
     /**
      * Run the cleanup process across stored translations.
      *
@@ -34,20 +42,26 @@ class translation_cleanup {
     public static function cleanup_translations(bool $dryrun = false, ?int $maxupdates = null, ?string $lang = null, ?callable $onupdate = null): array {
         global $DB;
 
-        $conditions = [];
-        if (!empty($lang)) {
-            $conditions['lang'] = $lang;
-        }
-
         $checked = 0;
         $updated = 0;
         $limitreached = false;
         $now = time();
 
         $fields = 'id, lang, text, mtime';
-        $rs = $DB->get_recordset('local_xlate_tr', $conditions, 'id ASC', $fields);
-        try {
-            foreach ($rs as $record) {
+        $select = 'id > :lastid';
+        $params = ['lastid' => 0];
+        if (!empty($lang)) {
+            $select .= ' AND lang = :lang';
+            $params['lang'] = $lang;
+        }
+
+        do {
+            $records = $DB->get_records_select('local_xlate_tr', $select, $params, 'id ASC', $fields, 0, self::BATCH_SIZE);
+            if (empty($records)) {
+                break;
+            }
+
+            foreach ($records as $record) {
                 $checked++;
 
                 if (!self::needs_cleanup($record->text)) {
@@ -72,12 +86,13 @@ class translation_cleanup {
                 $updated++;
                 if ($maxupdates !== null && $updated >= $maxupdates) {
                     $limitreached = true;
-                    break;
+                    break 2;
                 }
             }
-        } finally {
-            $rs->close();
-        }
+
+            $last = array_key_last($records);
+            $params['lastid'] = $last ?? $params['lastid'];
+        } while (!$limitreached);
 
         return [
             'checked' => $checked,
@@ -94,7 +109,10 @@ class translation_cleanup {
      * @return bool
      */
     protected static function needs_cleanup(string $text): bool {
-        return stripos($text, '</\\') !== false || stripos($text, '<\\') !== false;
+        return str_contains($text, '\\/')
+            || str_contains($text, '</\\')
+            || str_contains($text, '<\\')
+            || self::contains_control_chars($text);
     }
 
     /**
@@ -104,25 +122,20 @@ class translation_cleanup {
      * @return string
      */
     public static function sanitize_html(string $text): string {
-        $clean = $text;
+        $clean = str_replace(array_keys(self::SEQUENCE_REPLACEMENTS), array_values(self::SEQUENCE_REPLACEMENTS), $text);
 
-        // Repair stray backslashes before tag names in closing tags, e.g. </\strong> -> </strong>.
-        $clean = preg_replace('~</\\?([a-z][a-z0-9]*)\s*>~i', '</$1>', $clean);
-        if ($clean === null) {
-            $clean = $text;
-        }
-
-        // Repair stray backslashes before tag names in opening tags, e.g. <\span> -> <span>.
-        $clean = preg_replace_callback('~<\\?([a-z][a-z0-9]*)([^>]*)>~i', function ($matches) {
-            $tag = $matches[1];
-            $attrs = $matches[2] ?? '';
-            return '<' . $tag . $attrs . '>';
-        }, $clean);
-
-        if ($clean === null) {
-            return $text;
+        $stripped = preg_replace(self::CONTROL_CHAR_PATTERN, '', $clean);
+        if ($stripped !== null) {
+            $clean = $stripped;
         }
 
         return $clean;
+    }
+
+    /**
+     * Detects whether the string contains ASCII control characters we should remove.
+     */
+    protected static function contains_control_chars(string $text): bool {
+        return (bool)preg_match(self::CONTROL_CHAR_PATTERN, $text);
     }
 }

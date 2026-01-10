@@ -696,6 +696,8 @@ class api {
     public static function save_translation(int $keyid, string $lang, string $text, int $status = 1, int $reviewed = 0): int {
         global $DB;
         
+        $text = translation_cleanup::sanitize_html($text);
+
         $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
         $now = time();
         

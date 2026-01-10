@@ -842,6 +842,8 @@ class local_xlate_external extends external_api {
             throw new \moodle_exception('autotranslate_failed', 'local_xlate');
         }
 
+        $translated = \local_xlate\local\translation_cleanup::sanitize_html($translated);
+
         $saved = false;
         if (!empty($params['autosave'])) {
             try {
@@ -869,7 +871,7 @@ class local_xlate_external extends external_api {
     public static function autotranslate_key_returns() {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success flag'),
-            'translation' => new external_value(PARAM_TEXT, 'Suggested translation'),
+            'translation' => new external_value(PARAM_RAW_TRIMMED, 'Suggested translation (may include inline HTML)'),
             'targetlang' => new external_value(PARAM_ALPHANUMEXT, 'Target language code'),
             'reviewed' => new external_value(PARAM_BOOL, 'Machine translations are not reviewed'),
             'saved' => new external_value(PARAM_BOOL, 'True when autosave requested and succeeded', VALUE_DEFAULT, 0)
