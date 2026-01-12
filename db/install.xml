@@ -56,6 +56,29 @@
       </INDEXES>
     </TABLE>
 
+    <TABLE NAME="local_xlate_activity" COMMENT="translator activity audit log">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="keyid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="translationid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="lang" TYPE="char" LENGTH="30" NOTNULL="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="action" TYPE="char" LENGTH="40" NOTNULL="true"/>
+        <FIELD NAME="chars" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="notes" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_user_time" UNIQUE="false" FIELDS="userid,timecreated"/>
+        <INDEX NAME="idx_course_time" UNIQUE="false" FIELDS="courseid,timecreated"/>
+        <INDEX NAME="idx_action" UNIQUE="false" FIELDS="action"/>
+      </INDEXES>
+    </TABLE>
+
     <TABLE NAME="local_xlate_bundle" COMMENT="per-lang bundle versions">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>

@@ -85,6 +85,8 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
         if (!keyid || !lang) {
             return null;
         }
+        var courseidAttr = form.getAttribute('data-courseid');
+        var courseid = courseidAttr ? parseInt(courseidAttr, 10) || 0 : 0;
         var translationField = form.querySelector('[name="translation"]');
         var statusToggle = form.querySelector('input[name="status"]');
         var reviewedToggle = form.querySelector('input[name="reviewed"]');
@@ -93,7 +95,8 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
             lang: lang,
             translation: translationField ? translationField.value : '',
             status: statusToggle && statusToggle.checked ? 1 : 0,
-            reviewed: reviewedToggle && reviewedToggle.checked ? 1 : 0
+            reviewed: reviewedToggle && reviewedToggle.checked ? 1 : 0,
+            courseid: courseid
         };
     }
 

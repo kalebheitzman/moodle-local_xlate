@@ -261,28 +261,16 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
         redirect($PAGE->url, get_string('translation_empty', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
     }
     
-    // Check if translation exists
-    $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $targetlang]);
-    
     try {
-        if ($existing) {
-            $existing->text = $translation;
-            $existing->status = $status;
-            $existing->reviewed = $reviewed;
-            $existing->mtime = time();
-            $DB->update_record('local_xlate_tr', $existing);
-        } else {
-            $trrecord = new stdClass();
-            $trrecord->keyid = $keyid;
-            $trrecord->lang = $targetlang;
-            $trrecord->text = $translation;
-            $trrecord->status = $status;
-            $trrecord->reviewed = $reviewed;
-            $trrecord->ctime = time();
-            $trrecord->mtime = time();
-            $DB->insert_record('local_xlate_tr', $trrecord);
-        }
-        
+        \local_xlate\local\api::save_translation(
+            $keyid,
+            $targetlang,
+            $translation,
+            $status,
+            $reviewed,
+            \local_xlate\local\api::SOURCE_MANUAL,
+            $filter_courseid
+        );
         redirect($PAGE->url, get_string('translation_saved', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
     } catch (Exception $e) {
         redirect($PAGE->url, 'Database error: ' . $e->getMessage(), null, \core\output\notification::NOTIFY_ERROR);
@@ -825,7 +813,8 @@ if (!empty($keys)) {
                     'action' => $PAGE->url,
                     'class' => 'mb-2 js-xlate-translation-form',
                     'data-keyid' => $key->id,
-                    'data-lang' => $langcode
+                    'data-lang' => $langcode,
+                    'data-courseid' => $filter_courseid
                 ];
                 echo html_writer::start_tag('form', $formattrs);
                 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);

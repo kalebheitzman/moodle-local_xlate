@@ -43,6 +43,10 @@ function local_xlate_admin_nav_html($active = ''): string {
             'url' => new moodle_url('/local/xlate/queue.php', $sharedparams),
             'label' => get_string('nav_queue', 'local_xlate'),
         ],
+        'activity' => [
+            'url' => new moodle_url('/local/xlate/activity.php', $sharedparams),
+            'label' => get_string('nav_activity', 'local_xlate'),
+        ],
         'glossary' => [
             'url' => new moodle_url('/local/xlate/glossary.php', $sharedparams),
             'label' => get_string('nav_glossary', 'local_xlate'),

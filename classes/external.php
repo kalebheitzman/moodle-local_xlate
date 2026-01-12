@@ -284,7 +284,8 @@ class local_xlate_external extends external_api {
             'lang' => new external_value(PARAM_ALPHANUMEXT, 'Language code'),
             'translation' => new external_value(PARAM_RAW, 'Translated text (HTML allowed)', VALUE_DEFAULT, ''),
             'status' => new external_value(PARAM_BOOL, 'Publication status flag', VALUE_DEFAULT, 0),
-            'reviewed' => new external_value(PARAM_BOOL, 'Reviewed flag', VALUE_DEFAULT, 0)
+            'reviewed' => new external_value(PARAM_BOOL, 'Reviewed flag', VALUE_DEFAULT, 0),
+            'courseid' => new external_value(PARAM_INT, 'Course context id for activity logging', VALUE_DEFAULT, 0)
         ]);
     }
 
@@ -296,15 +297,17 @@ class local_xlate_external extends external_api {
      * @param string $translation Translation text.
      * @param int $status Publication status flag.
      * @param int $reviewed Reviewed flag.
-     * @return array Response payload consumed by the Manage UI.
+    * @param int $courseid Course context for logging and validation.
+    * @return array Response payload consumed by the Manage UI.
      */
-    public static function save_translation($keyid, $lang, $translation = '', $status = 0, $reviewed = 0) {
+    public static function save_translation($keyid, $lang, $translation = '', $status = 0, $reviewed = 0, $courseid = 0) {
         $params = self::validate_parameters(self::save_translation_parameters(), [
             'keyid' => $keyid,
             'lang' => $lang,
             'translation' => $translation,
             'status' => $status,
-            'reviewed' => $reviewed
+            'reviewed' => $reviewed,
+            'courseid' => $courseid
         ]);
 
         $context = context_system::instance();
@@ -316,7 +319,9 @@ class local_xlate_external extends external_api {
             $params['lang'],
             (string)$params['translation'],
             (int)$params['status'],
-            (int)$params['reviewed']
+            (int)$params['reviewed'],
+            \local_xlate\local\api::SOURCE_MANUAL,
+            (int)$params['courseid']
         );
 
         return [
@@ -847,7 +852,15 @@ class local_xlate_external extends external_api {
         $saved = false;
         if (!empty($params['autosave'])) {
             try {
-                \local_xlate\local\api::save_translation((int)$key->id, $normalizedtarget, $translated, 1, 0);
+                \local_xlate\local\api::save_translation(
+                    (int)$key->id,
+                    $normalizedtarget,
+                    $translated,
+                    1,
+                    0,
+                    \local_xlate\local\api::SOURCE_AUTOTRANSLATE,
+                    $resolvedcourseid
+                );
                 $saved = true;
             } catch (\Throwable $e) {
                 throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, 'Unable to save translation: ' . $e->getMessage());

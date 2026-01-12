@@ -41,6 +41,9 @@ defined('MOODLE_INTERNAL') || die();
  * @package local_xlate\local
  */
 class api {
+    public const SOURCE_MANUAL = 'manual';
+    public const SOURCE_AUTOTRANSLATE = 'autotranslate';
+
     /**
      * Fetch a translation bundle for explicit keys without extra metadata.
      *
@@ -691,24 +694,67 @@ class api {
      * @param string $text Translated text to persist.
      * @param int $status Publication status flag (default approved).
      * @param int $reviewed Reviewer flag (0/1).
-     * @return int Translation record ID.
+     * @param string $source Source indicator (manual/autotranslate).
+      * @param int $courseid Optional course context id for logging/activity attribution.
+      * @return int Translation record ID.
      */
-    public static function save_translation(int $keyid, string $lang, string $text, int $status = 1, int $reviewed = 0): int {
+    public static function save_translation(int $keyid, string $lang, string $text,
+                                            int $status = 1, int $reviewed = 0,
+                                                          string $source = self::SOURCE_MANUAL,
+                                                          int $courseid = 0): int {
         global $DB;
         
         $text = translation_cleanup::sanitize_html($text);
+          $courseid = max(0, (int)$courseid);
+
+        $isautotranslate = ($source === self::SOURCE_AUTOTRANSLATE);
 
         $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
         $now = time();
         
         if ($existing) {
             // Update existing translation
+            $previousText = $existing->text ?? '';
+            $previousStatus = (int)$existing->status;
+            $previousReviewed = (int)$existing->reviewed;
+
+            $textchanged = ($previousText !== $text);
+            $statuschanged = ($previousStatus !== $status);
+            $reviewchanged = ($previousReviewed !== $reviewed);
+
             $existing->text = $text;
             $existing->status = $status;
             $existing->reviewed = $reviewed;
             $existing->mtime = $now;
             $DB->update_record('local_xlate_tr', $existing);
-            return $existing->id;
+
+            $translationid = (int)$existing->id;
+            if ($textchanged) {
+                $action = $isautotranslate ? activity_logger::ACTION_AUTOTRANSLATE : activity_logger::ACTION_UPDATE;
+                $metadata = [
+                    'previouslength' => \core_text::strlen($previousText),
+                    'newlength' => \core_text::strlen($text),
+                ];
+                if ($isautotranslate) {
+                    $metadata['origin'] = $source;
+                }
+                activity_logger::log($keyid, $translationid, $lang, $action, $metadata, $courseid);
+            }
+            if ($statuschanged) {
+                $action = $status === 1
+                    ? activity_logger::ACTION_STATUS_ACTIVE
+                    : activity_logger::ACTION_STATUS_INACTIVE;
+                activity_logger::log($keyid, $translationid, $lang, $action, [
+                    'previous' => $previousStatus,
+                    'current' => $status,
+                ], $courseid);
+            }
+            if ($reviewchanged) {
+                $action = $reviewed ? activity_logger::ACTION_REVIEW_MARK : activity_logger::ACTION_REVIEW_CLEAR;
+                activity_logger::log($keyid, $translationid, $lang, $action, [], $courseid);
+            }
+
+            return $translationid;
         } else {
             // Create new translation
             $record = (object) [
@@ -719,7 +765,23 @@ class api {
                 'reviewed' => $reviewed,
                 'mtime' => $now
             ];
-            return $DB->insert_record('local_xlate_tr', $record);
+            $translationid = (int)$DB->insert_record('local_xlate_tr', $record);
+            $action = $isautotranslate ? activity_logger::ACTION_AUTOTRANSLATE : activity_logger::ACTION_CREATE;
+            $meta = $isautotranslate ? ['origin' => $source] : [];
+            activity_logger::log($keyid, $translationid, $lang, $action, $meta, $courseid);
+            if ($reviewed) {
+                activity_logger::log($keyid, $translationid, $lang, activity_logger::ACTION_REVIEW_MARK, [], $courseid);
+            }
+            if ($status !== 1) {
+                $action = $status === 1
+                    ? activity_logger::ACTION_STATUS_ACTIVE
+                    : activity_logger::ACTION_STATUS_INACTIVE;
+                activity_logger::log($keyid, $translationid, $lang, $action, [
+                    'previous' => 1,
+                    'current' => $status,
+                ], $courseid);
+            }
+            return $translationid;
         }
     }
 
@@ -788,7 +850,7 @@ class api {
             $keyid = self::create_or_update_key($component, $xkey, $source, $critical);
             
             // Save the translation (propagate reviewed flag)
-            self::save_translation($keyid, $lang, $translation, 1, $reviewed);
+            self::save_translation($keyid, $lang, $translation, 1, $reviewed, self::SOURCE_MANUAL, $courseid);
 
             // If a course association was provided, record it (associate by keyid+courseid).
             if (!empty($courseid) && is_int($courseid) && $courseid > 0) {

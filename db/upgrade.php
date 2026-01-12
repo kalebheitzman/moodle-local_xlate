@@ -289,6 +289,39 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2025110100, 'local', 'xlate');
     }
 
+    if ($oldversion < 2026011000) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('local_xlate_activity');
+
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('keyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('translationid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('lang', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('action', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('chars', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('notes', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('idx_user_time', XMLDB_INDEX_NOTUNIQUE, ['userid', 'timecreated']);
+            $table->add_index('idx_course_time', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'timecreated']);
+            $table->add_index('idx_action', XMLDB_INDEX_NOTUNIQUE, ['action']);
+
+            try {
+                $dbman->create_table($table);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to create local_xlate_activity: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026011000, 'local', 'xlate');
+    }
+
     // Create course-level autotranslate job table.
     if ($oldversion < 2025110101) {
         global $DB;
