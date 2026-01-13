@@ -191,23 +191,13 @@ $PAGE->set_title(get_string('activity_page_title', 'local_xlate'));
 $PAGE->set_heading(get_string('activity_page_title', 'local_xlate'));
 $PAGE->requires->css(new moodle_url('/local/xlate/styles.css'));
 
-$summarysql = "SELECT
-        COALESCE(SUM(a.chars), 0) AS totalchars,
-        COUNT(1) AS totalactions,
-        COALESCE(COUNT(DISTINCT NULLIF(a.userid, 0)), 0) AS translators,
-        COALESCE(COUNT(DISTINCT NULLIF(a.courseid, 0)), 0) AS courses
-    FROM {local_xlate_activity} a
-    $whereclause";
-$summary = $DB->get_record_sql($summarysql, $params) ?: (object)[];
 $summary = (object) [
-    'totalchars' => isset($summary->totalchars) ? (int)$summary->totalchars : 0,
-    'totalactions' => isset($summary->totalactions) ? (int)$summary->totalactions : 0,
-    'translators' => isset($summary->translators) ? (int)$summary->translators : 0,
-    'courses' => isset($summary->courses) ? (int)$summary->courses : 0,
+    'totalchars' => 0,
+    'totalactions' => 0,
+    'translators' => 0,
+    'courses' => 0,
 ];
-
-$countsql = "SELECT COUNT(1) FROM {local_xlate_activity} a $whereclause";
-$totalcount = (int)$DB->count_records_sql($countsql, $params);
+$totalcount = 0;
 
 $selectsql = "SELECT a.*, $namefields,
                          u.email,
@@ -220,14 +210,79 @@ $selectsql = "SELECT a.*, $namefields,
                 $whereclause
             ORDER BY a.timecreated DESC";
 
+$courseSourceCache = [];
+$shouldHideSourceRow = static function(int $courseidvalue, string $lang) use (&$courseSourceCache): bool {
+    if ($courseidvalue <= 0 || $lang === '') {
+        return false;
+    }
+
+    if (!array_key_exists($courseidvalue, $courseSourceCache)) {
+        try {
+            $config = \local_xlate\customfield_helper::get_course_config($courseidvalue);
+            $courseSourceCache[$courseidvalue] = (is_array($config) && !empty($config['source']))
+                ? (string)$config['source']
+                : null;
+        } catch (\Throwable $e) {
+            $courseSourceCache[$courseidvalue] = null;
+        }
+    }
+
+    $source = $courseSourceCache[$courseidvalue];
+    if ($source === null || $source === '') {
+        return false;
+    }
+
+    return \core_text::strtolower($source) === \core_text::strtolower($lang);
+};
+
+$filteredrecords = [];
+$translatorids = [];
+$courseids = [];
+
+$batchsize = 500;
+$offset = 0;
+while (true) {
+    $batch = $DB->get_records_sql($selectsql, $params, $offset, $batchsize);
+    if (empty($batch)) {
+        break;
+    }
+
+    foreach ($batch as $record) {
+        $lang = trim((string)($record->lang ?? ''));
+        $courseidvalue = (int)($record->courseid ?? 0);
+        if ($shouldHideSourceRow($courseidvalue, $lang)) {
+            continue;
+        }
+
+        $filteredrecords[] = $record;
+        $summary->totalchars += (int)$record->chars;
+        if ($record->userid > 0) {
+            $translatorids[(int)$record->userid] = true;
+        }
+        if ($courseidvalue > 0) {
+            $courseids[$courseidvalue] = true;
+        }
+    }
+
+    if (count($batch) < $batchsize) {
+        break;
+    }
+
+    $offset += $batchsize;
+}
+
+$summary->totalactions = count($filteredrecords);
+$summary->translators = count($translatorids);
+$summary->courses = count($courseids);
+$totalcount = $summary->totalactions;
+
 if ($download === 'csv') {
     $filename = clean_filename(get_string('activity_download_filename', 'local_xlate'));
-    $records = $DB->get_records_sql($selectsql, $params);
     $exporter = fopen('php://output', 'w');
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     fputcsv($exporter, ['time', 'userid', 'user', 'action', 'courseid', 'lang', 'chars', 'keyid', 'translationid']);
-    foreach ($records as $record) {
+    foreach ($filteredrecords as $record) {
         $username = $record->userid > 0 ? fullname($record) : get_string('activity_unknown_user', 'local_xlate');
         $actionname = $resolveactionlabel($record->action);
         fputcsv($exporter, [
@@ -246,7 +301,17 @@ if ($download === 'csv') {
     exit;
 }
 
-$activities = $DB->get_records_sql($selectsql, $params, $page * $perpage, $perpage);
+if ($totalcount > 0) {
+    $maxpage = (int)floor(($totalcount - 1) / $perpage);
+    if ($page > $maxpage) {
+        $page = $maxpage;
+        $pageparams['page'] = $page;
+        $PAGE->set_url(new moodle_url('/local/xlate/activity.php', $pageparams));
+    }
+}
+
+$startindex = $page * $perpage;
+$activities = array_slice($filteredrecords, $startindex, $perpage);
 
 $reseturl = new moodle_url('/local/xlate/activity.php', ['perpage' => $perpage]);
 
