@@ -44,6 +44,9 @@ class api {
     public const SOURCE_MANUAL = 'manual';
     public const SOURCE_AUTOTRANSLATE = 'autotranslate';
 
+    /** @var array<int,string|null> */
+    protected static array $courseSourceCache = [];
+
     /**
      * Fetch a translation bundle for explicit keys without extra metadata.
      *
@@ -698,16 +701,18 @@ class api {
       * @param int $courseid Optional course context id for logging/activity attribution.
       * @return int Translation record ID.
      */
-    public static function save_translation(int $keyid, string $lang, string $text,
+        public static function save_translation(int $keyid, string $lang, string $text,
                                             int $status = 1, int $reviewed = 0,
                                                           string $source = self::SOURCE_MANUAL,
                                                           int $courseid = 0): int {
         global $DB;
         
         $text = translation_cleanup::sanitize_html($text);
-          $courseid = max(0, (int)$courseid);
+                $lang = trim($lang);
+                $courseid = max(0, (int)$courseid);
 
         $isautotranslate = ($source === self::SOURCE_AUTOTRANSLATE);
+                $suppressactivity = self::should_suppress_source_activity_logging($courseid, $lang);
 
         $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
         $now = time();
@@ -738,20 +743,26 @@ class api {
                 if ($isautotranslate) {
                     $metadata['origin'] = $source;
                 }
-                activity_logger::log($keyid, $translationid, $lang, $action, $metadata, $courseid);
+                if (!$suppressactivity) {
+                    activity_logger::log($keyid, $translationid, $lang, $action, $metadata, $courseid);
+                }
             }
             if ($statuschanged) {
                 $action = $status === 1
                     ? activity_logger::ACTION_STATUS_ACTIVE
                     : activity_logger::ACTION_STATUS_INACTIVE;
-                activity_logger::log($keyid, $translationid, $lang, $action, [
-                    'previous' => $previousStatus,
-                    'current' => $status,
-                ], $courseid);
+                if (!$suppressactivity) {
+                    activity_logger::log($keyid, $translationid, $lang, $action, [
+                        'previous' => $previousStatus,
+                        'current' => $status,
+                    ], $courseid);
+                }
             }
             if ($reviewchanged) {
                 $action = $reviewed ? activity_logger::ACTION_REVIEW_MARK : activity_logger::ACTION_REVIEW_CLEAR;
-                activity_logger::log($keyid, $translationid, $lang, $action, [], $courseid);
+                if (!$suppressactivity) {
+                    activity_logger::log($keyid, $translationid, $lang, $action, [], $courseid);
+                }
             }
 
             return $translationid;
@@ -768,21 +779,69 @@ class api {
             $translationid = (int)$DB->insert_record('local_xlate_tr', $record);
             $action = $isautotranslate ? activity_logger::ACTION_AUTOTRANSLATE : activity_logger::ACTION_CREATE;
             $meta = $isautotranslate ? ['origin' => $source] : [];
-            activity_logger::log($keyid, $translationid, $lang, $action, $meta, $courseid);
-            if ($reviewed) {
+            if (!$suppressactivity) {
+                activity_logger::log($keyid, $translationid, $lang, $action, $meta, $courseid);
+            }
+            if ($reviewed && !$suppressactivity) {
                 activity_logger::log($keyid, $translationid, $lang, activity_logger::ACTION_REVIEW_MARK, [], $courseid);
             }
             if ($status !== 1) {
                 $action = $status === 1
                     ? activity_logger::ACTION_STATUS_ACTIVE
                     : activity_logger::ACTION_STATUS_INACTIVE;
-                activity_logger::log($keyid, $translationid, $lang, $action, [
-                    'previous' => 1,
-                    'current' => $status,
-                ], $courseid);
+                if (!$suppressactivity) {
+                    activity_logger::log($keyid, $translationid, $lang, $action, [
+                        'previous' => 1,
+                        'current' => $status,
+                    ], $courseid);
+                }
             }
             return $translationid;
         }
+    }
+
+    /**
+     * Determine whether activity logging should be suppressed for the given course/language pair.
+     */
+    protected static function should_suppress_source_activity_logging(int $courseid, string $lang): bool {
+        if ($courseid <= 0 || $lang === '') {
+            return false;
+        }
+
+        $sourcelang = self::get_course_source_lang_for_logging($courseid);
+        if ($sourcelang === null) {
+            return false;
+        }
+
+        $lang = \core_text::strtolower($lang);
+        $sourcelang = \core_text::strtolower($sourcelang);
+        return $lang === $sourcelang;
+    }
+
+    /**
+     * Fetch and cache the configured source language for a course.
+     */
+    protected static function get_course_source_lang_for_logging(int $courseid): ?string {
+        if ($courseid <= 0) {
+            return null;
+        }
+
+        if (array_key_exists($courseid, self::$courseSourceCache)) {
+            return self::$courseSourceCache[$courseid];
+        }
+
+        $source = null;
+        try {
+            $config = \local_xlate\customfield_helper::get_course_config($courseid);
+            if (is_array($config) && !empty($config['source'])) {
+                $source = (string)$config['source'];
+            }
+        } catch (\Throwable $e) {
+            $source = null;
+        }
+
+        self::$courseSourceCache[$courseid] = $source;
+        return $source;
     }
 
     /**
