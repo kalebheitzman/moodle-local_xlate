@@ -31,10 +31,9 @@ require_once($CFG->libdir . '/tablelib.php');
 /**
  * Render pagination controls
  */
-function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $reviewed_filter = '', $critical_filter = '', $courseid = 0, $langfilter = [], $langfiltersubmitted = 0) {
+function render_pagination_controls($baseurl, $page, $perpage, $total, $search, $status_filter, $reviewed_filter = '', $critical_filter = '', $courseid = 0, $langfilter = '', $langfiltersubmitted = 0) {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
-    $langfilter = is_array($langfilter) ? $langfilter : [];
     $langfiltersubmitted = (int)!empty($langfiltersubmitted);
     $sharedparams = [
         'perpage' => $perpage,
@@ -46,7 +45,7 @@ function render_pagination_controls($baseurl, $page, $perpage, $total, $search, 
     ];
     if ($langfiltersubmitted) {
         $sharedparams['langfiltersubmitted'] = 1;
-        if (!empty($langfilter)) {
+        if ($langfilter !== '') {
             $sharedparams['langfilter'] = $langfilter;
         }
     }
@@ -163,10 +162,15 @@ $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
-$reviewed_filter = optional_param('reviewed_filter', '', PARAM_ALPHA);
-$critical_filter = optional_param('critical_filter', '', PARAM_ALPHA);
+$reviewed_filter = optional_param('reviewed_filter', 'unreviewed', PARAM_ALPHA);
+$critical_filter = optional_param('critical_filter', 'critical', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
-$langfilterraw = optional_param_array('langfilter', [], PARAM_ALPHANUMEXT);
+$langfilterrawparam = optional_param_array('langfilter', null, PARAM_ALPHANUMEXT);
+if ($langfilterrawparam !== null) {
+    $langfilterraw = (string)reset($langfilterrawparam);
+} else {
+    $langfilterraw = optional_param('langfilter', '', PARAM_ALPHANUMEXT);
+}
 $langfiltersubmitted = optional_param('langfiltersubmitted', 0, PARAM_BOOL);
 
 // Determine the page context based on optional course filter so the page
@@ -205,28 +209,35 @@ $enabledlangsarray = $langconfig['enabled'];
 $displaysourcelang = $langconfig['source'];
 $selectedtargets = $langconfig['targets'];
 $langfilterselection = [];
+$selectedlangfilter = '';
 $enabledlookup = array_flip($enabledlangsarray);
 if ($langfiltersubmitted) {
-    $langfilterraw = is_array($langfilterraw) ? $langfilterraw : [];
-    foreach ($langfilterraw as $langcode) {
-        if (isset($enabledlookup[$langcode])) {
-            $langfilterselection[] = $langcode;
-        }
+    if ($langfilterraw !== '' && isset($enabledlookup[$langfilterraw]) && $langfilterraw !== $displaysourcelang) {
+        $selectedlangfilter = $langfilterraw;
     }
 } else {
     if (!empty($filter_courseid) && !empty($selectedtargets)) {
         foreach ($selectedtargets as $langcode) {
-            if (isset($enabledlookup[$langcode])) {
-                $langfilterselection[] = $langcode;
+            if (isset($enabledlookup[$langcode]) && $langcode !== $displaysourcelang) {
+                $selectedlangfilter = $langcode;
+                break;
             }
         }
     }
-    if (empty($langfilterselection)) {
-        $langfilterselection = $enabledlangsarray;
+    if ($selectedlangfilter === '') {
+        foreach ($enabledlangsarray as $langcode) {
+            if ($langcode !== $displaysourcelang) {
+                $selectedlangfilter = $langcode;
+                break;
+            }
+        }
     }
 }
-$langfilterlookup = array_flip($langfilterselection);
-$reviewfilterenabled = (count($langfilterselection) === 1);
+if ($selectedlangfilter !== '') {
+    $langfilterselection = [$selectedlangfilter];
+}
+$langfilterlookup = !empty($langfilterselection) ? array_flip($langfilterselection) : [];
+$reviewfilterenabled = !empty($langfilterselection);
 if (!$reviewfilterenabled) {
     $reviewed_filter = '';
 }
@@ -243,8 +254,8 @@ $pageparams = [
 ];
 if ($langfiltersubmitted) {
     $pageparams['langfiltersubmitted'] = 1;
-    if (!empty($langfilterselection)) {
-        $pageparams['langfilter'] = $langfilterselection;
+    if ($selectedlangfilter !== '') {
+        $pageparams['langfilter'] = $selectedlangfilter;
     }
 }
 $PAGE->set_url(new moodle_url('/local/xlate/manage.php', $pageparams));
@@ -476,38 +487,25 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 
 echo html_writer::start_div('row mt-3');
-echo html_writer::start_div('col-12');
-echo html_writer::tag('label', get_string('language_filter', 'local_xlate'), ['class' => 'form-label d-block']);
+echo html_writer::start_div('col-12 col-xl-3');
+echo html_writer::tag('label', get_string('language_filter', 'local_xlate'), ['for' => 'langfilter', 'class' => 'form-label']);
 echo html_writer::tag('div', get_string('language_filter_hint', 'local_xlate'), ['class' => 'text-muted small mb-2']);
-$filteroptionsrendered = false;
-echo html_writer::start_div('d-flex flex-wrap gap-2', ['id' => 'local_xlate_langfilter']);
+$languageoptions = [];
 foreach ($enabledlangsarray as $langcode) {
     if ($langcode === $displaysourcelang || !isset($installedlangs[$langcode])) {
         continue;
     }
-    $filteroptionsrendered = true;
-    $id = 'langfilter_' . $langcode;
-    $checked = in_array($langcode, $langfilterselection, true) ? 'checked' : null;
     $label = $installedlangs[$langcode];
     if (strpos($label, '(' . $langcode . ')') === false) {
         $label .= ' (' . $langcode . ')';
     }
-    echo html_writer::start_div('form-check form-check-inline mb-1');
-    echo html_writer::empty_tag('input', [
-        'type' => 'checkbox',
-        'class' => 'form-check-input',
-        'name' => 'langfilter[]',
-        'id' => $id,
-        'value' => $langcode,
-        'checked' => $checked
-    ]);
-    echo html_writer::tag('label', $label, ['for' => $id, 'class' => 'form-check-label']);
-    echo html_writer::end_div();
+    $languageoptions[$langcode] = $label;
 }
-if (!$filteroptionsrendered) {
+if (!empty($languageoptions)) {
+    echo html_writer::select($languageoptions, 'langfilter', $selectedlangfilter, false, ['class' => 'form-select', 'id' => 'langfilter']);
+} else {
     echo html_writer::div(get_string('language_filter_empty', 'local_xlate'), 'text-muted fst-italic');
 }
-echo html_writer::end_div();
 echo html_writer::end_div();
 echo html_writer::end_div();
 
@@ -548,14 +546,14 @@ if (!empty($filter_courseid)) {
         ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']
     );
 }
-$totallangs = count($enabledlangsarray);
-if ($totallangs > 0 && !empty($langfilterselection) && count($langfilterselection) < $totallangs) {
+if ($selectedlangfilter !== '' && isset($installedlangs[$selectedlangfilter])) {
+    $label = $installedlangs[$selectedlangfilter];
+    if (strpos($label, '(' . $selectedlangfilter . ')') === false) {
+        $label .= ' (' . $selectedlangfilter . ')';
+    }
     $activefilters[] = html_writer::tag(
         'span',
-        s(get_string('filter_chip_languages', 'local_xlate', (object)[
-            'selected' => count($langfilterselection),
-            'total' => $totallangs
-        ])),
+        s(get_string('filter_chip_language_single', 'local_xlate', $label)),
         ['class' => 'badge rounded-pill bg-secondary text-white px-3 py-2']
     );
 }
@@ -708,7 +706,7 @@ if (!empty($keys)) {
                 $reviewed_filter,
                 $critical_filter,
                 $filter_courseid,
-                $langfilterselection,
+                $selectedlangfilter,
                 $langfiltersubmitted
             ),
             'd-flex justify-content-center'
@@ -979,7 +977,7 @@ if (!empty($keys)) {
                 $reviewed_filter,
                 $critical_filter,
                 $filter_courseid,
-                $langfilterselection,
+                $selectedlangfilter,
                 $langfiltersubmitted
             ),
             'd-flex justify-content-center'
