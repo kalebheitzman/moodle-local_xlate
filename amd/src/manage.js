@@ -5,7 +5,7 @@
  * Handles per-entry delete actions, course-level autotranslate submission,
  * and progress polling for in-flight jobs.
  */
-define(['core/ajax', 'core/notification'], function (Ajax, notification) {
+define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notification, Str) {
     /**
      * Resolve a UI string from the AMD config or return a fallback.
      *
@@ -15,10 +15,35 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
      * @returns {string} Localised string.
      */
     function getString(config, key, fallback) {
-        if (config && config.strings && config.strings[key]) {
-            return config.strings[key];
+        var mapping = {
+            confirmDelete: {component: 'local_xlate', key: 'confirm_delete_translation'},
+            confirmDeleteTitle: {component: 'local_xlate', key: 'confirm_delete_title'},
+            confirmDeleteAction: {component: 'local_xlate', key: 'confirm_delete_action'},
+            confirmDeleteCancel: {component: 'moodle', key: 'cancel'},
+            deleteFailed: {component: 'local_xlate', key: 'delete_failed'},
+            deleteSuccess: {component: 'local_xlate', key: 'translation_deleted'},
+            autoTranslateFailed: {component: 'local_xlate', key: 'autotranslate_inline_failed'},
+            autoTranslateReady: {component: 'local_xlate', key: 'autotranslate_inline_success'},
+            autoTranslateSaved: {component: 'local_xlate', key: 'auto_translate_saved'},
+            autoTranslateCourseQueued: {component: 'local_xlate', key: 'autotranslate_course_queued'},
+            autoTranslateCourseQueueFailed: {component: 'local_xlate', key: 'autotranslate_course_queue_failed'},
+            autoTranslateSelectTarget: {component: 'local_xlate', key: 'autotranslate_select_target'},
+            retranslateUnreviewedQueued: {component: 'local_xlate', key: 'retranslate_unreviewed_queued'},
+            saveSuccess: {component: 'local_xlate', key: 'translation_saved'},
+            saveFailed: {component: 'local_xlate', key: 'translation_save_failed'},
+            saveIndicator: {component: 'local_xlate', key: 'translation_saved_short'}
+        };
+
+        var map = mapping[key];
+        if (!map) {
+            return fallback;
         }
-        return fallback;
+
+        try {
+            return Str.get_string(map.key, map.component);
+        } catch (e) {
+            return fallback;
+        }
     }
 
     /**
@@ -595,6 +620,7 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
             attachAutoTranslateHandlers(config);
             enableIconTooltips();
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
+            var retranslateUnreviewedButton = document.getElementById('local_xlate_retranslate_unreviewed_course');
 
             // If the server passed an active job id but the Manage page card or
             // its elements are not present (for example because the course
@@ -636,72 +662,127 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
 
             // per-item autotranslate removed — we only support course-level autotranslate now.
 
-            // Course-level autotranslate: enqueue a job for the current course
+            var enqueueCourseJob = function (jobOptions, queuedMessage, queueFailedMessage) {
+                var courseid = 0;
+                if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+                    courseid = window.XLATE_COURSEID || 0;
+                } else if (config && config.courseid) {
+                    courseid = config.courseid || 0;
+                }
+
+                if (!courseid) {
+                    notification.alert('Please navigate to this page with a valid course filter to autotranslate the course.');
+                    return;
+                }
+
+                var selectedTargets = [];
+                var targetInputs = document.querySelectorAll('#local_xlate_target_container input[type="checkbox"]');
+                if (targetInputs && targetInputs.length) {
+                    selectedTargets = Array.prototype.filter.call(targetInputs, function (input) {
+                        return !!input.checked;
+                    }).map(function (input) {
+                        return input.value;
+                    });
+                }
+                if (!selectedTargets.length && config && Array.isArray(config.targetlangs)) {
+                    selectedTargets = config.targetlangs;
+                }
+
+                if (!selectedTargets.length) {
+                    notification.alert(
+                        getString(
+                            config,
+                            'autoTranslateSelectTarget',
+                            'Select at least one target language before enqueuing autotranslation.'
+                        )
+                    );
+                    return;
+                }
+
+                var options = {
+                    batchsize: (config && config.batchsize) ? config.batchsize : 50,
+                    targetlang: selectedTargets
+                };
+                if (jobOptions && typeof jobOptions === 'object') {
+                    Object.keys(jobOptions).forEach(function (key) {
+                        options[key] = jobOptions[key];
+                    });
+                }
+
+                var call = Ajax.call([{
+                    methodname: 'local_xlate_autotranslate_course_enqueue',
+                    args: {
+                        courseid: courseid,
+                        options: options
+                    }
+                }])[0];
+
+                call.then(function (res) {
+                    if (!(res && res.success)) {
+                        notification.alert(
+                            queueFailedMessage || getString(
+                                config,
+                                'autoTranslateCourseQueueFailed',
+                                'Failed to enqueue course autotranslate job.'
+                            )
+                        );
+                        return;
+                    }
+                    var messageTemplate = queuedMessage || getString(
+                        config,
+                        'autoTranslateCourseQueued',
+                        'Course autotranslate job queued. Job id: {$a}'
+                    );
+                    var message = messageTemplate.replace('{$a}', String(res.jobid || 'n/a'));
+                    notification.alert(message);
+                    startCoursePolling(res.jobid);
+                }).catch(function (err) {
+                    var msg = 'Error enqueuing course job';
+                    if (err && err.message) {
+                        msg += ': ' + err.message;
+                    } else if (err && err.error) {
+                        msg += ': ' + err.error;
+                    }
+                    if (msg.toLowerCase().indexOf('language') !== -1 || msg.toLowerCase().indexOf('configuration') !== -1) {
+                        msg += '\n\nPlease configure source and target languages in the course settings (Xlate section).';
+                    }
+                    notification.alert(msg);
+                });
+            };
+
             if (courseButton) {
                 courseButton.addEventListener('click', function () {
-                    // Determine course id from config or global window variable
-                    var courseid = 0;
-                    if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
-                        courseid = window.XLATE_COURSEID || 0;
-                    } else if (config && config.courseid) {
-                        courseid = config.courseid || 0;
-                    }
+                    enqueueCourseJob(
+                        {},
+                        getString(
+                            config,
+                            'autoTranslateCourseQueued',
+                            'Course autotranslate job queued. Job id: {$a}'
+                        ),
+                        getString(
+                            config,
+                            'autoTranslateCourseQueueFailed',
+                            'Failed to enqueue course autotranslate job.'
+                        )
+                    );
+                });
+            }
 
-                    if (!courseid) {
-                        notification.alert('Please navigate to this page with a valid course filter to autotranslate the course.');
-                        return;
-                    }
-
-                    var selectedTargets = [];
-                    var targetInputs = document.querySelectorAll('#local_xlate_target_container input[type="checkbox"]');
-                    if (targetInputs && targetInputs.length) {
-                        selectedTargets = Array.prototype.filter.call(targetInputs, function (input) {
-                            return !!input.checked;
-                        }).map(function (input) {
-                            return input.value;
-                        });
-                    }
-
-                    if (!selectedTargets.length) {
-                        notification.alert('Select at least one target language before enqueuing autotranslation.');
-                        return;
-                    }
-
-                    // Options for the job (backend will validate course custom fields)
-                    var options = {
-                        batchsize: (config && config.batchsize) ? config.batchsize : 50,
-                        targetlang: selectedTargets
-                    };
-
-                    var call = Ajax.call([{
-                        methodname: 'local_xlate_autotranslate_course_enqueue',
-                        args: {
-                            courseid: courseid,
-                            options: options
-                        }
-                    }])[0];
-
-                    call.then(function (res) {
-                        if (!(res && res.success)) {
-                            notification.alert('Failed to enqueue course autotranslate job.');
-                            return;
-                        }
-                        notification.alert('Course autotranslate job queued. Job id: ' + (res.jobid || 'n/a'));
-                        // Start polling job progress
-                        startCoursePolling(res.jobid);
-                    }).catch(function (err) {
-                        var msg = 'Error enqueuing course job';
-                        if (err && err.message) {
-                            msg += ': ' + err.message;
-                        } else if (err && err.error) {
-                            msg += ': ' + err.error;
-                        }
-                        // Add hint about course settings if it looks like a config error
-                        if (msg.toLowerCase().indexOf('language') !== -1 || msg.toLowerCase().indexOf('configuration') !== -1) {
-                            msg += '\n\nPlease configure source and target languages in the course settings (Xlate section).';
-                        }
-                        notification.alert(msg);
-                    });
+            if (retranslateUnreviewedButton) {
+                retranslateUnreviewedButton.addEventListener('click', function () {
+                    enqueueCourseJob(
+                        { onlyunreviewed: true },
+                        getString(
+                            config,
+                            'retranslateUnreviewedQueued',
+                            'Unreviewed retranslation job queued. Job id: {$a}'
+                        ),
+                        getString(
+                            config,
+                            'autoTranslateCourseQueueFailed',
+                            'Failed to enqueue course autotranslate job.'
+                        )
+                    );
                 });
             }
 

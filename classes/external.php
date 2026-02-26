@@ -913,7 +913,9 @@ class local_xlate_external extends external_api {
                     new external_value(PARAM_TEXT, 'Target language code'),
                     'Target languages', VALUE_OPTIONAL
                 ),
-                'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, $CFG->lang)
+                'sourcelang' => new external_value(PARAM_TEXT, 'Source language code', VALUE_DEFAULT, $CFG->lang),
+                'onlymissing' => new external_value(PARAM_BOOL, 'Queue only missing translations', VALUE_DEFAULT, 0),
+                'onlyunreviewed' => new external_value(PARAM_BOOL, 'Queue only unreviewed translations', VALUE_DEFAULT, 0)
             ], 'Options', VALUE_DEFAULT, [])
         ]);
     }

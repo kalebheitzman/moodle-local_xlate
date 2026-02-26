@@ -67,7 +67,8 @@ class course_job_manager {
         $normalizedoptions['batchsize'] = $batchsize;
 
         $onlymissing = !empty($normalizedoptions['onlymissing']);
-        $total = $totaloverride ?? self::count_course_work_units($courseid, $targetlangs, $onlymissing);
+        $onlyunreviewed = !empty($normalizedoptions['onlyunreviewed']);
+        $total = $totaloverride ?? self::count_course_work_units($courseid, $targetlangs, $onlymissing, $onlyunreviewed);
 
         $record = (object) [
             'courseid' => $courseid,
@@ -100,10 +101,11 @@ class course_job_manager {
      *
      * @param int $courseid Course identifier.
      * @param array<int,string> $targetlangs Target languages requested.
-     * @param bool $onlymissing True when the job is scoped to missing translations only.
+    * @param bool $onlymissing True when the job is scoped to missing translations only.
+    * @param bool $onlyunreviewed True when the job should skip human-reviewed translations.
      * @return bool
      */
-    public static function has_pending_job(int $courseid, array $targetlangs, bool $onlymissing): bool {
+    public static function has_pending_job(int $courseid, array $targetlangs, bool $onlymissing, bool $onlyunreviewed = false): bool {
         global $DB;
 
         $jobs = $DB->get_records('local_xlate_course_job', ['courseid' => $courseid, 'status' => 'pending']);
@@ -130,8 +132,9 @@ class course_job_manager {
             sort($jobtargetlangs);
 
             $jobonlymissing = !empty($opts['onlymissing']);
+            $jobonlyunreviewed = !empty($opts['onlyunreviewed']);
 
-            if ($jobonlymissing === $onlymissing && $jobtargetlangs === $targetlangs) {
+            if ($jobonlymissing === $onlymissing && $jobonlyunreviewed === $onlyunreviewed && $jobtargetlangs === $targetlangs) {
                 return true;
             }
         }
@@ -198,10 +201,11 @@ class course_job_manager {
      *
      * @param int $courseid Course identifier.
      * @param array<int,string> $targetlangs Target languages included in the job.
-     * @param bool $onlymissing Whether to count only missing active translations.
+    * @param bool $onlymissing Whether to count only missing active translations.
+    * @param bool $onlyunreviewed Whether to include only missing or not-human-reviewed active translations.
      * @return int
      */
-    protected static function count_course_work_units(int $courseid, array $targetlangs, bool $onlymissing): int {
+    protected static function count_course_work_units(int $courseid, array $targetlangs, bool $onlymissing, bool $onlyunreviewed = false): int {
         global $DB;
 
         if ($courseid <= 0 || empty($targetlangs)) {
@@ -217,7 +221,7 @@ class course_job_manager {
         }
 
         try {
-            if (!$onlymissing) {
+            if (!$onlymissing && !$onlyunreviewed) {
                 $keys = (int)$DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
                 return $keys * count($targetlangs);
             }
@@ -227,8 +231,14 @@ class course_job_manager {
                 $sql = "SELECT COUNT(1)
                           FROM {local_xlate_key_course} kc
                           JOIN {local_xlate_key} k ON k.id = kc.keyid
-                     LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
-                         WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)";
+                     LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang AND t.status = 1
+                         WHERE kc.courseid = :courseid";
+
+                if ($onlymissing) {
+                    $sql .= ' AND t.id IS NULL';
+                } else if ($onlyunreviewed) {
+                    $sql .= ' AND (t.id IS NULL OR t.reviewed <> 1)';
+                }
                 $total += (int)$DB->get_field_sql($sql, ['courseid' => $courseid, 'targetlang' => $lang]);
             }
 

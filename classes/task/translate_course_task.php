@@ -111,6 +111,7 @@ class translate_course_task extends adhoc_task {
         $targetlangs = array_values(array_unique(array_filter(array_map('trim', $targetlangs))));
 
         $onlymissing = !empty($options['onlymissing']);
+        $onlyunreviewed = !empty($options['onlyunreviewed']);
 
         // Select next set of key-course associations for this course.
         $sql = "SELECT kc.id as kc_id, kc.keyid, k.component, k.xkey, k.source
@@ -143,6 +144,7 @@ class translate_course_task extends adhoc_task {
         foreach ($records as $rec) {
             $items[] = [
                 'id' => (string)$rec->xkey,
+                'keyid' => (int)$rec->keyid,
                 'component' => (string)$rec->component,
                 'key' => (string)$rec->xkey,
                 'source_text' => (string)$rec->source,
@@ -191,13 +193,18 @@ class translate_course_task extends adhoc_task {
             }
 
             foreach ($items as $item) {
-                if ($onlymissing) {
+                if ($onlymissing || $onlyunreviewed) {
                     $existing = $DB->get_record('local_xlate_tr', [
-                        'keyid' => (int)$item['keyid'],
+                        'keyid' => (int)($item['keyid'] ?? 0),
                         'lang' => $targetlang,
                         'status' => 1,
-                    ], 'id', IGNORE_MISSING);
-                    if ($existing) {
+                    ], 'id, reviewed', IGNORE_MISSING);
+
+                    if ($onlymissing && $existing) {
+                        continue;
+                    }
+
+                    if ($onlyunreviewed && $existing && (int)$existing->reviewed === 1) {
                         continue;
                     }
                 }
