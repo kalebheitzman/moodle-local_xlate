@@ -66,7 +66,8 @@ class course_job_manager {
         $normalizedoptions['targetlangs'] = $targetlangs;
         $normalizedoptions['batchsize'] = $batchsize;
 
-        $total = $totaloverride ?? self::count_course_keys($courseid);
+        $onlymissing = !empty($normalizedoptions['onlymissing']);
+        $total = $totaloverride ?? self::count_course_work_units($courseid, $targetlangs, $onlymissing);
 
         $record = (object) [
             'courseid' => $courseid,
@@ -183,6 +184,55 @@ class course_job_manager {
 
         try {
             return (int)$DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Count translation work units for a course job.
+     *
+     * Work units are keyed by target language:
+     * - default mode: all key-course associations for each target language
+     * - missing-only mode: only keys lacking active translations per target language
+     *
+     * @param int $courseid Course identifier.
+     * @param array<int,string> $targetlangs Target languages included in the job.
+     * @param bool $onlymissing Whether to count only missing active translations.
+     * @return int
+     */
+    protected static function count_course_work_units(int $courseid, array $targetlangs, bool $onlymissing): int {
+        global $DB;
+
+        if ($courseid <= 0 || empty($targetlangs)) {
+            return 0;
+        }
+
+        $targetlangs = array_values(array_unique(array_filter(array_map('trim', $targetlangs), static function ($lang) {
+            return $lang !== '';
+        })));
+
+        if (empty($targetlangs)) {
+            return 0;
+        }
+
+        try {
+            if (!$onlymissing) {
+                $keys = (int)$DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
+                return $keys * count($targetlangs);
+            }
+
+            $total = 0;
+            foreach ($targetlangs as $lang) {
+                $sql = "SELECT COUNT(1)
+                          FROM {local_xlate_key_course} kc
+                          JOIN {local_xlate_key} k ON k.id = kc.keyid
+                     LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
+                         WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)";
+                $total += (int)$DB->get_field_sql($sql, ['courseid' => $courseid, 'targetlang' => $lang]);
+            }
+
+            return $total;
         } catch (\Throwable $e) {
             return 0;
         }

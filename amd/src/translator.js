@@ -444,6 +444,48 @@ define(['core/ajax'], function (Ajax) {
     }
     return s;
   }
+
+  /**
+   * Normalise source text for sourceMap lookups.
+   * Mirrors backend normalisation rules (lowercase + punctuation agnostic).
+   * @param {string} value Source text candidate.
+   * @returns {string} Normalised lookup key.
+   */
+  function normalizeSourceForLookup(value) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    var normalized = value.trim();
+    if (!normalized) {
+      return '';
+    }
+    normalized = normalized.toLowerCase();
+    try {
+      normalized = normalized.replace(/[^\p{L}\p{N}]+/gu, ' ');
+      normalized = normalized.replace(/\s+/gu, ' ');
+    } catch (e) {
+      normalized = normalized.replace(/[^a-z0-9]+/gi, ' ');
+      normalized = normalized.replace(/\s+/g, ' ');
+    }
+    return normalized.trim();
+  }
+
+  /**
+   * Resolve a key from the sourceMap using plain-text source content.
+   * @param {string} sourceText Source text candidate.
+   * @returns {string} Matching xkey or empty string.
+   */
+  function resolveKeyFromSourceMap(sourceText) {
+    if (!window.__XLATE__ || !window.__XLATE__.sourceMap || typeof window.__XLATE__.sourceMap !== 'object') {
+      return '';
+    }
+    var normalized = normalizeSourceForLookup(extractPlainText(sourceText || ''));
+    if (!normalized) {
+      return '';
+    }
+    var mapped = window.__XLATE__.sourceMap[normalized];
+    return (typeof mapped === 'string' && mapped !== '') ? mapped : '';
+  }
   /**
    * Determine whether text should be considered for translation.
    * @param {string} text - Candidate text
@@ -1189,17 +1231,24 @@ define(['core/ajax'], function (Ajax) {
       methodname: 'local_xlate_save_key',
       args: payload
     }])[0].then(function (response) {
+      var persistedKey = key;
+      if (response && typeof response.xkey === 'string' && response.xkey.trim() !== '') {
+        persistedKey = response.xkey.trim();
+      }
+      if (persistedKey !== key) {
+        setKeyAttribute(element, type, persistedKey);
+      }
       if (window.__XLATE__) {
         if (!window.__XLATE__.map) {
           window.__XLATE__.map = {};
         }
-        window.__XLATE__.map[key] = text;
+        window.__XLATE__.map[persistedKey] = text;
         if (!window.__XLATE__.reviewMap) {
           window.__XLATE__.reviewMap = {};
         }
-        window.__XLATE__.reviewMap[key] = 1;
+        window.__XLATE__.reviewMap[persistedKey] = 1;
       }
-      xlateDebug('[XLATE][Capture] Save success', key, response || '');
+      xlateDebug('[XLATE][Capture] Save success', persistedKey, response || '');
       return true;
     }).catch(function (err) {
       detectedStrings.delete(dedupeKey);
@@ -1394,6 +1443,14 @@ define(['core/ajax'], function (Ajax) {
     if (isCapture) {
       saveToDatabase(element, value, attrName, key, map);
       return;
+    }
+
+    if (!isCapture && map && !hasTranslation(map, key)) {
+      var sourceMappedKey = resolveKeyFromSourceMap(value);
+      if (sourceMappedKey && sourceMappedKey !== key) {
+        setKeyAttribute(element, attrName, sourceMappedKey);
+        key = sourceMappedKey;
+      }
     }
 
     var showingTranslations = shouldShowTranslations();
@@ -1657,12 +1714,21 @@ define(['core/ajax'], function (Ajax) {
         }
 
         var sourceUpdates = (data && data.sources && typeof data.sources === 'object') ? data.sources : null;
+        var sourceMapUpdates = (data && data.sourceMap && typeof data.sourceMap === 'object') ? data.sourceMap : null;
         if (sourceUpdates) {
           if (!window.__XLATE__.sourceStrings || typeof window.__XLATE__.sourceStrings !== 'object') {
             window.__XLATE__.sourceStrings = {};
           }
           Object.keys(sourceUpdates).forEach(function (k) {
             window.__XLATE__.sourceStrings[k] = sourceUpdates[k];
+          });
+        }
+        if (sourceMapUpdates) {
+          if (!window.__XLATE__.sourceMap || typeof window.__XLATE__.sourceMap !== 'object') {
+            window.__XLATE__.sourceMap = {};
+          }
+          Object.keys(sourceMapUpdates).forEach(function (k) {
+            window.__XLATE__.sourceMap[k] = sourceMapUpdates[k];
           });
         }
 
@@ -1994,6 +2060,7 @@ define(['core/ajax'], function (Ajax) {
           translations: payload.translations,
           reviewed: payload.reviewed || {},
           sources: payload.sources || payload.sourceStrings || {},
+          sourceMap: payload.sourceMap || {},
           critical: payload.critical || {},
           keyids: payload.keyids || {}
         };
@@ -2004,6 +2071,7 @@ define(['core/ajax'], function (Ajax) {
           translations: payload,
           reviewed: {},
           sources: {},
+          sourceMap: {},
           critical: {},
           keyids: {}
         };
@@ -2116,6 +2184,7 @@ define(['core/ajax'], function (Ajax) {
         window.__XLATE__.map = cachedPayload.translations;
         window.__XLATE__.reviewMap = cachedPayload.reviewed;
         window.__XLATE__.sourceStrings = cachedPayload.sources || {};
+        window.__XLATE__.sourceMap = cachedPayload.sourceMap || {};
         window.__XLATE__.criticalMap = cachedPayload.critical || {};
         window.__XLATE__.keyIdMap = cachedPayload.keyids || {};
         processedElements = new WeakSet();
@@ -2134,6 +2203,7 @@ define(['core/ajax'], function (Ajax) {
         .then(function (map) {
           var translations = (map && map.translations) ? map.translations : map;
           var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
+          var sourceMap = (map && map.sourceMap && typeof map.sourceMap === 'object') ? map.sourceMap : {};
           var criticalMap = (map && map.critical && typeof map.critical === 'object') ? map.critical : {};
           var sourceStrings = (map && map.sources && typeof map.sources === 'object') ? map.sources : {};
           var keyIdMap = (map && map.keyids && typeof map.keyids === 'object') ? map.keyids : {};
@@ -2144,6 +2214,7 @@ define(['core/ajax'], function (Ajax) {
             localStorage.setItem(cacheKey, JSON.stringify({
               translations: translations,
               reviewed: reviewMap,
+              sourceMap: sourceMap,
               sources: sourceStrings,
               critical: criticalMap,
               keyids: keyIdMap
@@ -2153,6 +2224,7 @@ define(['core/ajax'], function (Ajax) {
           }
           window.__XLATE__.map = translations;
           window.__XLATE__.reviewMap = reviewMap;
+          window.__XLATE__.sourceMap = sourceMap;
           window.__XLATE__.sourceStrings = sourceStrings;
           window.__XLATE__.criticalMap = criticalMap;
           window.__XLATE__.keyIdMap = keyIdMap;

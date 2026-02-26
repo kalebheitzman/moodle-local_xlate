@@ -607,5 +607,68 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026010901, 'local', 'xlate');
     }
 
+    // Check local_xlate table collations on MySQL/MariaDB installs.
+    if ($oldversion < 2026022500) {
+        global $DB, $CFG;
+
+        $status = [
+            'checkedat' => time(),
+            'dbfamily' => $DB->get_dbfamily(),
+            'ok' => true,
+            'issues' => [],
+        ];
+
+        if (in_array($DB->get_dbfamily(), ['mysql', 'mariadb'], true)) {
+            $tables = [
+                'local_xlate_key',
+                'local_xlate_key_course',
+                'local_xlate_tr',
+                'local_xlate_activity',
+                'local_xlate_bundle',
+                'local_xlate_glossary',
+                'local_xlate_token_batch',
+                'local_xlate_course_job',
+                'local_xlate_mlang_migration',
+            ];
+
+            $dbname = (string)$CFG->dbname;
+            $prefix = (string)$CFG->prefix;
+
+            foreach ($tables as $table) {
+                $fullname = $prefix . $table;
+                try {
+                    $collation = $DB->get_field_sql(
+                        'SELECT TABLE_COLLATION
+                           FROM information_schema.TABLES
+                          WHERE TABLE_SCHEMA = ?
+                            AND TABLE_NAME = ?',
+                        [$dbname, $fullname],
+                        IGNORE_MISSING
+                    );
+                } catch (\Throwable $e) {
+                    $collation = false;
+                }
+
+                if ($collation === false || $collation === null) {
+                    continue;
+                }
+
+                $collation = (string)$collation;
+                if ($collation === '' || strpos(strtolower($collation), 'utf8mb4_') !== 0) {
+                    $status['ok'] = false;
+                    $status['issues'][$fullname] = $collation;
+                }
+            }
+        }
+
+        set_config('db_collation_check', json_encode($status), 'local_xlate');
+
+        if (!$status['ok']) {
+            debugging('[local_xlate] DB collation check detected non-utf8mb4 plugin tables: ' . json_encode($status['issues']), DEBUG_DEVELOPER);
+        }
+
+        upgrade_plugin_savepoint(true, 2026022500, 'local', 'xlate');
+    }
+
     return true;
 }

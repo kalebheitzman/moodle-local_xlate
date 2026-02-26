@@ -84,6 +84,12 @@ class translate_course_task extends adhoc_task {
             return;
         }
 
+        if ($job->status === 'pending') {
+            $job->status = 'running';
+            $job->mtime = time();
+            $DB->update_record('local_xlate_course_job', $job);
+        }
+
         // Decode options if set.
         $options = [];
         if (!empty($job->options)) {
@@ -105,10 +111,6 @@ class translate_course_task extends adhoc_task {
         $targetlangs = array_values(array_unique(array_filter(array_map('trim', $targetlangs))));
 
         $onlymissing = !empty($options['onlymissing']);
-        $missinglang = null;
-        if ($onlymissing && count($targetlangs) === 1) {
-            $missinglang = (string)$targetlangs[0];
-        }
 
         // Select next set of key-course associations for this course.
         $sql = "SELECT kc.id as kc_id, kc.keyid, k.component, k.xkey, k.source
@@ -116,24 +118,20 @@ class translate_course_task extends adhoc_task {
                   JOIN {local_xlate_key} k ON k.id = kc.keyid";
 
         $params = ['courseid' => (int)$job->courseid, 'lastid' => $lastid];
-        if ($missinglang !== null) {
-            $sql .= " LEFT JOIN {local_xlate_tr} t ON t.keyid = kc.keyid AND t.lang = :missinglang";
-            $params['missinglang'] = $missinglang;
-        }
 
         $sql .= " WHERE kc.courseid = :courseid AND kc.id > :lastid";
-        if ($missinglang !== null) {
-            $sql .= " AND (t.id IS NULL OR t.status <> 1)";
-        }
-
         $sql .= " ORDER BY kc.id ASC";
 
         $records = $DB->get_records_sql($sql, $params, 0, $batchsize);
 
         if (empty($records)) {
             // Nothing more to do; mark job complete.
-            $job->status = 'complete';
-            $job->processed = (int)$job->total;
+            $job->status = ((int)$job->total > 0 && (int)$job->processed < (int)$job->total)
+                ? 'complete_partial'
+                : 'complete';
+            if ($job->status === 'complete') {
+                $job->processed = (int)$job->total;
+            }
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);
             return;
@@ -178,32 +176,64 @@ class translate_course_task extends adhoc_task {
         if (empty($targetlangs)) {
             // No target languages configured - nothing to translate
             mtrace("Course {$job->courseid} has no target languages configured. Marking job complete.");
-            $job->status = 'complete';
+            $job->status = ((int)$job->total > 0 && (int)$job->processed < (int)$job->total)
+                ? 'complete_partial'
+                : 'complete';
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);
             return;
         }
 
-        // Call backend to translate this batch (backend handles multiple target langs)
-        try {
-            $result = \local_xlate\translation\backend::translate_batch(
-                'coursejob_' . $jobid,
-                $sourcelang,
-                $targetlangs,
-                $items,
-                $options['glossary'] ?? [],
-                $options
-            );
-        } catch (\Exception $e) {
-            // On backend failure, update mtime and requeue later by throwing
-            // an exception so core task system can retry according to its policy.
-            $job->mtime = time();
-            $DB->update_record('local_xlate_course_job', $job);
-            throw $e;
+        $itemsbylang = [];
+        foreach ($targetlangs as $targetlang) {
+            if ($targetlang === '' || $targetlang === $sourcelang) {
+                continue;
+            }
+
+            foreach ($items as $item) {
+                if ($onlymissing) {
+                    $existing = $DB->get_record('local_xlate_tr', [
+                        'keyid' => (int)$item['keyid'],
+                        'lang' => $targetlang,
+                        'status' => 1,
+                    ], 'id', IGNORE_MISSING);
+                    if ($existing) {
+                        continue;
+                    }
+                }
+
+                $payload = $item;
+                unset($payload['keyid']);
+                $itemsbylang[$targetlang][] = $payload;
+            }
         }
 
-        // Persist translations when backend returned results.
-        if (!empty($result['ok']) && !empty($result['results']) && is_array($result['results'])) {
+        $successfulunits = 0;
+        foreach ($itemsbylang as $targetlang => $langitems) {
+            if (empty($langitems)) {
+                continue;
+            }
+
+            try {
+                $result = \local_xlate\translation\backend::translate_batch(
+                    'coursejob_' . $jobid . '_' . $targetlang,
+                    $sourcelang,
+                    $targetlang,
+                    $langitems,
+                    $options['glossary'] ?? [],
+                    $options
+                );
+            } catch (\Exception $e) {
+                // Let core retry policy handle transient backend failures.
+                $job->mtime = time();
+                $DB->update_record('local_xlate_course_job', $job);
+                throw $e;
+            }
+
+            if (empty($result['ok']) || empty($result['results']) || !is_array($result['results'])) {
+                continue;
+            }
+
             foreach ($result['results'] as $r) {
                 $id = $r['id'] ?? null;
                 $translated = $r['translated'] ?? null;
@@ -211,9 +241,8 @@ class translate_course_task extends adhoc_task {
                     continue;
                 }
 
-                // Find original item by xkey in this batch.
                 $orig = null;
-                foreach ($items as $it) {
+                foreach ($langitems as $it) {
                     $itid = (string)($it['id'] ?? '');
                     $itkey = (string)($it['key'] ?? '');
                     if ($itid === (string)$id || $itkey === (string)$id) {
@@ -221,34 +250,32 @@ class translate_course_task extends adhoc_task {
                         break;
                     }
                 }
-                if (!$orig) {
+                if (!$orig || empty($orig['component']) || empty($orig['key'])) {
                     continue;
                 }
 
-                if (!empty($orig['component']) && !empty($orig['key'])) {
-                    try {
-                        // Debug logging: record what we are about to persist for diagnosis.
-                        debugging('[local_xlate] Persisting translation for ' . $orig['component'] . ':' . $orig['key'] . ' lang=' . (isset($r['lang']) ? $r['lang'] : (is_array($targetlangs) ? $targetlangs[0] : '')), DEBUG_DEVELOPER);
-                        \local_xlate\local\api::save_key_with_translation(
-                            (string)$orig['component'],
-                            (string)$orig['key'],
-                            (string)($orig['source_text'] ?? ''),
-                            isset($r['lang']) ? (string)$r['lang'] : (is_array($targetlangs) ? (string)$targetlangs[0] : ''),
-                            (string)$r['translated'],
-                            0,
-                            (int)$orig['courseid'],
-                            (string)$orig['context']
-                        );
-                    } catch (\Exception $e) {
-                        // swallow save errors to avoid failing the whole batch
-                    }
+                try {
+                    debugging('[local_xlate] Persisting translation for ' . $orig['component'] . ':' . $orig['key'] . ' lang=' . $targetlang, DEBUG_DEVELOPER);
+                    \local_xlate\local\api::save_key_with_translation(
+                        (string)$orig['component'],
+                        (string)$orig['key'],
+                        (string)($orig['source_text'] ?? ''),
+                        $targetlang,
+                        (string)$r['translated'],
+                        0,
+                        (int)$orig['courseid'],
+                        (string)$orig['context']
+                    );
+                    $successfulunits++;
+                } catch (\Exception $e) {
+                    // Keep processing the batch, but don't count failed saves as progress.
                 }
             }
         }
 
         // Update job progress
         $job->lastid = $lastProcessedId;
-        $job->processed = (int)$job->processed + count($records);
+        $job->processed = (int)$job->processed + $successfulunits;
         if ($job->total > 0 && $job->processed > $job->total) {
             $job->processed = (int)$job->total;
         }
@@ -262,7 +289,9 @@ class translate_course_task extends adhoc_task {
             \core\task\manager::queue_adhoc_task($newtask);
         } else {
             // Mark complete
-            $job->status = 'complete';
+            $job->status = ((int)$job->total > 0 && (int)$job->processed < (int)$job->total)
+                ? 'complete_partial'
+                : 'complete';
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);
         }

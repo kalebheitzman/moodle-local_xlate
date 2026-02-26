@@ -165,9 +165,10 @@ $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
 $reviewed_filter = optional_param('reviewed_filter', 'unreviewed', PARAM_ALPHA);
 $critical_filter = optional_param('critical_filter', 'critical', PARAM_ALPHA);
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
-$langfilterrawparam = optional_param_array('langfilter', null, PARAM_ALPHANUMEXT);
-if ($langfilterrawparam !== null) {
-    $langfilterraw = (string)reset($langfilterrawparam);
+$langfilterraw = '';
+if (isset($_REQUEST['langfilter']) && is_array($_REQUEST['langfilter'])) {
+    $langfilterrawparam = optional_param_array('langfilter', [], PARAM_ALPHANUMEXT);
+    $langfilterraw = (string)(reset($langfilterrawparam) ?: '');
 } else {
     $langfilterraw = optional_param('langfilter', '', PARAM_ALPHANUMEXT);
 }

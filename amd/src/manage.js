@@ -183,6 +183,16 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
      */
     function saveTranslationForm(form, options, config) {
         options = options || {};
+        if (form) {
+            var translationField = form.querySelector('[name="translation"]');
+            var reviewedToggle = form.querySelector('input[name="reviewed"]');
+            if (translationField && reviewedToggle) {
+                var value = translationField.value || '';
+                if (value.trim() !== '') {
+                    reviewedToggle.checked = true;
+                }
+            }
+        }
         var payload = serializeTranslationForm(form);
         if (!payload) {
             return;
@@ -793,6 +803,16 @@ define(['core/ajax', 'core/notification'], function (Ajax, notification) {
                             text.textContent = (processed || total) + ' / ' + total + ' — complete';
                             notification.alert(
                                 'Course autotranslate complete: ' + processed + ' / ' + total
+                            );
+                        } else if (job.status === 'complete_partial') {
+                            clearInterval(handle);
+                            var partialPercent = total > 0 ? Math.round((processed / total) * 100) : 0;
+                            bar.style.width = partialPercent + '%';
+                            bar.setAttribute('aria-valuenow', partialPercent);
+                            bar.textContent = partialPercent + '%';
+                            text.textContent = processed + ' / ' + total + ' — completed with missing items';
+                            notification.alert(
+                                'Course autotranslate completed with missing items: ' + processed + ' / ' + total
                             );
                         } else if (tries >= maxTries) {
                             clearInterval(handle);

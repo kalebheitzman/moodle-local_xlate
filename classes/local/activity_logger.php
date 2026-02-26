@@ -34,6 +34,8 @@ class activity_logger {
     protected static array $charcache = [];
     /** @var array<int,int> */
     protected static array $coursecache = [];
+    /** @var bool|null */
+    protected static ?bool $tableavailable = null;
 
     /**
      * Persist an activity row.
@@ -50,7 +52,7 @@ class activity_logger {
             array $meta = [], ?int $courseid = null): void {
         global $DB, $USER;
 
-        if ($keyid <= 0 || $translationid <= 0 || $action === '') {
+        if ($keyid <= 0 || $translationid <= 0 || $action === '' || !self::is_table_available()) {
             return;
         }
 
@@ -76,8 +78,28 @@ class activity_logger {
         try {
             $DB->insert_record('local_xlate_activity', $record);
         } catch (\Throwable $e) {
-            debugging('[local_xlate] failed to log activity: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            return;
         }
+    }
+
+    /**
+     * Check once per request whether the activity table is present.
+     */
+    protected static function is_table_available(): bool {
+        global $DB;
+
+        if (self::$tableavailable !== null) {
+            return self::$tableavailable;
+        }
+
+        try {
+            $dbman = $DB->get_manager();
+            self::$tableavailable = $dbman->table_exists(new \xmldb_table('local_xlate_activity'));
+        } catch (\Throwable $e) {
+            self::$tableavailable = false;
+        }
+
+        return self::$tableavailable;
     }
 
     /**
@@ -122,12 +144,9 @@ class activity_logger {
         $courseid = 0;
         try {
             $sql = 'SELECT courseid FROM {local_xlate_key_course} WHERE keyid = :keyid ORDER BY mtime DESC, id DESC';
-            $records = $DB->get_records_sql($sql, ['keyid' => $keyid], 0, 1);
-            if (!empty($records)) {
-                $first = reset($records);
-                if ($first && isset($first->courseid)) {
-                    $courseid = (int)$first->courseid;
-                }
+            $value = $DB->get_field_sql($sql, ['keyid' => $keyid], IGNORE_MISSING);
+            if ($value !== false && $value !== null) {
+                $courseid = (int)$value;
             }
         } catch (\Throwable $e) {
             $courseid = 0;

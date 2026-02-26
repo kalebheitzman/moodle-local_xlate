@@ -215,12 +215,11 @@ class api {
                     list($idsql, $idparams) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED, 'i');
                     $params = array_merge(['courseid' => $courseid], $idparams);
                     $sql = "SELECT kc.keyid FROM {local_xlate_key_course} kc WHERE kc.courseid = :courseid AND kc.keyid $idsql";
-                    $rows = $DB->get_records_sql($sql, $params);
-                    $associatedids = array_keys($rows);
-                    $associatedset = array_flip($associatedids);
+                    $associatedids = $DB->get_fieldset_sql($sql, $params);
+                    $associatedset = array_flip(array_map('intval', $associatedids));
 
                     foreach ($keyidmap as $xkey => $kid) {
-                        $associations[$xkey] = isset($associatedset[$kid]);
+                        $associations[$xkey] = isset($associatedset[(int)$kid]);
                     }
                 } else {
                     // No keys present in DB; mark all false
@@ -497,6 +496,8 @@ class api {
     */
     public static function create_or_update_key(string $component, string $xkey, string $source = '', ?int $critical = null): int {
         global $DB;
+
+        $source = self::normalize_utf8_text($source);
         
         $existing = self::get_key_by_component_xkey($component, $xkey);
         $now = time();
@@ -707,6 +708,7 @@ class api {
                                                           int $courseid = 0): int {
         global $DB;
         
+            $text = self::normalize_utf8_text($text);
         $text = translation_cleanup::sanitize_html($text);
                 $lang = trim($lang);
                 $courseid = max(0, (int)$courseid);
@@ -905,6 +907,7 @@ class api {
             if ($source === '') {
                 $source = $translation;
             }
+            $xkey = self::resolve_preferred_xkey($component, $xkey, $source, $courseid);
             // Create or update the key
             $keyid = self::create_or_update_key($component, $xkey, $source, $critical);
             
@@ -966,16 +969,102 @@ class api {
         }
     }
 
+    /**
+     * Resolve the preferred xkey for incoming source text.
+     *
+     * Keeps existing xkeys stable when the same component/source pair already
+     * exists inside the current course associations.
+     *
+     * @param string $component Component identifier.
+     * @param string $xkey Incoming xkey generated on the client.
+     * @param string $source Source text.
+     * @param int $courseid Optional course scope.
+     * @return string Preferred xkey to persist.
+     */
+    private static function resolve_preferred_xkey(string $component, string $xkey, string $source, int $courseid = 0): string {
+        global $DB;
+
+        $xkey = trim($xkey);
+        if ($xkey === '') {
+            return $xkey;
+        }
+
+        $existing = self::get_key_by_component_xkey($component, $xkey);
+        if ($existing) {
+            return $xkey;
+        }
+
+        if ($courseid <= 0 || trim($source) === '') {
+            return $xkey;
+        }
+
+        $needle = self::normalise_source($source);
+        if ($needle === '') {
+            return $xkey;
+        }
+
+        $sql = "SELECT k.id, k.xkey, k.source
+                  FROM {local_xlate_key_course} kc
+                  JOIN {local_xlate_key} k ON k.id = kc.keyid
+                 WHERE kc.courseid = :courseid
+                   AND k.component = :component
+              ORDER BY k.mtime DESC";
+        $records = $DB->get_records_sql($sql, [
+            'courseid' => $courseid,
+            'component' => $component,
+        ], 0, 500);
+
+        foreach ($records as $record) {
+            $candidate = self::normalise_source((string)($record->source ?? ''));
+            if ($candidate !== '' && $candidate === $needle) {
+                return (string)$record->xkey;
+            }
+        }
+
+        return $xkey;
+    }
+
     private static function normalize_inline_markup(string $value): string {
         if ($value === '') {
             return $value;
         }
+        $value = self::normalize_utf8_text($value);
         $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $decoded = preg_replace('#<\\/([a-z0-9]+)>#i', '</$1>', $decoded);
         $decoded = preg_replace('#<([a-z0-9]+)\\/>#i', '<$1/>', $decoded);
         $decoded = preg_replace('#\\(/|/\\)#', '/', $decoded);
         $decoded = str_replace(['\"', '\\'], ['"', '\\'], $decoded);
         return $decoded;
+    }
+
+    /**
+     * Best-effort UTF-8 normalization for user-supplied text.
+     *
+     * @param string $value Input text.
+     * @return string UTF-8 safe string.
+     */
+    private static function normalize_utf8_text(string $value): string {
+        if ($value === '') {
+            return $value;
+        }
+
+        if (mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        $converted = @mb_convert_encoding($value, 'UTF-8', 'UTF-8, Windows-1250, ISO-8859-2, ISO-8859-1');
+        if (is_string($converted) && $converted !== '') {
+            return $converted;
+        }
+
+        if (function_exists('iconv')) {
+            $fallback = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+            if (is_string($fallback) && $fallback !== '') {
+                return $fallback;
+            }
+        }
+
+        return $value;
     }
     
     /**

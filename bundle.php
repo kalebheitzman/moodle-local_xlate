@@ -136,9 +136,9 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, max-age=120');
 
 try {
-    $bundle = \local_xlate\local\api::get_keys_bundle($lang, $keys, $context, $pagetype, $courseparam);
+    $bundle = \local_xlate\local\api::get_keys_bundle_with_associations($lang, $keys, $courseparam);
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {
     http_response_code(200);
-    echo json_encode(['translations' => [], 'sources' => [], 'reviewed' => [], 'critical' => [], 'keyids' => []]);
+    echo json_encode(['translations' => [], 'sourceMap' => [], 'sources' => [], 'reviewed' => [], 'critical' => [], 'keyids' => []]);
 }

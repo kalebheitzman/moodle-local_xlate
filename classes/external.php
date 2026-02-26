@@ -71,6 +71,7 @@ class local_xlate_external extends external_api {
      * @return array Response payload containing success flag and key id.
      */
     public static function save_key($component, $key, $source, $lang, $translation, $reviewed = 0, $courseid = 0, $context = '', $critical = 0) {
+        global $DB;
         global $USER;
 
         $params = self::validate_parameters(self::save_key_parameters(), [
@@ -101,9 +102,13 @@ class local_xlate_external extends external_api {
             (int)$params['critical']
         );
 
+        $savedkey = $DB->get_record('local_xlate_key', ['id' => (int)$keyid], 'xkey', IGNORE_MISSING);
+        $resolvedxkey = $savedkey ? (string)$savedkey->xkey : (string)$params['key'];
+
         return [
             'success' => true,
-            'keyid' => $keyid
+            'keyid' => $keyid,
+            'xkey' => $resolvedxkey
         ];
     }
 
@@ -115,7 +120,8 @@ class local_xlate_external extends external_api {
     public static function save_key_returns() {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Operation success'),
-            'keyid' => new external_value(PARAM_INT, 'Key ID')
+            'keyid' => new external_value(PARAM_INT, 'Key ID'),
+            'xkey' => new external_value(PARAM_RAW_TRIMMED, 'Resolved translation key')
         ]);
     }
 

@@ -13,6 +13,7 @@ define([], function () {
     var translationReadyListener = null;
     var translationsVisibleState = true;
     var translationToggleReady = false;
+    var menuPinned = false;
 
     /**
      * Persist debug information for troubleshooting the switcher state.
@@ -49,6 +50,7 @@ define([], function () {
         translationPillButton = null;
         translationToggleReady = false;
         translationsVisibleState = true;
+        menuPinned = false;
         if (translationVisibilityListener) {
             document.removeEventListener('xlate:visibilitychange', translationVisibilityListener);
             translationVisibilityListener = null;
@@ -131,7 +133,6 @@ define([], function () {
             '  transition:transform 0.2s ease;' +
             '}' +
             '.xlate-lang-switcher.xlate-open .xlate-lang-switcher__caret,' +
-            '.xlate-lang-switcher__control:hover .xlate-lang-switcher__caret,' +
             '.xlate-lang-switcher__control:focus-within .xlate-lang-switcher__caret {' +
             '  transform:rotate(45deg);' +
             '}' +
@@ -165,7 +166,6 @@ define([], function () {
             '  border-bottom-right-radius:0.65rem;' +
             '}' +
             '.xlate-lang-switcher.xlate-open .xlate-lang-switcher__list,' +
-            '.xlate-lang-switcher__control:hover .xlate-lang-switcher__list,' +
             '.xlate-lang-switcher__control:focus-within .xlate-lang-switcher__list {' +
             '  opacity:1;' +
             '  transform:translateY(0);' +
@@ -711,6 +711,9 @@ define([], function () {
             if (!container) {
                 return;
             }
+            if (menuPinned) {
+                return;
+            }
             if (!container.contains(event.target)) {
                 toggleOpen(toggle, false);
             }
@@ -718,7 +721,18 @@ define([], function () {
         document.addEventListener('click', outsideClickHandler, true);
 
         keydownHandler = function (event) {
+            if ((event.ctrlKey || event.metaKey) && event.shiftKey && String(event.key || '').toLowerCase() === 'l') {
+                event.preventDefault();
+                menuPinned = !menuPinned;
+                if (menuPinned) {
+                    toggleOpen(toggle, true);
+                } else {
+                    toggleOpen(toggle, false);
+                }
+                return;
+            }
             if (event.key === 'Escape') {
+                menuPinned = false;
                 toggleOpen(toggle, false);
             }
         };
