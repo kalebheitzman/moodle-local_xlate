@@ -32,6 +32,8 @@ define(['core/ajax'], function (Ajax) {
         toolbar: null,
         callout: null
     };
+    var STICKY_BASE_PADDING = 16;
+    var STICKY_OVERLAY_PADDING = 8;
     var INSPECTOR_STORAGE_KEY = 'local_xlate_inspector_state';
 
     function readInspectorPreference() {
@@ -427,7 +429,7 @@ define(['core/ajax'], function (Ajax) {
         cancelPendingClear();
         var candidate = event.target.closest ? event.target.closest(SELECTOR) : null;
         if (!candidate) {
-            if (isWithinStickyZone()) {
+            if (isWithinStickyZone(event)) {
                 return;
             }
             clearCurrent();
@@ -472,7 +474,7 @@ define(['core/ajax'], function (Ajax) {
             return;
         }
         if (!candidate) {
-            if (isWithinStickyZone()) {
+            if (isWithinStickyZone(event)) {
                 return;
             }
             clearCurrent();
@@ -514,8 +516,52 @@ define(['core/ajax'], function (Ajax) {
         );
     }
 
-    function isWithinStickyZone() {
-        return false;
+    function isWithinStickyZone(event) {
+        if (!STATE.currentElement || !event) {
+            return false;
+        }
+        var rect = STATE.currentElement.getBoundingClientRect();
+        var zone = {
+            top: rect.top - STICKY_BASE_PADDING,
+            bottom: rect.bottom + STICKY_BASE_PADDING,
+            left: rect.left - STICKY_BASE_PADDING,
+            right: rect.right + STICKY_BASE_PADDING
+        };
+
+        expandStickyZone(zone, getVisibleRect(NODES.toolbar), STICKY_OVERLAY_PADDING);
+        expandStickyZone(zone, getVisibleRect(NODES.callout), STICKY_OVERLAY_PADDING);
+
+        var pointerX = typeof event.clientX === 'number'
+            ? event.clientX
+            : (typeof event.pageX === 'number' ? event.pageX : 0);
+        var pointerY = typeof event.clientY === 'number'
+            ? event.clientY
+            : (typeof event.pageY === 'number' ? event.pageY : 0);
+
+        return (
+            pointerX >= zone.left &&
+            pointerX <= zone.right &&
+            pointerY >= zone.top &&
+            pointerY <= zone.bottom
+        );
+    }
+
+    function expandStickyZone(zone, rect, padding) {
+        if (!zone || !rect) {
+            return;
+        }
+        var buffer = typeof padding === 'number' ? padding : 0;
+        zone.top = Math.min(zone.top, rect.top - buffer);
+        zone.bottom = Math.max(zone.bottom, rect.bottom + buffer);
+        zone.left = Math.min(zone.left, rect.left - buffer);
+        zone.right = Math.max(zone.right, rect.right + buffer);
+    }
+
+    function getVisibleRect(node) {
+        if (!node || !node.classList || !node.classList.contains('is-visible')) {
+            return null;
+        }
+        return node.getBoundingClientRect();
     }
 
     function setCurrentElement(element) {

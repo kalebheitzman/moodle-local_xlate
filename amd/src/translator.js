@@ -873,14 +873,43 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Generate translation key from element structure + direct text (ignoring children)
-   * @param {Element} element - The element to generate key for
-   * @param {string} text - The text content
-   * @param {string} type - The type (text, placeholder, etc)
-   * @returns {string} 12-character hash key
+   * Normalize the provided text payload for hashing by extracting readable text.
+   * @param {string} text - Raw text (potentially containing markup) from the caller.
+   * @param {Element} element - Host element used for fallbacks when text is empty.
+   * @returns {string} Plain-text snippet suitable for hashing.
+   */
+  function normalizeKeyText(text, element) {
+    var fromArgument = '';
+    if (typeof text === 'string' && text.trim()) {
+      fromArgument = extractPlainText(text).trim();
+    }
+    if (fromArgument) {
+      return fromArgument;
+    }
+    var directOnly = getDirectChildText(element || null);
+    if (directOnly) {
+      return directOnly;
+    }
+    if (element && element.textContent) {
+      return element.textContent.trim();
+    }
+    return '';
+  }
+
+  /**
+   * Generate translation key from element structure plus the visible text content.
+   * @param {Element} element - The element to generate a key for.
+   * @param {string} text - Source text or attribute value from the caller.
+   * @param {string} type - The type (text, placeholder, etc.).
+   * @returns {string} 12-character hash key.
    */
   function generateKey(element, text, type) {
-    if (!element || !text) {
+    if (!element) {
+      return '';
+    }
+
+    var normalizedText = normalizeKeyText(text, element);
+    if (!normalizedText) {
       return '';
     }
 
@@ -917,8 +946,7 @@ define(['core/ajax'], function (Ajax) {
     if (type && type !== 'text') {
       parts.push(type);
     }
-    var directText = getDirectChildText(element);
-    parts.push(directText);
+    parts.push(normalizedText);
 
     return simpleHash(parts.join('.'));
   }
