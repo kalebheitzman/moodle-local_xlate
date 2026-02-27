@@ -605,6 +605,7 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
             // Non-Boost themes may not provide the Bootstrap AMD helper; fail silently.
         });
     }
+
     return {
         /**
          * Initialise the autotranslate UI bindings.
@@ -643,7 +644,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
                         '<span id="local_xlate_course_job_langs" style="float:right; font-size:90%"></span>' +
                         '</div>' +
                         '<div class="progress" role="progressbar" aria-label="Autotranslate progress">' +
-                        // Use Bootstrap striped + animated classes for nicer effect
                         '<div id="local_xlate_course_progress_bar" class="progress-bar progress-bar-striped ' +
                         'progress-bar-animated bg-info" style="width:0%" aria-valuemin="0" aria-valuemax="100">0%</div>' +
                         '</div>' +
@@ -657,8 +657,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
 
             // If there's no course button (no card), keep going — we still may
             // need to resume polling for an active job.
-
-            // per-item autotranslate removed — we only support course-level autotranslate now.
 
             // per-item autotranslate removed — we only support course-level autotranslate now.
 
@@ -907,3 +905,4 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         }
     };
 });
+
