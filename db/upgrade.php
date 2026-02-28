@@ -670,5 +670,23 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026022500, 'local', 'xlate');
     }
 
+    // One-time cleanup: delete stale course job records that completed with zero
+    // progress (complete_partial + processed=0). These accumulate when the
+    // translation backend is unavailable and serve no purpose once they finish.
+    if ($oldversion < 2026022801) {
+        global $DB;
+
+        try {
+            $DB->delete_records_select(
+                'local_xlate_course_job',
+                "status = 'complete_partial' AND processed = 0"
+            );
+        } catch (\Throwable $e) {
+            debugging('[local_xlate] Failed to clean up stale course jobs: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+
+        upgrade_plugin_savepoint(true, 2026022801, 'local', 'xlate');
+    }
+
     return true;
 }

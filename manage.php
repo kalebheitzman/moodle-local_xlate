@@ -164,6 +164,17 @@ $search = optional_param('search', '', PARAM_TEXT);
 $status_filter = optional_param('status_filter', '', PARAM_ALPHA);
 $reviewed_filter = optional_param('reviewed_filter', 'unreviewed', PARAM_ALPHA);
 $critical_filter = optional_param('critical_filter', 'critical', PARAM_ALPHA);
+
+// When a search term is active, relax restrictive default filters so results
+// are not silently hidden. Admins can still narrow filters manually after searching.
+if (!empty($search)) {
+    if ($reviewed_filter === 'unreviewed') {
+        $reviewed_filter = '';
+    }
+    if ($critical_filter === 'critical') {
+        $critical_filter = '';
+    }
+}
 $filter_courseid = optional_param('courseid', 0, PARAM_INT);
 $langfilterraw = '';
 if (isset($_REQUEST['langfilter']) && is_array($_REQUEST['langfilter'])) {
@@ -550,7 +561,7 @@ $critical_options = [
     'critical' => get_string('critical_filter_only', 'local_xlate'),
     'noncritical' => get_string('critical_filter_noncritical', 'local_xlate')
 ];
-echo html_writer::select($critical_options, 'critical_filter', $critical_filter, false, ['class' => 'form-control']);
+echo html_writer::select($critical_options, 'critical_filter', $critical_filter, false, ['class' => 'form-control', 'id' => 'critical_filter']);
 echo html_writer::end_div();
 
 // Per page
@@ -605,6 +616,28 @@ if (!empty($languageoptions)) {
 }
 echo html_writer::end_div();
 echo html_writer::end_div();
+
+echo html_writer::script('
+(function() {
+    var searchInput = document.getElementById(\'search\');
+    var reviewedSelect = document.getElementById(\'reviewed_filter\');
+    var criticalSelect = document.getElementById(\'critical_filter\');
+    if (!searchInput || !reviewedSelect || !criticalSelect) { return; }
+    // Respect server-side disabled state (e.g. no language filter selected).
+    var reviewedServerDisabled = reviewedSelect.disabled;
+    function updateFilters() {
+        var hasSearch = searchInput.value.trim() !== \'\';
+        if (!reviewedServerDisabled) {
+            reviewedSelect.disabled = hasSearch;
+            if (hasSearch) { reviewedSelect.value = \'\'; }
+        }
+        criticalSelect.disabled = hasSearch;
+        if (hasSearch) { criticalSelect.value = \'\'; }
+    }
+    searchInput.addEventListener(\'input\', updateFilters);
+    updateFilters();
+})();
+');
 
 echo html_writer::end_tag('form');
 

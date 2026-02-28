@@ -109,6 +109,23 @@ class autotranslate_missing_task extends scheduled_task {
                     continue;
                 }
 
+                // Circuit breaker: if a job for this course completed with zero
+                // progress within the last hour, the translation backend is likely
+                // unavailable (e.g. quota exceeded). Skip re-enqueuing to avoid
+                // accumulating useless job records until the API recovers.
+                $recentfailure = $DB->get_records_select(
+                    'local_xlate_course_job',
+                    'courseid = :courseid AND status = :status AND processed = 0 AND mtime > :cooldown',
+                    ['courseid' => $courseid, 'status' => 'complete_partial', 'cooldown' => time() - HOURSECS],
+                    'id DESC',
+                    'id',
+                    0, 1
+                );
+                if (!empty($recentfailure)) {
+                    mtrace("Course {$courseid}: last job for {$targetlang} completed with no work done within the past hour — backend may be unavailable. Skipping.");
+                    continue;
+                }
+
                 $result = \local_xlate\local\course_job_manager::enqueue_course_job($courseid, [
                     'batchsize' => $batchsize,
                     'targetlangs' => [$targetlang],

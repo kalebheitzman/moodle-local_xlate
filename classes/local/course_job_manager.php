@@ -68,7 +68,35 @@ class course_job_manager {
 
         $onlymissing = !empty($normalizedoptions['onlymissing']);
         $onlyunreviewed = !empty($normalizedoptions['onlyunreviewed']);
+
+        // Guard against duplicate jobs: if a pending or in-progress job already
+        // exists for this course with the same parameters, return it as-is.
+        if (self::has_pending_job($courseid, $targetlangs, $onlymissing, $onlyunreviewed)) {
+            $existingjobs = $DB->get_records(
+                'local_xlate_course_job',
+                ['courseid' => $courseid, 'status' => 'pending'],
+                'id DESC',
+                '*', 0, 1
+            );
+            if ($existingjob = reset($existingjobs)) {
+                return ['success' => true, 'jobid' => (int)$existingjob->id, 'taskid' => 0];
+            }
+        }
+
         $total = $totaloverride ?? self::count_course_work_units($courseid, $targetlangs, $onlymissing, $onlyunreviewed);
+
+        // Purge stale no-op jobs for this course before inserting so the queue
+        // stays clean automatically. Jobs that completed with zero progress are
+        // useless for debugging and only clutter the queue UI.
+        try {
+            $DB->delete_records_select(
+                'local_xlate_course_job',
+                'courseid = :courseid AND status = :status AND processed = 0',
+                ['courseid' => $courseid, 'status' => 'complete_partial']
+            );
+        } catch (\Throwable $e) {
+            // Non-fatal: proceed even if cleanup fails.
+        }
 
         $record = (object) [
             'courseid' => $courseid,
