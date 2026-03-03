@@ -760,7 +760,10 @@ class api {
                     ], $courseid);
                 }
             }
-            if ($reviewchanged) {
+            // Only log a standalone review event when the review flag changed WITHOUT a text
+            // change. If text was also written, the review flip is part of that work unit and
+            // logging it separately would double-count characters for payroll purposes.
+            if ($reviewchanged && !$textchanged) {
                 $action = $reviewed ? activity_logger::ACTION_REVIEW_MARK : activity_logger::ACTION_REVIEW_CLEAR;
                 if (!$suppressactivity) {
                     activity_logger::log($keyid, $translationid, $lang, $action, [], $courseid);
@@ -784,15 +787,12 @@ class api {
             if (!$suppressactivity) {
                 activity_logger::log($keyid, $translationid, $lang, $action, $meta, $courseid);
             }
-            if ($reviewed && !$suppressactivity) {
-                activity_logger::log($keyid, $translationid, $lang, activity_logger::ACTION_REVIEW_MARK, [], $courseid);
-            }
+            // Do NOT log ACTION_REVIEW_MARK here — the reviewed flag on a new record is an
+            // attribute of the creation event, not a separate billable action.
             if ($status !== 1) {
-                $action = $status === 1
-                    ? activity_logger::ACTION_STATUS_ACTIVE
-                    : activity_logger::ACTION_STATUS_INACTIVE;
+                // New record with non-default status — always inactive since status != 1.
                 if (!$suppressactivity) {
-                    activity_logger::log($keyid, $translationid, $lang, $action, [
+                    activity_logger::log($keyid, $translationid, $lang, activity_logger::ACTION_STATUS_INACTIVE, [
                         'previous' => 1,
                         'current' => $status,
                     ], $courseid);
@@ -856,13 +856,17 @@ class api {
      * @param string $lang Language code (e.g. en, es).
      * @return bool True when a row was removed.
      */
-    public static function delete_translation(int $keyid, string $lang): bool {
+    public static function delete_translation(int $keyid, string $lang, int $courseid = 0): bool {
         global $DB;
 
         $lang = trim($lang);
         if ($keyid <= 0 || $lang === '') {
             return false;
         }
+
+        // Capture the translation id before deleting so the activity log entry is complete.
+        $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang], 'id');
+        $translationid = $existing ? (int)$existing->id : 0;
 
         $deleted = $DB->delete_records('local_xlate_tr', [
             'keyid' => $keyid,
@@ -872,6 +876,9 @@ class api {
         if ($deleted) {
             self::invalidate_bundle_cache($lang);
             self::update_bundle_version($lang);
+            if ($translationid > 0) {
+                activity_logger::log($keyid, $translationid, $lang, activity_logger::ACTION_DELETE, [], $courseid);
+            }
         }
 
         return (bool)$deleted;

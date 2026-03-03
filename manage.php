@@ -1074,7 +1074,8 @@ if (!empty($keys)) {
                     'data-bs-toggle' => 'tooltip',
                     'data-bs-placement' => 'top',
                     'data-keyid' => $key->id,
-                    'data-lang' => $langcode
+                    'data-lang' => $langcode,
+                    'data-courseid' => $filter_courseid
                 ]);
                 echo html_writer::end_div();
                 echo html_writer::tag('span', '', [
@@ -1140,24 +1141,6 @@ $amdconfig = [
     'courseid' => $filter_courseid,
     'batchsize' => 50,
     'targetlangs' => array_values($selectedtargets),
-    'strings' => [
-        'confirmDelete' => get_string('confirm_delete_translation', 'local_xlate'),
-        'confirmDeleteTitle' => get_string('confirm_delete_title', 'local_xlate'),
-        'confirmDeleteAction' => get_string('confirm_delete_action', 'local_xlate'),
-        'confirmDeleteCancel' => get_string('cancel'),
-        'deleteFailed' => get_string('delete_failed', 'local_xlate'),
-        'deleteSuccess' => get_string('translation_deleted', 'local_xlate'),
-        'autoTranslateFailed' => get_string('autotranslate_inline_failed', 'local_xlate'),
-        'autoTranslateReady' => get_string('autotranslate_inline_success', 'local_xlate'),
-        'autoTranslateSaved' => get_string('auto_translate_saved', 'local_xlate'),
-        'autoTranslateCourseQueued' => get_string('autotranslate_course_queued', 'local_xlate'),
-        'autoTranslateCourseQueueFailed' => get_string('autotranslate_course_queue_failed', 'local_xlate'),
-        'autoTranslateSelectTarget' => get_string('autotranslate_select_target', 'local_xlate'),
-        'retranslateUnreviewedQueued' => get_string('retranslate_unreviewed_queued', 'local_xlate'),
-        'saveSuccess' => get_string('translation_saved', 'local_xlate'),
-        'saveFailed' => get_string('translation_save_failed', 'local_xlate'),
-        'saveIndicator' => get_string('translation_saved_short', 'local_xlate'),
-    ]
 ];
 
 $PAGE->requires->strings_for_js([

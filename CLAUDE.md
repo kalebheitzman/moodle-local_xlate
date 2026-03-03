@@ -122,10 +122,12 @@ Eight tables — all prefixed with `{local_xlate_*}`:
 - `reviewed` column (0/1) — human review flag; separate from status
 
 ### Key fields
-- `local_xlate_key.xkey` — 12-character base36 hash; generated deterministically from `(tag, classes, region, type, text)`
+- `local_xlate_key.xkey` — 12-character base36 hash; generated as `simpleHash(extractPlainText(trim(source)))` — plain text only, HTML tags stripped, entities decoded. Same visible text = same key regardless of markup or entity encoding.
 - `local_xlate_key.component` — Moodle component string (e.g. `core`, `mod_forum`, `local_xlate`)
 - `local_xlate_key.critical` — 0/1 flag; critical strings get priority in UI and autotranslation
-- `local_xlate_key.source` — raw source text (may contain safe inline HTML)
+- `local_xlate_key.source` — raw source text (may contain safe inline HTML); stored separately from the hash input
+
+**IMPORTANT — xkey algorithm history:** The algorithm was migrated from a DOM-structural hash (included parent tag, classes, element type) to the current plain-text hash. If the algorithm ever needs to change again, run `cli/rehash_keys_dryrun.php` first, then `cli/rehash_keys.php`. Both scripts must be updated to match the new JS `normalizeKeyText()` logic exactly.
 
 ---
 
@@ -248,13 +250,18 @@ All JS lives in `amd/src/`. Must be rebuilt after any change.
 Responsibilities:
 - Reads `window.__XLATE__` config (injected by `output.php`)
 - Scans DOM for text nodes + `placeholder`, `title`, `alt`, `aria-label` attributes
-- Generates 12-char base36 structural keys: hash of `(tag + classes + region + type + text)`
+- Generates 12-char base36 keys: `simpleHash(extractPlainText(getElementSourcePayload(element)))` — plain text only, no DOM structural context
 - **Capture mode** (source lang + has manage capability): tags DOM elements, calls `local_xlate_save_key` WS
-- **Translation mode** (target lang): replaces DOM content with bundle translations
+- **Translation mode** (target lang): replaces DOM content with bundle translations; uses `setElementHtml()` which preserves `.accesshide` children
 - `MutationObserver` watches for dynamic content changes (SPAs, AJAX-loaded blocks)
 - `sanitizeTranslationHtml()` whitelist: `a, em, strong, span, code, br, sub, sup, mark, abbr, i, b, u, s, small, ins, del`
 - Edit mode: completely disabled when `isEditing=true` (no capture, no tagging)
 - localStorage bundle caching with version-based cache busting
+
+**Key generation details — critical gotchas:**
+- `getElementSourcePayload()` clones the element and strips `.accesshide` descendants before extracting source text. Moodle injects `.accesshide` spans with the browsing-language activity-type name (e.g. "Book" in EN, "Книга" in RU) — including them would produce different keys per language. **Never remove this stripping.**
+- `normalizeKeyText()` calls `extractPlainText(text)` which uses `container.textContent` — this gives plain decoded text, making the hash immune to HTML entity encoding inconsistencies (`&amp;` vs `&` in `innerHTML` varies by browser/DOM context).
+- `simpleHash()` processes supplementary Unicode characters (emoji, U+10000+) as UTF-16 surrogate pairs to match PHP's `xlate_simple_hash()`. **Both functions must stay in sync.**
 
 **Key globals set on `window.__XLATE__`:**
 - `lang` — current user language
@@ -421,6 +428,8 @@ All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`.
 | `cleanup_translation_tags.php` | Clean stale HTML tags in translation records |
 | `analyze_html_selectors.php` | Report on CSS selectors used in capture |
 | `find_key.php` | Search for keys by source text |
+| `rehash_keys_dryrun.php` | Preview xkey migration — shows counts, merges, conflicts. No DB changes. |
+| `rehash_keys.php` | Execute xkey migration — recomputes all xkeys, merges duplicates, preserves reviewed translations. **Take DB backup first.** |
 
 ---
 
@@ -463,6 +472,13 @@ sudo -u www-data php local/xlate/cli/truncate_xlate_tables.php
 
 # Recreate course custom fields (DEV ONLY)
 sudo -u www-data php local/xlate/cli/recreate_customfields.php
+
+# Preview xkey hash migration (always run first)
+sudo -u www-data php local/xlate/cli/rehash_keys_dryrun.php
+sudo -u www-data php local/xlate/cli/rehash_keys_dryrun.php --verbose
+
+# Run xkey hash migration (TAKE DB BACKUP FIRST)
+sudo -u www-data php local/xlate/cli/rehash_keys.php
 ```
 
 ---
@@ -490,7 +506,9 @@ This section documents which files depend on which others. Before changing any f
 
 ### Changing `amd/src/translator.js`
 - Must rebuild: `grunt amd --root=local/xlate --force`
-- Key generation algorithm changes will **invalidate all existing captured keys** in the DB
+- Key generation algorithm changes will **invalidate all existing captured keys** in the DB — requires running `cli/rehash_keys.php` after deployment
+- If changing `normalizeKeyText()` or `simpleHash()`: the PHP equivalents in `cli/rehash_keys.php` and `cli/rehash_keys_dryrun.php` (`xlate_simple_hash` + normalization) **must be updated to match exactly**
+- If changing `getElementSourcePayload()`: verify that `.accesshide` stripping is preserved — removing it causes hash mismatches between source and target language pages
 - Changes to `sanitizeTranslationHtml()` whitelist affect both capture storage and translation rendering
 - Config property name changes must be mirrored in `output.php::before_body()`
 

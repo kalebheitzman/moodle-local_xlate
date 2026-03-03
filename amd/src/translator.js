@@ -265,9 +265,13 @@ define(['core/ajax'], function (Ajax) {
    */
   function setElementHtml(element, html) {
     var saved = [];
-    var ahNodes = element.querySelectorAll('.accesshide');
-    for (var i = 0; i < ahNodes.length; i++) {
-      saved.push(ahNodes[i]);
+    // Only search for .accesshide children when the element has child elements
+    // at all — the vast majority of translated nodes are plain text leaves.
+    if (element.firstElementChild) {
+      var ahNodes = element.querySelectorAll('.accesshide');
+      for (var i = 0; i < ahNodes.length; i++) {
+        saved.push(ahNodes[i]);
+      }
     }
     element.innerHTML = html;
     for (var i = 0; i < saved.length; i++) {
@@ -286,15 +290,25 @@ define(['core/ajax'], function (Ajax) {
     if (!element) {
       return '';
     }
-    // Clone and remove .accesshide descendants before computing source.
-    // These contain Moodle's own translated labels that differ per browsing
-    // language, so including them would produce a different hash on each language.
-    var workEl = element.cloneNode(true);
-    var ahNodes = workEl.querySelectorAll('.accesshide');
-    for (var h = 0; h < ahNodes.length; h++) {
-      ahNodes[h].parentNode.removeChild(ahNodes[h]);
+    // Strip .accesshide descendants before computing source — these contain
+    // Moodle's own translated labels that differ per browsing language, so
+    // including them would produce a different hash on each language.
+    // Clone only when .accesshide children actually exist (rare); otherwise
+    // read innerHTML directly to avoid an unnecessary deep DOM clone.
+    var raw;
+    var srcEl; // element used for text fallbacks (stripped clone or original)
+    if (element.firstElementChild && element.querySelector('.accesshide')) {
+      var workEl = element.cloneNode(true);
+      var ahNodes = workEl.querySelectorAll('.accesshide');
+      for (var h = 0; h < ahNodes.length; h++) {
+        ahNodes[h].parentNode.removeChild(ahNodes[h]);
+      }
+      raw = workEl.innerHTML || '';
+      srcEl = workEl;
+    } else {
+      raw = element.innerHTML || '';
+      srcEl = element;
     }
-    var raw = workEl.innerHTML || '';
     var tag = element.tagName ? element.tagName.toLowerCase() : '';
     if (raw && raw.indexOf('<') !== -1) {
       var sanitized = sanitizeTranslationHtml(raw, tag).trim();
@@ -314,11 +328,11 @@ define(['core/ajax'], function (Ajax) {
         return fallbackPlain;
       }
     }
-    var direct = getDirectChildText(workEl);
+    var direct = getDirectChildText(srcEl);
     if (direct) {
       return direct;
     }
-    var textContent = (workEl.textContent || '').trim();
+    var textContent = (srcEl.textContent || '').trim();
     return textContent;
   }
 
@@ -964,7 +978,6 @@ define(['core/ajax'], function (Ajax) {
     element.setAttribute(ATTR_KEY_PREFIX + attrType, key);
   }
   Translator.attrs.setKeyAttribute = setKeyAttribute;
-  Translator.attrs.setKeyAttribute = setKeyAttribute;
 
   /**
    * Get data-xlate-key-{type} attribute
@@ -979,7 +992,6 @@ define(['core/ajax'], function (Ajax) {
     var attrType = type === 'text' ? 'content' : type;
     return element.getAttribute(ATTR_KEY_PREFIX + attrType);
   }
-  Translator.attrs.getKeyFromAttributes = getKeyFromAttributes;
   Translator.attrs.getKeyFromAttributes = getKeyFromAttributes;
 
   // ============================================================================

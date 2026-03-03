@@ -329,6 +329,7 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         if (!keyid || !lang) {
             return;
         }
+        var courseid = parseInt(button.getAttribute('data-courseid'), 10) || 0;
 
         var failureMessage = getString(config, 'deleteFailed', 'Unable to delete translation.');
         var successMessage = getString(config, 'deleteSuccess', 'Translation deleted.');
@@ -339,7 +340,8 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
             methodname: 'local_xlate_delete_translation',
             args: {
                 keyid: keyid,
-                lang: lang
+                lang: lang,
+                courseid: courseid
             }
         }])[0];
 

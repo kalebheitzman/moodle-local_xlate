@@ -28,10 +28,11 @@ $perpage = optional_param('perpage', 25, PARAM_INT);
 $userid = optional_param('userid', 0, PARAM_INT);
 $courseid = optional_param('courseid', 0, PARAM_INT);
 $actionfilter = optional_param('action', '', PARAM_ALPHANUMEXT);
-$langfilter = optional_param('lang', '', PARAM_ALPHANUMEXT);
+$langfilter = optional_param('xlang', '', PARAM_ALPHANUMEXT);
 $fromraw = optional_param('from', '', PARAM_RAW_TRIMMED);
 $toraw = optional_param('to', '', PARAM_RAW_TRIMMED);
 $download = optional_param('download', '', PARAM_ALPHA);
+$showsystem = optional_param('showsystem', 0, PARAM_INT);
 
 $page = max(0, $page);
 
@@ -65,6 +66,7 @@ $actionlabels = [
     '' => get_string('activity_filter_action_all', 'local_xlate'),
     activity_logger::ACTION_CREATE => get_string('activity_action_translation_create', 'local_xlate'),
     activity_logger::ACTION_UPDATE => get_string('activity_action_translation_update', 'local_xlate'),
+    activity_logger::ACTION_DELETE => get_string('activity_action_translation_delete', 'local_xlate'),
     activity_logger::ACTION_AUTOTRANSLATE => get_string('activity_action_translation_autotranslate', 'local_xlate'),
     activity_logger::ACTION_REVIEW_MARK => get_string('activity_action_translation_review_mark', 'local_xlate'),
     activity_logger::ACTION_REVIEW_CLEAR => get_string('activity_action_translation_review_clear', 'local_xlate'),
@@ -150,6 +152,9 @@ if ($langfilter !== '') {
     $where[] = 'a.lang = :lang';
     $params['lang'] = $langfilter;
 }
+if (!$showsystem) {
+    $where[] = 'a.userid > 0';
+}
 if ($fromts > 0) {
     $where[] = 'a.timecreated >= :fromtime';
     $params['fromtime'] = $fromts;
@@ -175,13 +180,16 @@ if ($actionfilter !== '') {
     $pageparams['action'] = $actionfilter;
 }
 if ($langfilter !== '') {
-    $pageparams['lang'] = $langfilter;
+    $pageparams['xlang'] = $langfilter;
 }
 if ($fromraw !== '') {
     $pageparams['from'] = $fromraw;
 }
 if ($toraw !== '') {
     $pageparams['to'] = $toraw;
+}
+if ($showsystem) {
+    $pageparams['showsystem'] = 1;
 }
 
 $PAGE->set_context($systemcontext);
@@ -384,8 +392,8 @@ echo html_writer::select($actionlabels, 'action', $actionfilter, false, ['class'
 echo html_writer::end_div();
 
 echo html_writer::start_div('col-6 col-xl-3');
-echo html_writer::tag('label', get_string('activity_filter_lang', 'local_xlate'), ['for' => 'lang']);
-echo html_writer::empty_tag('input', ['type' => 'text', 'class' => 'form-control', 'name' => 'lang', 'id' => 'lang', 'value' => $langfilter]);
+echo html_writer::tag('label', get_string('activity_filter_lang', 'local_xlate'), ['for' => 'xlang']);
+echo html_writer::empty_tag('input', ['type' => 'text', 'class' => 'form-control', 'name' => 'xlang', 'id' => 'xlang', 'value' => $langfilter]);
 echo html_writer::end_div();
 
 echo html_writer::start_div('col-6 col-xl-3');
@@ -402,6 +410,17 @@ echo html_writer::start_div('col-6 col-xl-2');
 echo html_writer::tag('label', get_string('queue_per_page', 'local_xlate'), ['for' => 'perpage']);
 $perpagechoices = array_combine($perpageoptions, $perpageoptions);
 echo html_writer::select($perpagechoices, 'perpage', $perpage, false, ['class' => 'form-control', 'id' => 'perpage']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('col-6 col-xl-2 d-flex align-items-end');
+$checkboxattrs = ['type' => 'checkbox', 'name' => 'showsystem', 'id' => 'showsystem', 'value' => '1', 'class' => 'form-check-input me-2'];
+if ($showsystem) {
+    $checkboxattrs['checked'] = 'checked';
+}
+echo html_writer::start_div('form-check mb-2');
+echo html_writer::empty_tag('input', $checkboxattrs);
+echo html_writer::tag('label', get_string('activity_filter_show_system', 'local_xlate'), ['class' => 'form-check-label', 'for' => 'showsystem']);
+echo html_writer::end_div();
 echo html_writer::end_div();
 
 echo html_writer::start_div('col-6 col-xl-2 d-flex align-items-end gap-2');
@@ -485,7 +504,14 @@ if (!empty($activities)) {
         echo html_writer::tag('td', $courselabel);
         echo html_writer::tag('td', $activity->lang);
         echo html_writer::tag('td', format_float($activity->chars, 0, true, true));
-        echo html_writer::tag('td', (string)$activity->keyid);
+        $xkey = !empty($activity->xkey) ? (string)$activity->xkey : (string)$activity->keyid;
+        if (!empty($activity->xkey)) {
+            $manageurl = new moodle_url('/local/xlate/manage.php', ['search' => $xkey, 'langfilter' => $activity->lang, 'langfiltersubmitted' => 1]);
+            $xkeycell = html_writer::link($manageurl, $xkey, ['class' => 'text-decoration-none font-monospace small']);
+        } else {
+            $xkeycell = $xkey;
+        }
+        echo html_writer::tag('td', $xkeycell);
         echo html_writer::tag('td', (string)$activity->translationid);
         echo html_writer::tag('td', $notes);
         echo html_writer::end_tag('tr');

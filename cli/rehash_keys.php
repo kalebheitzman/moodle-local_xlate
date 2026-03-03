@@ -15,10 +15,11 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Migrate translation key hashes to simpleHash(trim(source)) algorithm.
+ * Migrate translation key hashes to the plain-text simpleHash algorithm.
  *
- * The new algorithm is simply simpleHash(trim(source)) — no HTML stripping,
- * no structural DOM context. Same source text anywhere on the site = same key.
+ * The new algorithm: simpleHash(html_entity_decode(strip_tags(trim(source))))
+ * Tags are stripped and entities decoded so the key is always derived from
+ * visible plain text, not raw HTML. Same visible text = same key everywhere.
  *
  * What this script does:
  *   1. Recomputes xkeys for all 27k+ keys using the new algorithm.
@@ -38,6 +39,7 @@ define('CLI_SCRIPT', true);
 
 require(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/clilib.php');
+require_once(__DIR__ . '/rehash_hash_lib.php');
 
 list($options, $unrecognized) = cli_get_params(
     ['help' => false, 'verbose' => false],
@@ -63,61 +65,12 @@ if ($options['help']) {
 $verbose = !empty($options['verbose']);
 
 // ---------------------------------------------------------------------------
-// Hash function — exact PHP port of translator.js simpleHash().
-// ---------------------------------------------------------------------------
-
-function imul32(int $a, int $b): int {
-    $a  = $a & 0xFFFFFFFF;
-    $b  = $b & 0xFFFFFFFF;
-    $ah = ($a >> 16) & 0xFFFF;
-    $al = $a & 0xFFFF;
-    $bh = ($b >> 16) & 0xFFFF;
-    $bl = $b & 0xFFFF;
-    return (($al * $bl) + (((($ah * $bl + $al * $bh) & 0xFFFF) << 16))) & 0xFFFFFFFF;
-}
-
-function xlate_simple_hash(string $str): string {
-    $h1 = 2166136261;
-    $h2 = 0x9e3779b1;
-
-    $len = mb_strlen($str, 'UTF-8');
-    for ($i = 0; $i < $len; $i++) {
-        $c = mb_ord(mb_substr($str, $i, 1, 'UTF-8'), 'UTF-8');
-
-        // Supplementary characters (U+10000+) produce two UTF-16 code units in JS.
-        if ($c >= 0x10000) {
-            $cp    = $c - 0x10000;
-            $units = [0xD800 + ($cp >> 10), 0xDC00 + ($cp & 0x3FF)];
-        } else {
-            $units = [$c];
-        }
-
-        foreach ($units as $cu) {
-            $h1 = imul32($h1 ^ $cu, 16777619);
-            $h2  = ($h2 + $cu) & 0xFFFFFFFF;
-            $k   = ($h2 ^ ($h2 >> 16)) & 0xFFFFFFFF;
-            $h2  = imul32($k, 2246822507);
-            $k   = ($h2 ^ ($h2 >> 13)) & 0xFFFFFFFF;
-            $h2  = imul32($k, 3266489909);
-            $h2  = ($h2 ^ ($h2 >> 16)) & 0xFFFFFFFF;
-        }
-    }
-
-    $s = base_convert((string)$h1, 10, 36) . base_convert((string)$h2, 10, 36);
-    if (strlen($s) < 12) {
-        $s = substr($s . 'qwertyuiopasdfghjklz', 0, 12);
-    } elseif (strlen($s) > 12) {
-        $s = substr($s, 0, 12);
-    }
-    return $s;
-}
-
-// ---------------------------------------------------------------------------
 // Load all keys and pre-load supporting maps.
 // ---------------------------------------------------------------------------
 
 cli_writeln("=== Xlate Key Hash Migration ===");
-cli_writeln("Algorithm: simpleHash(trim(source)) — no HTML stripping");
+cli_writeln("Algorithm: simpleHash(html_entity_decode(strip_tags(trim(source))))");
+
 cli_writeln(str_repeat('-', 60));
 
 $sql = "SELECT k.id, k.xkey, k.source, k.component,

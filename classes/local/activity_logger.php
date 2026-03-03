@@ -24,6 +24,7 @@ defined('MOODLE_INTERNAL') || die();
 class activity_logger {
     public const ACTION_CREATE = 'translation_create';
     public const ACTION_UPDATE = 'translation_update';
+    public const ACTION_DELETE = 'translation_delete';
     public const ACTION_AUTOTRANSLATE = 'translation_autotranslate';
     public const ACTION_REVIEW_MARK = 'translation_review_mark';
     public const ACTION_REVIEW_CLEAR = 'translation_review_clear';
@@ -63,11 +64,14 @@ class activity_logger {
             $resolvedcourseid = self::resolve_courseid($keyid);
         }
 
+        // Attribute system-initiated actions (cron/CLI/scheduled tasks) to userid 0 ("System").
+        $userid = (defined('CLI_SCRIPT') && CLI_SCRIPT) ? 0 : (isset($USER->id) ? (int)$USER->id : 0);
+
         $record = (object) [
             'keyid' => $keyid,
             'translationid' => $translationid,
             'lang' => $lang,
-            'userid' => isset($USER->id) ? (int)$USER->id : 0,
+            'userid' => $userid,
             'courseid' => $resolvedcourseid,
             'action' => $action,
             'chars' => self::get_source_char_count($keyid),
