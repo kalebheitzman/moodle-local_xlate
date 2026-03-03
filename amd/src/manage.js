@@ -6,44 +6,66 @@
  * and progress polling for in-flight jobs.
  */
 define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notification, Str) {
+    // Resolved UI strings — populated asynchronously by loadStrings().
+    var M_XLATE_STRINGS = {};
+
+    // Maps JS alias → Moodle {component, key} for bulk string pre-loading.
+    var STRING_MAP = {
+        confirmDelete:              {component: 'local_xlate', key: 'confirm_delete_translation'},
+        confirmDeleteTitle:         {component: 'local_xlate', key: 'confirm_delete_title'},
+        confirmDeleteAction:        {component: 'local_xlate', key: 'confirm_delete_action'},
+        confirmDeleteCancel:        {component: 'moodle',      key: 'cancel'},
+        deleteFailed:               {component: 'local_xlate', key: 'delete_failed'},
+        deleteSuccess:              {component: 'local_xlate', key: 'translation_deleted'},
+        autoTranslateFailed:        {component: 'local_xlate', key: 'autotranslate_inline_failed'},
+        autoTranslateError:         {component: 'local_xlate', key: 'autotranslate_failed'},
+        autoTranslateReady:         {component: 'local_xlate', key: 'autotranslate_inline_success'},
+        autoTranslateSaved:         {component: 'local_xlate', key: 'auto_translate_saved'},
+        autoTranslateCourseQueued:  {component: 'local_xlate', key: 'autotranslate_course_queued'},
+        autoTranslateCourseQueueFailed: {component: 'local_xlate', key: 'autotranslate_course_queue_failed'},
+        autoTranslateSelectTarget:  {component: 'local_xlate', key: 'autotranslate_select_target'},
+        retranslateUnreviewedQueued:{component: 'local_xlate', key: 'retranslate_unreviewed_queued'},
+        saveSuccess:                {component: 'local_xlate', key: 'translation_saved'},
+        saveFailed:                 {component: 'local_xlate', key: 'translation_save_failed'},
+        saveIndicator:              {component: 'local_xlate', key: 'translation_saved_short'}
+    };
+
     /**
-     * Resolve a UI string from the AMD config or return a fallback.
+     * Return a UI string from the pre-loaded cache, or the fallback.
      *
-     * @param {Object} config Module configuration payload.
-     * @param {string} key String key under config.strings.
-     * @param {string} fallback Default text when missing.
-     * @returns {string} Localised string.
+     * Always returns a plain string (never a Promise) so results can be
+     * safely concatenated or set as DOM text content.
+     *
+     * @param {Object} config Module configuration payload (unused, kept for API compat).
+     * @param {string} key String alias from STRING_MAP.
+     * @param {string} fallback English fallback used before strings are loaded.
+     * @returns {string}
      */
     function getString(config, key, fallback) {
-        var mapping = {
-            confirmDelete: {component: 'local_xlate', key: 'confirm_delete_translation'},
-            confirmDeleteTitle: {component: 'local_xlate', key: 'confirm_delete_title'},
-            confirmDeleteAction: {component: 'local_xlate', key: 'confirm_delete_action'},
-            confirmDeleteCancel: {component: 'moodle', key: 'cancel'},
-            deleteFailed: {component: 'local_xlate', key: 'delete_failed'},
-            deleteSuccess: {component: 'local_xlate', key: 'translation_deleted'},
-            autoTranslateFailed: {component: 'local_xlate', key: 'autotranslate_inline_failed'},
-            autoTranslateReady: {component: 'local_xlate', key: 'autotranslate_inline_success'},
-            autoTranslateSaved: {component: 'local_xlate', key: 'auto_translate_saved'},
-            autoTranslateCourseQueued: {component: 'local_xlate', key: 'autotranslate_course_queued'},
-            autoTranslateCourseQueueFailed: {component: 'local_xlate', key: 'autotranslate_course_queue_failed'},
-            autoTranslateSelectTarget: {component: 'local_xlate', key: 'autotranslate_select_target'},
-            retranslateUnreviewedQueued: {component: 'local_xlate', key: 'retranslate_unreviewed_queued'},
-            saveSuccess: {component: 'local_xlate', key: 'translation_saved'},
-            saveFailed: {component: 'local_xlate', key: 'translation_save_failed'},
-            saveIndicator: {component: 'local_xlate', key: 'translation_saved_short'}
-        };
-
-        var map = mapping[key];
-        if (!map) {
-            return fallback;
+        if (M_XLATE_STRINGS[key] !== undefined) {
+            return M_XLATE_STRINGS[key];
         }
+        return typeof fallback === 'string' ? fallback : '';
+    }
 
-        try {
-            return Str.get_string(map.key, map.component);
-        } catch (e) {
-            return fallback;
-        }
+    /**
+     * Bulk-load all UI strings from Moodle's string API into M_XLATE_STRINGS.
+     * Called once during init(); handlers fall back to hardcoded English until complete.
+     *
+     * @returns {void}
+     */
+    function loadStrings() {
+        var jsKeys = Object.keys(STRING_MAP);
+        var requests = jsKeys.map(function(k) { return STRING_MAP[k]; });
+        Str.get_strings(requests).then(function(results) {
+            jsKeys.forEach(function(k, i) {
+                if (typeof results[i] === 'string' && results[i] !== '') {
+                    M_XLATE_STRINGS[k] = results[i];
+                }
+            });
+        }).catch(function() {
+            // Non-critical: callers fall back to hardcoded English strings.
+        });
     }
 
     /**
@@ -258,15 +280,10 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         };
 
         var handleFailure = function (err) {
-            var baseFailureMessage = getString(config, 'saveFailed', 'Unable to save translation.');
-            var failureMessage = baseFailureMessage;
-            if (err && err.message) {
-                failureMessage += '\n' + err.message;
-            } else if (err && err.error) {
-                failureMessage += '\n' + err.error;
-            }
-            notification.alert(failureMessage);
-            flashSaveIndicator(form, baseFailureMessage, false);
+            var title = getString(config, 'saveFailed', 'Unable to save translation.');
+            var detail = (err && err.message) ? err.message : ((err && err.error) ? err.error : '');
+            notification.alert(title, detail);
+            flashSaveIndicator(form, title, false);
         };
 
         var finishSave = function () {
@@ -435,11 +452,12 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         }])[0].then(function (res) {
             toggleButtonLoading(button, false);
             if (!(res && res.success && typeof res.translation === 'string')) {
-                var failureMessage = getString(config, 'autoTranslateFailed', 'Autotranslate failed.');
+                var failBody = getString(config, 'autoTranslateFailed',
+                    'Unable to autotranslate this key right now. Please try again.');
                 if (res && res.error) {
-                    failureMessage += '\n' + res.error;
+                    failBody += '\n' + res.error;
                 }
-                notification.alert(failureMessage);
+                notification.alert(getString(config, 'autoTranslateError', 'Autotranslate failed.'), failBody);
                 return;
             }
             if (textarea) {
@@ -469,13 +487,12 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
             });
         }).catch(function (err) {
             toggleButtonLoading(button, false);
-            var failureMessage = getString(config, 'autoTranslateFailed', 'Autotranslate failed.');
-            if (err && err.message) {
-                failureMessage += '\n' + err.message;
-            } else if (err && err.error) {
-                failureMessage += '\n' + err.error;
+            var errDetail = (err && err.message) ? err.message : ((err && err.error) ? err.error : '');
+            var body = getString(config, 'autoTranslateFailed', 'Unable to autotranslate this key right now. Please try again.');
+            if (errDetail) {
+                body += '\n' + errDetail;
             }
-            notification.alert(failureMessage);
+            notification.alert(getString(config, 'autoTranslateError', 'Autotranslate failed.'), body);
         });
     }
 
@@ -490,10 +507,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         if (!buttons || !buttons.length) {
             return;
         }
-        var confirmMessage = getString(config, 'confirmDelete', 'Delete this translation?');
-        var confirmTitle = getString(config, 'confirmDeleteTitle', 'Delete translation');
-        var confirmAction = getString(config, 'confirmDeleteAction', 'Confirm');
-        var cancelLabel = getString(config, 'confirmDeleteCancel', 'Cancel');
         Array.prototype.forEach.call(buttons, function (button) {
             button.addEventListener('click', function (event) {
                 event.preventDefault();
@@ -501,10 +514,10 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
                     return;
                 }
                 notification.confirm(
-                    confirmTitle,
-                    confirmMessage,
-                    confirmAction,
-                    cancelLabel,
+                    getString(config, 'confirmDeleteTitle', 'Delete translation'),
+                    getString(config, 'confirmDelete', 'Delete this translation?'),
+                    getString(config, 'confirmDeleteAction', 'Confirm'),
+                    getString(config, 'confirmDeleteCancel', 'Cancel'),
                     function () {
                         deleteTranslation(button, config);
                     }
@@ -616,6 +629,7 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
          * @returns {void}
          */
         init: function (config) {
+            loadStrings();
             attachTranslationFormHandlers(config);
             attachDeleteHandlers(config);
             attachAutoTranslateHandlers(config);
