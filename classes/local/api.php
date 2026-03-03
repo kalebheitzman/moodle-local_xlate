@@ -804,20 +804,34 @@ class api {
 
     /**
      * Determine whether activity logging should be suppressed for the given course/language pair.
+     *
+     * Source-language saves (DOM capture events) must never appear in the activity log as
+     * billable translator work. When a course context is available we check its configured
+     * source language; when there is no course (system/front-page captures) we fall back to
+     * $CFG->lang as the site-level source language.
      */
     protected static function should_suppress_source_activity_logging(int $courseid, string $lang): bool {
-        if ($courseid <= 0 || $lang === '') {
-            return false;
-        }
+        global $CFG;
 
-        $sourcelang = self::get_course_source_lang_for_logging($courseid);
-        if ($sourcelang === null) {
+        if ($lang === '') {
             return false;
         }
 
         $lang = \core_text::strtolower($lang);
-        $sourcelang = \core_text::strtolower($sourcelang);
-        return $lang === $sourcelang;
+
+        if ($courseid > 0) {
+            $sourcelang = self::get_course_source_lang_for_logging($courseid);
+            if ($sourcelang === null) {
+                return false;
+            }
+            return $lang === \core_text::strtolower($sourcelang);
+        }
+
+        // No course context — use the site language as the source-language fallback.
+        // Captures on system pages (front page, admin blocks, etc.) are always in the
+        // site language, so matching against $CFG->lang is correct for the common case.
+        $sitelang = \core_text::strtolower(isset($CFG->lang) ? (string)$CFG->lang : 'en');
+        return $lang === $sitelang;
     }
 
     /**
