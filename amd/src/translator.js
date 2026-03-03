@@ -257,7 +257,28 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * Set element text content, preserving any .accesshide children Moodle
+   * injects for screen readers (e.g. activity-type labels). Those children
+   * contain Moodle's own translated strings and must survive innerHTML replacement.
+   * @param {Element} element - Target element.
+   * @param {string} html - New HTML content to set.
+   */
+  function setElementHtml(element, html) {
+    var saved = [];
+    var ahNodes = element.querySelectorAll('.accesshide');
+    for (var i = 0; i < ahNodes.length; i++) {
+      saved.push(ahNodes[i]);
+    }
+    element.innerHTML = html;
+    for (var i = 0; i < saved.length; i++) {
+      element.appendChild(saved[i]);
+    }
+  }
+
+  /**
    * Determine the capture payload for an element, preserving safe inline markup.
+   * .accesshide children are stripped before hashing so the key is stable across
+   * all languages (Moodle renders those spans in the browsing language).
    * @param {Element} element - Source element.
    * @returns {string} Sanitized innerHTML when markup exists, otherwise text.
    */
@@ -265,7 +286,15 @@ define(['core/ajax'], function (Ajax) {
     if (!element) {
       return '';
     }
-    var raw = element.innerHTML || '';
+    // Clone and remove .accesshide descendants before computing source.
+    // These contain Moodle's own translated labels that differ per browsing
+    // language, so including them would produce a different hash on each language.
+    var workEl = element.cloneNode(true);
+    var ahNodes = workEl.querySelectorAll('.accesshide');
+    for (var h = 0; h < ahNodes.length; h++) {
+      ahNodes[h].parentNode.removeChild(ahNodes[h]);
+    }
+    var raw = workEl.innerHTML || '';
     var tag = element.tagName ? element.tagName.toLowerCase() : '';
     if (raw && raw.indexOf('<') !== -1) {
       var sanitized = sanitizeTranslationHtml(raw, tag).trim();
@@ -285,11 +314,11 @@ define(['core/ajax'], function (Ajax) {
         return fallbackPlain;
       }
     }
-    var direct = getDirectChildText(element);
+    var direct = getDirectChildText(workEl);
     if (direct) {
       return direct;
     }
-    var textContent = (element.textContent || '').trim();
+    var textContent = (workEl.textContent || '').trim();
     return textContent;
   }
 
@@ -479,7 +508,7 @@ define(['core/ajax'], function (Ajax) {
     if (!window.__XLATE__ || !window.__XLATE__.sourceMap || typeof window.__XLATE__.sourceMap !== 'object') {
       return '';
     }
-    var normalized = normalizeSourceForLookup(extractPlainText(sourceText || ''));
+    var normalized = normalizeSourceForLookup(sourceText || '');
     if (!normalized) {
       return '';
     }
@@ -879,12 +908,15 @@ define(['core/ajax'], function (Ajax) {
    * @returns {string} Plain-text snippet suitable for hashing.
    */
   function normalizeKeyText(text, element) {
-    var fromArgument = '';
+    // Always extract plain text for hashing. element.innerHTML serializes HTML
+    // entities inconsistently across browsers (& vs &amp;), making the same
+    // content hash differently on different pages. textContent (via extractPlainText)
+    // is always decoded and browser-consistent.
     if (typeof text === 'string' && text.trim()) {
-      fromArgument = extractPlainText(text).trim();
-    }
-    if (fromArgument) {
-      return fromArgument;
+      var plain = extractPlainText(text).trim();
+      if (plain) {
+        return plain;
+      }
     }
     var directOnly = getDirectChildText(element || null);
     if (directOnly) {
@@ -897,60 +929,21 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Generate translation key from element structure plus the visible text content.
+   * Generate translation key as simpleHash(trim(source)).
    * @param {Element} element - The element to generate a key for.
    * @param {string} text - Source text or attribute value from the caller.
-   * @param {string} type - The type (text, placeholder, etc.).
    * @returns {string} 12-character hash key.
    */
-  function generateKey(element, text, type) {
+  function generateKey(element, text) {
     if (!element) {
       return '';
     }
-
     var normalizedText = normalizeKeyText(text, element);
     if (!normalizedText) {
       return '';
     }
-
-    var parts = [];
-
-    // Parent context
-    var parent = element.parentElement;
-    if (parent && parent.tagName) {
-      parts.push(parent.tagName.toLowerCase());
-      var parentClasses = collectContextClasses(parent);
-      if (parentClasses) {
-        parts.push(parentClasses);
-      }
-      var parentData = collectDataAttributes(parent);
-      if (parentData) {
-        parts.push(parentData);
-      }
-    }
-
-    // Current element context
-    if (element.tagName) {
-      parts.push(element.tagName.toLowerCase());
-    }
-    var classes = collectContextClasses(element);
-    if (classes) {
-      parts.push(classes);
-    }
-    var dataAttrs = collectDataAttributes(element);
-    if (dataAttrs) {
-      parts.push(dataAttrs);
-    }
-
-    // Type and direct text only (ignore children)
-    if (type && type !== 'text') {
-      parts.push(type);
-    }
-    parts.push(normalizedText);
-
-    return simpleHash(parts.join('.'));
+    return simpleHash(normalizedText);
   }
-  Translator.keys.generateKey = generateKey;
   Translator.keys.generateKey = generateKey;
 
   // ============================================================================
@@ -1044,7 +1037,7 @@ define(['core/ajax'], function (Ajax) {
     if (type === 'text') {
       var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
       var sanitized = sanitizeTranslationHtml(value, hostTag);
-      element.innerHTML = sanitized;
+      setElementHtml(element, sanitized);
       toggleAutoIndicator(element, key, !isKeyReviewed(key));
     } else {
       element.setAttribute(type, value);
