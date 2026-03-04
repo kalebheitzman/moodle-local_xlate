@@ -141,6 +141,7 @@ if ($hassiteconfig) {
 
         // Exclude selectors (exclude patterns).
         $excludedefaults = [
+            '.activity-dates',
             '.path-admin',
             '.pagelayout-admin',
             '.pagelayout-maintenance',
