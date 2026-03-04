@@ -296,7 +296,9 @@ class backend {
                 }
 
                 // No more attempts; return an http_error-ish response.
-                return ['ok' => false, 'errors' => ['http_error' => $httpcode, 'body' => is_string($result) ? substr($result, 0, 200) : '']];
+                // Do not include the response body — it may contain provider-specific
+                // account details. The full body is already captured in debugging() above.
+                return ['ok' => false, 'errors' => ['http_error' => $httpcode]];
             }
 
             // At this point we have $result and $httpcode in successful range.
@@ -518,9 +520,12 @@ class backend {
             return ['ok' => true, 'results' => $results, 'meta' => $meta, 'raw' => $response];
 
         } catch (\Exception $e) {
-            // Make sure exceptions are visible in worker logs for debugging.
+            // Log the full detail for server-side diagnosis only. Do not include
+            // $e->getMessage() in the returned array — it could contain the
+            // endpoint URL, file paths, or other internal configuration details
+            // that would be forwarded to the browser via the web service layer.
             debugging('[local_xlate] translate_batch exception: ' . $e->getMessage(), DEBUG_DEVELOPER);
-            return ['ok' => false, 'errors' => ['exception' => $e->getMessage()]];
+            return ['ok' => false, 'errors' => ['exception']];
         }
     }
 
