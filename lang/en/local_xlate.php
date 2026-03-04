@@ -19,7 +19,7 @@ $string['enabled_languages'] = 'Enabled languages';
 $string['enabled_languages_desc'] = 'Select which installed languages should have translation bundles generated and managed.';
 $string['component_mapping'] = 'Component mapping';
 $string['component_mapping_desc'] = 'Define how page contexts map to components. One mapping per line in format: selector=component';
-$string['openai_prompt_default'] = 'You are a professional translation assistant. Translate input from the source language to the target language. Content may include user interface text, instructional content, forum posts, and other types of communication. Preserve HTML tags, attributes, and entities exactly. Keep placeholders and variables (e.g. {$a}, {username}, %s) unchanged and in-place. Do NOT rewrite code, URLs, identifiers, or variable names. Preserve the original tone and sentiment of the text without changing its meaning. When applicable, prefer glossary terms provided in the glossary list. Output only valid JSON that matches the required schema; do not include extra text.';
+$string['openai_prompt_default'] = '';
 
 // Bundle management
 $string['bundles_rebuilt'] = 'Translation bundles rebuilt successfully';
@@ -274,8 +274,8 @@ $string['pricing_cached_input_per_million_desc'] = 'Cost per one million cached 
 $string['pricing_output_per_million'] = 'Output token cost';
 $string['pricing_output_per_million_desc'] = 'Cost charged per one million output tokens returned by the model.';
 $string['pricing_value_invalid'] = 'Enter a numeric value (decimals supported).';
-$string['openai_prompt'] = 'System prompt (translation instructions)';
-$string['openai_prompt_desc'] = 'Instructions that will be passed as the system prompt to the model. Keep it concise; the default prompt preserves HTML, placeholders and UI tone.';
+$string['openai_prompt'] = 'Additional translation instructions';
+$string['openai_prompt_desc'] = 'Optional domain-specific context appended after the core translation prompt. Use this for subject matter guidance, theological or specialist terminology preferences, register or tone requirements, and content type descriptions. Core technical rules (HTML preservation, placeholder handling, JSON output format, control character sanitisation) and batch coherence instructions are always enforced automatically — there is no need to repeat them here.';
 $string['language_heading'] = 'Languages & Capture';
 $string['capture_selectors'] = 'Capture area selectors';
 $string['capture_selectors_desc'] = 'Only text within elements matching these CSS selectors will be captured for translation. One selector per line. Leave blank to capture everything.';

@@ -131,15 +131,23 @@ class backend {
             'model_options' => $modeloptions,
         ];
 
-    // Read system prompt from settings (fallback to a sensible default).
-    // Require the model to return valid text only: valid UTF-8, no NUL or control
-    // characters. Ask the model to replace any control characters with a single
-    // space if they would otherwise appear.
-    $defaultprompt = "You are a helpful translation assistant. Return structured JSON following the provided function schema. " .
-        "Important: all returned translation strings MUST be valid UTF-8 text and MUST NOT contain NUL (\u0000) or other control characters. " .
-        "If a control character would otherwise appear in the translation, replace it with a single space. Do NOT include any non-printable control characters in your output. " .
-        "Preserve HTML tags, placeholders and variables. Return only the JSON matching the function schema when called via function-calling.";
-    $systemprompt = get_config('local_xlate', 'openai_prompt') ?: $defaultprompt;
+        // Core technical instructions — always present, not user-editable.
+        // These ensure structural correctness regardless of what the admin configures.
+        $coreprompt = "You are a professional translation assistant. " .
+            "Translate each source string from the source language to the target language. " .
+            "Preserve HTML tags, attributes, and entities exactly. " .
+            "Keep placeholders and variables (e.g. {$a}, {username}, %s) unchanged and in their original position. " .
+            "Do NOT rewrite code, URLs, identifiers, or variable names. " .
+            "Preserve the original tone and sentiment without altering the meaning. " .
+            "All translated strings must be valid UTF-8 with no NUL or control characters; replace any with a single space. " .
+            "Output only JSON matching the required function schema; do not include any extra text.";
+
+        // Additional instructions from admin settings: domain context, theological style,
+        // content type guidance, register preferences, etc.
+        $additionalprompt = trim((string)(get_config('local_xlate', 'openai_prompt') ?: ''));
+        $systemprompt = $additionalprompt !== ''
+            ? $coreprompt . "\n\nAdditional context and instructions:\n" . $additionalprompt
+            : $coreprompt;
 
         // Load function definition (spec file shipped with the plugin). This is required
         // to use function-calling reliably. Fail early if missing.
@@ -176,10 +184,21 @@ class backend {
             }
         }
 
-        // Build messages for function-calling. Include the glossary instruction in the system prompt
-        // so the model treats it as authoritative guidance while still producing natural translations.
+        // Batch coherence instruction — appended programmatically so it applies
+        // regardless of what the user has configured in the editable system prompt.
+        // The model already receives all items in a single payload; this tells it
+        // to actively exploit that cross-item visibility before translating.
+        $batchinstruction = "Batch coherence: you are translating a cohesive set of strings that share domain, " .
+            "terminology, and tone. Before translating any individual item, read all source strings to " .
+            "identify recurring concepts, terminology patterns, and register. Ensure identical source " .
+            "phrases always receive identical translations. Apply consistent vocabulary and style choices " .
+            "throughout the entire batch. Use shared context across items to resolve ambiguous or " .
+            "domain-specific terms accurately.";
+
+        // Build messages for function-calling. Include the batch coherence instruction and glossary
+        // in the system prompt so the model treats them as authoritative guidance.
         $messages = [
-            ['role' => 'system', 'content' => $systemprompt . "\n\n" . $glossaryinstruction],
+            ['role' => 'system', 'content' => $systemprompt . "\n\n" . $batchinstruction . "\n\n" . $glossaryinstruction],
             ['role' => 'user', 'content' => json_encode(['request_id' => $requestid, 'note' => 'Translate the provided items using the translate_batch function.'])],
         ];
 
