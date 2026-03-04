@@ -31,6 +31,22 @@ require_login();
 $systemcontext = context_system::instance();
 require_capability('local/xlate:manage', $systemcontext);
 
+// Handle delete-job POST before any output.
+if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'deletejob') {
+    global $DB;
+    require_sesskey();
+    $deletejobid = required_param('jobid', PARAM_INT);
+    $job = $DB->get_record('local_xlate_course_job', ['id' => $deletejobid], 'id, status');
+    if (!$job) {
+        redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_job_error', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
+    } else if ($job->status === 'running') {
+        redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_running_error', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
+    } else {
+        $DB->delete_records('local_xlate_course_job', ['id' => $deletejobid]);
+        redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_job_deleted', 'local_xlate', $deletejobid), null, \core\output\notification::NOTIFY_SUCCESS);
+    }
+}
+
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 20, PARAM_INT);
 $search = trim(optional_param('search', '', PARAM_TEXT));
@@ -329,6 +345,19 @@ if (!empty($jobs)) {
         echo html_writer::start_div('d-flex align-items-center gap-2');
         echo html_writer::tag('span', get_string('queue_job_badge', 'local_xlate', $job->id), ['class' => 'badge text-bg-light']);
         echo html_writer::tag('span', $statuslabel, ['class' => 'badge ' . $statusclass]);
+        if ($job->status !== 'running') {
+            $deleteurl = new moodle_url('/local/xlate/queue.php', [
+                'action'  => 'deletejob',
+                'jobid'   => $job->id,
+                'sesskey' => sesskey(),
+            ]);
+            echo html_writer::tag('button', get_string('queue_delete_job', 'local_xlate'), [
+                'type'              => 'button',
+                'class'             => 'btn btn-sm btn-outline-danger ms-2 js-xlate-delete-job',
+                'data-deleteurl'    => $deleteurl->out(false),
+                'data-confirm'      => get_string('queue_delete_job_confirm', 'local_xlate'),
+            ]);
+        }
         echo html_writer::end_div();
         echo html_writer::end_div();
 
@@ -371,5 +400,17 @@ if (!empty($jobs)) {
 if ($totalcount > $perpage) {
     echo $OUTPUT->paging_bar($totalcount, $page, $perpage, $PAGE->url);
 }
+
+echo html_writer::script(
+    "(function(){" .
+    "document.querySelectorAll('.js-xlate-delete-job').forEach(function(btn){" .
+    "btn.addEventListener('click',function(){" .
+    "if(confirm(btn.dataset.confirm||'Delete this job?')){" .
+    "window.location.href=btn.dataset.deleteurl;" .
+    "}" .
+    "});" .
+    "});" .
+    "})();"
+);
 
 echo $OUTPUT->footer();

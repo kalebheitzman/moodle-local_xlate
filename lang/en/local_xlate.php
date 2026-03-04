@@ -252,6 +252,11 @@ $string['queue_progress_value'] = '{$a->processed} of {$a->total}';
 $string['queue_progress_unknown'] = '{$a} processed';
 $string['queue_no_jobs'] = 'No translation jobs found for the selected filters.';
 $string['queue_job_badge'] = 'Job #{$a}';
+$string['queue_delete_job'] = 'Delete job';
+$string['queue_delete_job_confirm'] = 'Delete this job from the queue?';
+$string['queue_delete_job_deleted'] = 'Job #{$a} deleted.';
+$string['queue_delete_job_error'] = 'Unable to delete this job.';
+$string['queue_delete_running_error'] = 'Running jobs cannot be deleted.';
 
 // Course custom fields
 $string['xlate_course_enable'] = 'Xlate: Enable translations';

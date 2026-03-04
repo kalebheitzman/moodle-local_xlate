@@ -70,11 +70,14 @@ class course_job_manager {
         $onlyunreviewed = !empty($normalizedoptions['onlyunreviewed']);
 
         // Guard against duplicate jobs: if a pending or in-progress job already
-        // exists for this course with the same parameters, return it as-is.
+        // exists for this course whose target langs cover all of the requested
+        // langs, return it as-is rather than creating a redundant job.
         if (self::has_pending_job($courseid, $targetlangs, $onlymissing, $onlyunreviewed)) {
-            $existingjobs = $DB->get_records(
+            list($stinSQL, $stinparams) = $DB->get_in_or_equal(['pending', 'running'], SQL_PARAMS_NAMED, 'ejst');
+            $existingjobs = $DB->get_records_select(
                 'local_xlate_course_job',
-                ['courseid' => $courseid, 'status' => 'pending'],
+                "courseid = :courseid AND status $stinSQL",
+                array_merge(['courseid' => $courseid], $stinparams),
                 'id DESC',
                 '*', 0, 1
             );
@@ -185,7 +188,12 @@ class course_job_manager {
             $jobonlymissing = !empty($opts['onlymissing']);
             $jobonlyunreviewed = !empty($opts['onlyunreviewed']);
 
-            if ($jobonlymissing === $onlymissing && $jobonlyunreviewed === $onlyunreviewed && $jobtargetlangs === $targetlangs) {
+            // Treat as a duplicate if all requested langs are covered by this
+            // job's target langs (superset match). Switching to a subset of an
+            // already-queued job's languages must not spawn a redundant job.
+            $coveredlangs = array_values(array_intersect($targetlangs, $jobtargetlangs));
+            sort($coveredlangs);
+            if ($jobonlymissing === $onlymissing && $jobonlyunreviewed === $onlyunreviewed && $coveredlangs === $targetlangs) {
                 return true;
             }
         }
