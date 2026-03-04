@@ -219,6 +219,7 @@ $string['queue_status_all'] = 'All statuses';
 $string['queue_status_queued'] = 'Queued';
 $string['queue_status_running'] = 'In progress';
 $string['queue_status_complete'] = 'Complete';
+$string['queue_status_complete_partial'] = 'Partial';
 $string['queue_summary_title'] = 'Queue activity';
 $string['queue_summary_total'] = 'Total jobs';
 $string['queue_summary_queued'] = 'Queued';

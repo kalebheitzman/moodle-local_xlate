@@ -77,13 +77,16 @@ if ($coursefilter > 0) {
 
 switch ($statusfilter) {
     case 'queued':
-        $conditions[] = "(j.status = 'pending' AND (j.processed = 0 OR j.processed IS NULL))";
+        $conditions[] = "j.status = 'pending'";
         break;
     case 'running':
-        $conditions[] = "(j.status = 'pending' AND j.processed > 0 AND (j.total = 0 OR j.processed <= j.total))";
+        $conditions[] = "j.status = 'running'";
         break;
     case 'complete':
         $conditions[] = "j.status = 'complete'";
+        break;
+    case 'complete_partial':
+        $conditions[] = "j.status = 'complete_partial'";
         break;
 }
 
@@ -98,10 +101,10 @@ $basefrom = "FROM {local_xlate_course_job} j
 global $DB, $OUTPUT;
 
 $summarysql = "SELECT
-        COALESCE(SUM(CASE WHEN status = 'pending' AND (processed = 0 OR processed IS NULL) THEN 1 ELSE 0 END), 0) AS queued,
-        COALESCE(SUM(CASE WHEN status = 'pending' AND processed > 0 THEN 1 ELSE 0 END), 0) AS running,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS queued,
+        COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running,
         COALESCE(SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END), 0) AS complete,
-        COALESCE(SUM(CASE WHEN status NOT IN ('pending', 'complete') THEN 1 ELSE 0 END), 0) AS other,
+        COALESCE(SUM(CASE WHEN status NOT IN ('pending', 'running', 'complete') THEN 1 ELSE 0 END), 0) AS other,
         COUNT(1) AS total
     FROM {local_xlate_course_job}";
 $queuesummary = $DB->get_record_sql($summarysql) ?: (object)[];
@@ -129,6 +132,7 @@ $statusoptions = [
     'queued' => get_string('queue_status_queued', 'local_xlate'),
     'running' => get_string('queue_status_running', 'local_xlate'),
     'complete' => get_string('queue_status_complete', 'local_xlate'),
+    'complete_partial' => get_string('queue_status_complete_partial', 'local_xlate'),
 ];
 
 $resetparams = ['perpage' => $perpage];
@@ -305,7 +309,10 @@ if (!empty($jobs)) {
         if ($job->status === 'complete') {
             $statusclass = 'bg-success';
             $statuslabel = get_string('queue_status_complete', 'local_xlate');
-        } else if ($processed > 0) {
+        } else if ($job->status === 'complete_partial') {
+            $statusclass = 'bg-warning text-dark';
+            $statuslabel = get_string('queue_status_complete_partial', 'local_xlate');
+        } else if ($job->status === 'running') {
             $statusclass = 'bg-info text-dark';
             $statuslabel = get_string('queue_status_running', 'local_xlate');
         }
