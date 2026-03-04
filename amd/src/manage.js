@@ -767,7 +767,7 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
             if (courseButton) {
                 courseButton.addEventListener('click', function () {
                     enqueueCourseJob(
-                        {},
+                        { onlymissing: true },
                         getString(
                             config,
                             'autoTranslateCourseQueued',

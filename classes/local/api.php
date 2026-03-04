@@ -917,7 +917,7 @@ class api {
      * @return int Key ID for the saved translation.
      * @throws \Throwable Propagates lower-level database exceptions for caller handling.
      */
-    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = '', ?int $critical = null): int {
+    public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = '', ?int $critical = null, string $translationsource = self::SOURCE_MANUAL): int {
         global $DB;
         
         $transaction = $DB->start_delegated_transaction();
@@ -932,8 +932,8 @@ class api {
             // Create or update the key
             $keyid = self::create_or_update_key($component, $xkey, $source, $critical);
             
-            // Save the translation (propagate reviewed flag)
-            self::save_translation($keyid, $lang, $translation, 1, $reviewed, self::SOURCE_MANUAL, $courseid);
+            // Save the translation (propagate reviewed flag and originating source).
+            self::save_translation($keyid, $lang, $translation, 1, $reviewed, $translationsource, $courseid);
 
             // If a course association was provided, record it (associate by keyid+courseid).
             if (!empty($courseid) && is_int($courseid) && $courseid > 0) {

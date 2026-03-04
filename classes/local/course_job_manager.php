@@ -136,7 +136,14 @@ class course_job_manager {
     public static function has_pending_job(int $courseid, array $targetlangs, bool $onlymissing, bool $onlyunreviewed = false): bool {
         global $DB;
 
-        $jobs = $DB->get_records('local_xlate_course_job', ['courseid' => $courseid, 'status' => 'pending']);
+        // Check both pending AND running: a running job is already doing the work
+        // and must not be duplicated any more than a freshly-queued one would be.
+        list($statusql, $statusparams) = $DB->get_in_or_equal(['pending', 'running'], SQL_PARAMS_NAMED, 'st');
+        $jobs = $DB->get_records_select(
+            'local_xlate_course_job',
+            "courseid = :courseid AND status $statusql",
+            array_merge(['courseid' => $courseid], $statusparams)
+        );
         if (empty($jobs)) {
             return false;
         }

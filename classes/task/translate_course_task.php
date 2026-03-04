@@ -193,20 +193,25 @@ class translate_course_task extends adhoc_task {
             }
 
             foreach ($items as $item) {
-                if ($onlymissing || $onlyunreviewed) {
-                    $existing = $DB->get_record('local_xlate_tr', [
-                        'keyid' => (int)($item['keyid'] ?? 0),
-                        'lang' => $targetlang,
-                        'status' => 1,
-                    ], 'id, reviewed', IGNORE_MISSING);
+                // Always check for an existing active translation so we can protect
+                // human-reviewed work regardless of which mode the job was queued in.
+                $existing = $DB->get_record('local_xlate_tr', [
+                    'keyid' => (int)($item['keyid'] ?? 0),
+                    'lang' => $targetlang,
+                    'status' => 1,
+                ], 'id, reviewed', IGNORE_MISSING);
 
-                    if ($onlymissing && $existing) {
+                if ($existing) {
+                    // onlymissing: skip anything that already has an active translation.
+                    if ($onlymissing) {
                         continue;
                     }
-
-                    if ($onlyunreviewed && $existing && (int)$existing->reviewed === 1) {
+                    // Always protect human-reviewed translations — never let the AI
+                    // overwrite work a translator has explicitly signed off on.
+                    if ((int)$existing->reviewed === 1) {
                         continue;
                     }
+                    // onlyunreviewed with reviewed=0 falls through and gets re-translated.
                 }
 
                 $payload = $item;
@@ -271,7 +276,9 @@ class translate_course_task extends adhoc_task {
                         (string)$r['translated'],
                         0,
                         (int)$orig['courseid'],
-                        (string)$orig['context']
+                        (string)$orig['context'],
+                        null,
+                        \local_xlate\local\api::SOURCE_AUTOTRANSLATE
                     );
                     $successfulunits++;
                 } catch (\Exception $e) {

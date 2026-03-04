@@ -158,7 +158,9 @@ class translate_batch_task extends adhoc_task {
                             (string)$translated,
                             0, // reviewed flag: machine-translated results are not human-reviewed
                             isset($orig['courseid']) ? (int)$orig['courseid'] : 0,
-                            isset($orig['context']) ? (string)$orig['context'] : ''
+                            isset($orig['context']) ? (string)$orig['context'] : '',
+                            null,
+                            \local_xlate\local\api::SOURCE_AUTOTRANSLATE
                         );
                     } catch (\Exception $e) {
                         // Ignore save errors to avoid failing the whole batch.
