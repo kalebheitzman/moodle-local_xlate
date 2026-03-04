@@ -33,7 +33,7 @@ use local_xlate\glossary as glossary_helper;
 /**
  * Render pagination controls for glossary (page number style with ellipses).
  */
-function glossary_render_pagination_controls($baseurl, $page, $perpage, $total, $search, $targetlang) {
+function glossary_render_pagination_controls($baseurl, $page, $perpage, $total, $search, $targetlang, $statusfilter = 'all') {
     $total_pages = ceil($total / $perpage);
     $pagination = '';
     if ($total_pages > 1) {
@@ -41,6 +41,7 @@ function glossary_render_pagination_controls($baseurl, $page, $perpage, $total, 
             'perpage' => $perpage,
             'search' => $search,
             'targetlang' => $targetlang,
+            'statusfilter' => $statusfilter,
         ];
 
         $pagination .= html_writer::start_tag('nav', ['aria-label' => 'Glossary pagination']);
@@ -103,6 +104,10 @@ $targetlang = optional_param('targetlang', '', PARAM_ALPHANUMEXT);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 10, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
+$statusfilter = optional_param('statusfilter', 'all', PARAM_ALPHANUMEXT);
+if (!in_array($statusfilter, ['all', 'missing', 'complete'])) {
+    $statusfilter = 'all';
+}
 
 // Resolve language config (same pattern as manage.php).
 $installedlangs = get_string_manager()->get_list_of_translations();
@@ -138,6 +143,7 @@ $PAGE->set_url(new moodle_url('/local/xlate/glossary.php', [
     'page' => $page,
     'perpage' => $perpage,
     'search' => $search,
+    'statusfilter' => $statusfilter,
 ]));
 $PAGE->set_context(context_system::instance());
 $PAGE->set_title(get_string('admin_manage_glossary', 'local_xlate'));
@@ -222,7 +228,7 @@ echo html_writer::start_tag('form', ['method' => 'get', 'action' => $PAGE->url])
 echo html_writer::start_div('row g-3 align-items-end');
 
 // Target language dropdown
-echo html_writer::start_div('col-12 col-md-4');
+echo html_writer::start_div('col-12 col-md-3');
 echo html_writer::tag('label', get_string('glossary_targetlang_label', 'local_xlate'), ['for' => 'targetlang', 'class' => 'form-label']);
 if (!empty($targetlangoptions)) {
     echo html_writer::select($targetlangoptions, 'targetlang', $targetlang, false, ['class' => 'form-select', 'id' => 'targetlang']);
@@ -232,7 +238,7 @@ if (!empty($targetlangoptions)) {
 echo html_writer::end_div();
 
 // Search
-echo html_writer::start_div('col-12 col-md-4');
+echo html_writer::start_div('col-12 col-md-3');
 echo html_writer::tag('label', get_string('search', 'local_xlate'), ['for' => 'search', 'class' => 'form-label']);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
@@ -242,6 +248,17 @@ echo html_writer::empty_tag('input', [
     'class' => 'form-control',
     'placeholder' => get_string('search_placeholder', 'local_xlate'),
 ]);
+echo html_writer::end_div();
+
+// Status filter
+echo html_writer::start_div('col-12 col-md-2');
+echo html_writer::tag('label', get_string('glossary_status_label', 'local_xlate'), ['for' => 'statusfilter', 'class' => 'form-label']);
+$statusoptions = [
+    'all'      => get_string('glossary_filter_all', 'local_xlate'),
+    'missing'  => get_string('glossary_filter_missing', 'local_xlate'),
+    'complete' => get_string('glossary_filter_complete', 'local_xlate'),
+];
+echo html_writer::select($statusoptions, 'statusfilter', $statusfilter, false, ['class' => 'form-select', 'id' => 'statusfilter']);
 echo html_writer::end_div();
 
 // Per page
@@ -316,15 +333,37 @@ echo html_writer::end_div();
 
 // === Glossary entries table ===
 
-// Count distinct source terms.
-$where = 'WHERE source_lang = ?';
-$count_params = [$sourcelang];
+// Build base WHERE clause (source lang + optional search).
+$basewhere = 'g.source_lang = ?';
+$baseparams = [$sourcelang];
 if (!empty($search)) {
-    $where .= ' AND source_text LIKE ?';
-    $count_params[] = '%' . $search . '%';
+    $basewhere .= ' AND g.source_text LIKE ?';
+    $baseparams[] = '%' . $search . '%';
 }
-$count_sql = "SELECT COUNT(DISTINCT source_text) FROM {local_xlate_glossary} $where";
-$total = (int)$DB->count_records_sql($count_sql, $count_params);
+
+// Status filter: missing = no translation row for target lang; complete = has one.
+$filtercond  = '';
+$filterparams = [];
+if ($statusfilter === 'missing') {
+    $filtercond = " AND NOT EXISTS (SELECT 1 FROM {local_xlate_glossary} t
+                       WHERE t.source_lang = g.source_lang
+                         AND t.source_text = g.source_text
+                         AND t.target_lang = ?)";
+    $filterparams = [$targetlang];
+} else if ($statusfilter === 'complete') {
+    $filtercond = " AND EXISTS (SELECT 1 FROM {local_xlate_glossary} t
+                       WHERE t.source_lang = g.source_lang
+                         AND t.source_text = g.source_text
+                         AND t.target_lang = ?)";
+    $filterparams = [$targetlang];
+}
+$allparams = array_merge($baseparams, $filterparams);
+
+// Count distinct source terms (respecting filter).
+$count_sql = "SELECT COUNT(DISTINCT g.source_text)
+                FROM {local_xlate_glossary} g
+               WHERE $basewhere$filtercond";
+$total = (int)$DB->count_records_sql($count_sql, $allparams);
 
 if ($total === 0) {
     echo html_writer::div(get_string('glossary_no_entries', 'local_xlate', $targetlangname), 'alert alert-info');
@@ -333,12 +372,12 @@ if ($total === 0) {
 }
 
 // Get paginated source terms.
-$sources_sql = "SELECT MIN(id) as id, source_text
-                FROM {local_xlate_glossary}
-                $where
-                GROUP BY source_text
-                ORDER BY LOWER(source_text) ASC";
-$source_rows = $DB->get_records_sql($sources_sql, $count_params, $page * $perpage, $perpage);
+$sources_sql = "SELECT MIN(g.id) as id, g.source_text
+                  FROM {local_xlate_glossary} g
+                 WHERE $basewhere$filtercond
+                 GROUP BY g.source_text
+                 ORDER BY LOWER(g.source_text) ASC";
+$source_rows = $DB->get_records_sql($sources_sql, $allparams, $page * $perpage, $perpage);
 
 // Load all translations for the selected target lang (all at once — fast lookup).
 $transmap = [];
@@ -357,7 +396,7 @@ foreach ($all_terms as $term) {
 // Pagination top.
 if ($total > $perpage) {
     echo html_writer::start_div('d-flex justify-content-center mb-3');
-    echo glossary_render_pagination_controls($PAGE->url, $page, $perpage, $total, $search, $targetlang);
+    echo glossary_render_pagination_controls($PAGE->url, $page, $perpage, $total, $search, $targetlang, $statusfilter);
     echo html_writer::end_div();
 }
 
@@ -538,7 +577,7 @@ echo html_writer::end_div(); // outer card
 // Pagination bottom.
 if ($total > $perpage) {
     echo html_writer::start_div('d-flex justify-content-center mb-3');
-    echo glossary_render_pagination_controls($PAGE->url, $page, $perpage, $total, $search, $targetlang);
+    echo glossary_render_pagination_controls($PAGE->url, $page, $perpage, $total, $search, $targetlang, $statusfilter);
     echo html_writer::end_div();
 }
 
