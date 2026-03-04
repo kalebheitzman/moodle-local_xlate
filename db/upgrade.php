@@ -717,5 +717,93 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026030300, 'local', 'xlate');
     }
 
+    if ($oldversion < 2026030400) {
+        global $DB;
+        $dbman = $DB->get_manager();
+
+        // Step 1: Create local_xlate_glossary_term table.
+        $table = new xmldb_table('local_xlate_glossary_term');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('source_lang', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('source_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('notes', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('critical', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('mtime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('ctime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('created_by', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_source_lang', XMLDB_INDEX_NOTUNIQUE, ['source_lang']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Step 2: Populate term table from existing distinct glossary source terms.
+        if ($dbman->table_exists('local_xlate_glossary')) {
+            try {
+                $pairs = $DB->get_records_sql(
+                    "SELECT MIN(id) as id, source_lang, source_text FROM {local_xlate_glossary} GROUP BY source_lang, source_text"
+                );
+                $now = time();
+                foreach ($pairs as $pair) {
+                    $sourcecmp = $DB->sql_compare_text('source_text');
+                    $exists = $DB->record_exists_sql(
+                        "SELECT 1 FROM {local_xlate_glossary_term} WHERE source_lang = ? AND $sourcecmp = ?",
+                        [$pair->source_lang, $pair->source_text]
+                    );
+                    if (!$exists) {
+                        $rec = new stdClass();
+                        $rec->source_lang = $pair->source_lang;
+                        $rec->source_text = $pair->source_text;
+                        $rec->notes = '';
+                        $rec->critical = 0;
+                        $rec->mtime = $now;
+                        $rec->ctime = $now;
+                        $rec->created_by = 0;
+                        $DB->insert_record('local_xlate_glossary_term', $rec);
+                    }
+                }
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to populate glossary_term: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        // Step 3: Add term_id column to local_xlate_glossary.
+        $gltable = new xmldb_table('local_xlate_glossary');
+        $termfield = new xmldb_field('term_id', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        if ($dbman->table_exists($gltable) && !$dbman->field_exists($gltable, $termfield)) {
+            try {
+                $dbman->add_field($gltable, $termfield);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add term_id to local_xlate_glossary: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        // Step 4: Backfill term_id on existing glossary rows by matching source_lang + source_text.
+        try {
+            $terms = $DB->get_records('local_xlate_glossary_term');
+            foreach ($terms as $term) {
+                $sourcecmp = $DB->sql_compare_text('source_text');
+                $glrows = $DB->get_records_select(
+                    'local_xlate_glossary',
+                    "source_lang = ? AND $sourcecmp = ?",
+                    [$term->source_lang, $term->source_text],
+                    '',
+                    'id'
+                );
+                if (!empty($glrows)) {
+                    list($insql, $inparams) = $DB->get_in_or_equal(array_keys($glrows));
+                    $DB->execute(
+                        "UPDATE {local_xlate_glossary} SET term_id = ? WHERE id $insql",
+                        array_merge([$term->id], $inparams)
+                    );
+                }
+            }
+        } catch (\Exception $e) {
+            debugging('[local_xlate] failed to backfill term_id: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+
+        upgrade_plugin_savepoint(true, 2026030400, 'local', 'xlate');
+    }
+
     return true;
 }

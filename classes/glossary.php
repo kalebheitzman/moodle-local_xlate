@@ -55,10 +55,12 @@ class glossary {
     /**
      * Build glossary term/replacement pairs for a source/target language combination.
      *
+     * Includes notes and critical flag from the associated term record when available.
+     *
      * @param string $source_lang Source language code.
      * @param string $target_lang Target language code.
      * @param int $limit Maximum number of entries to return.
-     * @return array<int,array{term:string,replacement:string}> Glossary payload suitable for translation prompts.
+     * @return array<int,array{term:string,replacement:string,notes:string,critical:int}> Glossary payload suitable for translation prompts.
      */
     public static function get_pairs_for_language_pair(string $source_lang, string $target_lang, int $limit = 200): array {
         global $DB;
@@ -69,10 +71,11 @@ class glossary {
             return [];
         }
 
-        $sql = "SELECT id, source_text, target_text
-                  FROM {local_xlate_glossary}
-                 WHERE source_lang = :s AND target_lang = :t
-              ORDER BY id ASC";
+        $sql = "SELECT g.id, g.source_text, g.target_text, gt.notes, gt.critical
+                  FROM {local_xlate_glossary} g
+             LEFT JOIN {local_xlate_glossary_term} gt ON gt.id = g.term_id
+                 WHERE g.source_lang = :s AND g.target_lang = :t
+              ORDER BY g.id ASC";
         $records = $DB->get_records_sql($sql, ['s' => $source_lang, 't' => $target_lang], 0, $limit);
 
         $pairs = [];
@@ -84,7 +87,9 @@ class glossary {
             }
             $pairs[] = [
                 'term' => $term,
-                'replacement' => $replacement
+                'replacement' => $replacement,
+                'notes' => trim((string)($record->notes ?? '')),
+                'critical' => (int)($record->critical ?? 0),
             ];
             if (count($pairs) >= $limit) {
                 break;
@@ -218,6 +223,9 @@ class glossary {
             throw new \invalid_argument_exception('source_text and target_lang required');
         }
 
+        // Ensure a term record exists for this source term and retrieve its id.
+        $term = self::ensure_term($source_lang, $source_text, $userid);
+
         $sourcecmp = $DB->sql_compare_text('source_text');
         $sql = "SELECT * FROM {local_xlate_glossary} WHERE source_lang = :s AND target_lang = :t AND $sourcecmp = :st";
         $existing = $DB->get_record_sql($sql, ['s' => $source_lang, 't' => $target_lang, 'st' => $source_text]);
@@ -225,6 +233,7 @@ class glossary {
         if ($existing) {
             $existing->target_text = $target_text;
             $existing->mtime = $now;
+            $existing->term_id = $term->id;
             return $DB->update_record('local_xlate_glossary', $existing);
         } else {
             $rec = new \stdClass();
@@ -232,10 +241,78 @@ class glossary {
             $rec->source_text = $source_text;
             $rec->target_lang = $target_lang;
             $rec->target_text = $target_text;
+            $rec->term_id = $term->id;
             $rec->mtime = $now;
             $rec->ctime = $now;
             $rec->created_by = $userid ?: 0;
             return $DB->insert_record('local_xlate_glossary', $rec);
         }
+    }
+
+    /**
+     * Upsert notes and critical flag for a source term.
+     *
+     * @param string $source_lang Source language code.
+     * @param string $source_text Source text identifying the term.
+     * @param string $notes Free-text translation notes for the AI prompt.
+     * @param int $critical 1 = always include in glossary prompt regardless of batch content.
+     * @param int $userid User performing the save.
+     * @return int Record id of the term row.
+     */
+    public static function save_term($source_lang, $source_text, $notes = '', $critical = 0, $userid = 0) {
+        global $DB;
+        $now = time();
+        $sourcecmp = $DB->sql_compare_text('source_text');
+        $existing = $DB->get_record_sql(
+            "SELECT * FROM {local_xlate_glossary_term} WHERE source_lang = :s AND $sourcecmp = :st",
+            ['s' => $source_lang, 'st' => $source_text]
+        );
+        if ($existing) {
+            $existing->notes = $notes;
+            $existing->critical = (int)$critical;
+            $existing->mtime = $now;
+            $DB->update_record('local_xlate_glossary_term', $existing);
+            return $existing->id;
+        }
+        $rec = new \stdClass();
+        $rec->source_lang = $source_lang;
+        $rec->source_text = $source_text;
+        $rec->notes = $notes;
+        $rec->critical = (int)$critical;
+        $rec->mtime = $now;
+        $rec->ctime = $now;
+        $rec->created_by = $userid ?: 0;
+        return $DB->insert_record('local_xlate_glossary_term', $rec);
+    }
+
+    /**
+     * Ensure a term record exists for the given source and return it.
+     *
+     * @param string $source_lang Source language code.
+     * @param string $source_text Source text.
+     * @param int $userid User id for created_by on insert.
+     * @return \stdClass The term record (with id populated).
+     */
+    private static function ensure_term($source_lang, $source_text, $userid = 0) {
+        global $DB;
+        $sourcecmp = $DB->sql_compare_text('source_text');
+        $existing = $DB->get_record_sql(
+            "SELECT * FROM {local_xlate_glossary_term} WHERE source_lang = :s AND $sourcecmp = :st",
+            ['s' => $source_lang, 'st' => $source_text]
+        );
+        if ($existing) {
+            return $existing;
+        }
+        $now = time();
+        $rec = new \stdClass();
+        $rec->source_lang = $source_lang;
+        $rec->source_text = $source_text;
+        $rec->notes = '';
+        $rec->critical = 0;
+        $rec->mtime = $now;
+        $rec->ctime = $now;
+        $rec->created_by = $userid ?: 0;
+        $rec->id = $DB->insert_record('local_xlate_glossary_term', $rec);
+        return $rec;
     }
 }

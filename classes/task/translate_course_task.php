@@ -226,13 +226,22 @@ class translate_course_task extends adhoc_task {
                 continue;
             }
 
+            // Load all glossary pairs for this language pair. build_payload() will split them:
+            // Phase 1 — critical terms are always injected into the prompt.
+            // Phase 2 — non-critical terms are injected only when their source term appears in the batch.
+            $glossary = \local_xlate\glossary::get_pairs_for_language_pair($sourcelang, $targetlang);
+            if (!empty($glossary)) {
+                $ncritical = count(array_filter($glossary, static function ($p) { return !empty($p['critical']); }));
+                mtrace('  [glossary] ' . count($glossary) . ' term(s) loaded (' . $ncritical . ' critical) for ' . $sourcelang . '→' . $targetlang);
+            }
+
             try {
                 $result = \local_xlate\translation\backend::translate_batch(
                     'coursejob_' . $jobid . '_' . $targetlang,
                     $sourcelang,
                     $targetlang,
                     $langitems,
-                    $options['glossary'] ?? [],
+                    $glossary,
                     $options
                 );
             } catch (\Exception $e) {

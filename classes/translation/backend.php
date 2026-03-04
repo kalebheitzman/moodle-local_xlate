@@ -71,9 +71,9 @@ class backend {
             debugging('[local_xlate] translate_batch entered (failed to json_encode): ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
 
-        $model = isset($options['model']) ? $options['model'] : get_config('local_xlate', 'openai_model');
+        $model    = isset($options['model']) ? $options['model'] : get_config('local_xlate', 'openai_model');
         $endpoint = get_config('local_xlate', 'openai_endpoint');
-        $apikey = get_config('local_xlate', 'openai_api_key');
+        $apikey   = get_config('local_xlate', 'openai_api_key');
 
         // Fail fast if endpoint or api key not configured to avoid confusing provider errors.
         if (empty($endpoint) || empty($apikey)) {
@@ -85,142 +85,11 @@ class backend {
             return ['ok' => false, 'errors' => ['invalid_arguments']];
         }
 
-        // Build function arguments according to spec.
-        // Build function arguments. Only include model options if explicitly provided
-        // to avoid sending unsupported defaults (some models reject temperature=0).
-        $modeloptions = [];
-        if (array_key_exists('temperature', $options)) {
-            $modeloptions['temperature'] = (float)$options['temperature'];
+        $built = self::build_payload($requestid, $sourcelang, $targetlang, $items, $glossary, $options);
+        if (!empty($built['error'])) {
+            return ['ok' => false, 'errors' => [$built['error']]];
         }
-        if (array_key_exists('max_tokens', $options)) {
-            $modeloptions['max_tokens'] = (int)$options['max_tokens'];
-        }
-
-        // Normalize items for the function payload: the model expects a compact
-        // item id (the stable hash/key). Frontend sometimes sends items with
-        // `id` in the form "component:key"; prefer `key` when available so
-        // the function receives only the short id the model will return.
-        $fnitems = [];
-        if (is_array($items)) {
-            foreach ($items as $it) {
-                $shortid = '';
-                if (!empty($it['key'])) {
-                    $shortid = (string)$it['key'];
-                } else if (!empty($it['id'])) {
-                    // If id looks like "component:key", try to extract the part
-                    // after the last ':'; otherwise use as-is.
-                    $parts = explode(':', (string)$it['id']);
-                    $shortid = end($parts);
-                }
-
-                $fnitems[] = [
-                    'id' => $shortid,
-                    'source_text' => $it['source_text'] ?? '',
-                    'context' => $it['context'] ?? '',
-                    'placeholders' => $it['placeholders'] ?? []
-                ];
-            }
-        }
-
-        $fnargs = [
-            'request_id' => $requestid,
-            'source_lang' => $sourcelang,
-            'target_lang' => $targetlang,
-            'items' => $fnitems,
-            'glossary' => $glossary,
-            'model_options' => $modeloptions,
-        ];
-
-        // Core technical instructions — always present, not user-editable.
-        // These ensure structural correctness regardless of what the admin configures.
-        $coreprompt = "You are a professional translation assistant. " .
-            "Translate each source string from the source language to the target language. " .
-            "Preserve HTML tags, attributes, and entities exactly. " .
-            "Keep placeholders and variables (e.g. {$a}, {username}, %s) unchanged and in their original position. " .
-            "Do NOT rewrite code, URLs, identifiers, or variable names. " .
-            "Preserve the original tone and sentiment without altering the meaning. " .
-            "All translated strings must be valid UTF-8 with no NUL or control characters; replace any with a single space. " .
-            "Output only JSON matching the required function schema; do not include any extra text.";
-
-        // Additional instructions from admin settings: domain context, theological style,
-        // content type guidance, register preferences, etc.
-        $additionalprompt = trim((string)(get_config('local_xlate', 'openai_prompt') ?: ''));
-        $systemprompt = $additionalprompt !== ''
-            ? $coreprompt . "\n\nAdditional context and instructions:\n" . $additionalprompt
-            : $coreprompt;
-
-        // Load function definition (spec file shipped with the plugin). This is required
-        // to use function-calling reliably. Fail early if missing.
-        $specfn = __DIR__ . '/../../spec/translate_batch_function.json';
-        if (!file_exists($specfn)) {
-            return ['ok' => false, 'errors' => ['missing_function_spec']];
-        }
-        $fcontent = file_get_contents($specfn);
-        $fjson = json_decode($fcontent, true);
-        if (!$fjson) {
-            return ['ok' => false, 'errors' => ['invalid_function_spec']];
-        }
-        $functions = [$fjson];
-
-        // Build a short human-readable glossary instruction to include in the prompt so the model
-        // uses glossary terms as translation constraints and inflects them appropriately.
-        $glossaryinstruction = '';
-        if (!empty($glossary) && is_array($glossary)) {
-            $glossarypairs = [];
-            $count = 0;
-            foreach ($glossary as $g) {
-                if (empty($g['term']) || !array_key_exists('replacement', $g)) {
-                    continue;
-                }
-                $glossarypairs[] = $g['term'] . ' => ' . $g['replacement'];
-                $count++;
-                if ($count >= 40) { // avoid giant prompts; include up to 40 pairs
-                    break;
-                }
-            }
-            if (!empty($glossarypairs)) {
-                $glossaryinstruction = "Glossary (use these terms when translating; you may inflect them to match grammar/tense):\n" . implode("\n", $glossarypairs) . "\n";
-                $glossaryinstruction .= "When you use or inflect a glossary term, include an entry in applied_glossary_terms with keys 'term' (original) and 'applied' (the exact string used in the translation).";
-            }
-        }
-
-        // Batch coherence instruction — appended programmatically so it applies
-        // regardless of what the user has configured in the editable system prompt.
-        // The model already receives all items in a single payload; this tells it
-        // to actively exploit that cross-item visibility before translating.
-        $batchinstruction = "Batch coherence: you are translating a cohesive set of strings that share domain, " .
-            "terminology, and tone. Before translating any individual item, read all source strings to " .
-            "identify recurring concepts, terminology patterns, and register. Ensure identical source " .
-            "phrases always receive identical translations. Apply consistent vocabulary and style choices " .
-            "throughout the entire batch. Use shared context across items to resolve ambiguous or " .
-            "domain-specific terms accurately.";
-
-        // Build messages for function-calling. Include the batch coherence instruction and glossary
-        // in the system prompt so the model treats them as authoritative guidance.
-        $messages = [
-            ['role' => 'system', 'content' => $systemprompt . "\n\n" . $batchinstruction . "\n\n" . $glossaryinstruction],
-            ['role' => 'user', 'content' => json_encode(['request_id' => $requestid, 'note' => 'Translate the provided items using the translate_batch function.'])],
-        ];
-
-        // Build request payload for OpenAI-like chat completion with function-calling.
-        $payload = [
-            'model' => $model,
-            'messages' => $messages,
-        ];
-
-        // Only attach top-level temperature if explicitly provided in options.
-        if (array_key_exists('temperature', $options)) {
-            $payload['temperature'] = (float)$options['temperature'];
-        }
-
-        // Attach function definitions and force the model to call the named function
-        // so we reliably receive structured function_call.arguments in the response.
-        $payload['functions'] = $functions;
-        $payload['function_call'] = ['name' => 'translate_batch'];
-
-        // Also include the full function arguments as a user message (models sometimes
-        // prefer a concrete example). We still force the function call above.
-        $payload['messages'][] = ['role' => 'user', 'content' => json_encode($fnargs)];
+        $payload = $built['payload'];
 
         // Use Moodle's curl library to POST JSON.
     try {
@@ -383,7 +252,7 @@ class backend {
                     $repairpayload = [
                         'model' => $model,
                         'messages' => $repairmessages,
-                        'functions' => $functions,
+                        'functions' => $built['functions'],
                         'function_call' => ['name' => 'translate_batch']
                     ];
 
@@ -546,6 +415,153 @@ class backend {
             debugging('[local_xlate] translate_batch exception: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return ['ok' => false, 'errors' => ['exception']];
         }
+    }
+
+    /**
+     * Build the OpenAI-compatible request payload for a translation batch.
+     *
+     * Extracted from translate_batch() so CLI/debug tooling can inspect the
+     * outgoing request without making an HTTP call (e.g. replay_job --dryrun).
+     *
+     * @param string $requestid Stable request identifier.
+     * @param string $sourcelang Source language code.
+     * @param string $targetlang Target language code.
+     * @param array<int,array> $items Items to translate.
+     * @param array<int,array> $glossary Glossary constraints.
+     * @param array<string,mixed> $options Provider options (model, temperature, max_tokens, etc.).
+     * @return array{payload?:array,functions?:array,endpoint?:string,model?:string,error?:string}
+     */
+    public static function build_payload($requestid, $sourcelang, $targetlang, $items, $glossary = [], $options = []) {
+        $model    = isset($options['model']) ? $options['model'] : get_config('local_xlate', 'openai_model');
+        $endpoint = get_config('local_xlate', 'openai_endpoint');
+
+        // Load the function-calling schema from the spec file.
+        $specpath = __DIR__ . '/../../spec/translate_batch_function.json';
+        $specjson = @file_get_contents($specpath);
+        if ($specjson === false || trim($specjson) === '') {
+            return ['error' => 'missing_function_spec'];
+        }
+        $fnspec = json_decode($specjson, true);
+        if (!is_array($fnspec)) {
+            return ['error' => 'missing_function_spec'];
+        }
+        $functions = [$fnspec];
+
+        // Normalize items: strip internal DB fields the AI does not need.
+        $fnitems = [];
+        foreach ($items as $it) {
+            $fnitem = [
+                'id'          => (string)($it['id'] ?? $it['key'] ?? ''),
+                'source_text' => (string)($it['source_text'] ?? ''),
+            ];
+            if (!empty($it['context'])) {
+                $fnitem['context'] = (string)$it['context'];
+            }
+            if (!empty($it['placeholders']) && is_array($it['placeholders'])) {
+                $fnitem['placeholders'] = $it['placeholders'];
+            }
+            if (!empty($it['component'])) {
+                $fnitem['component'] = (string)$it['component'];
+            }
+            $fnitems[] = $fnitem;
+        }
+
+        // Hardcoded core prompt — always present regardless of admin settings.
+        // Covers the technical rules that must never be omitted: role, HTML/placeholder
+        // preservation, natural fluency, and control character sanitisation.
+        $coreprompt = 'You are a professional translator for a learning management system. '
+            . 'Translate UI strings accurately and naturally into the target language.' . "\n\n"
+            . 'Rules you must always follow:' . "\n"
+            . '1. Preserve all HTML tags and attributes exactly — translate only the visible text content between tags.' . "\n"
+            . '2. Preserve all placeholder variables exactly as they appear (e.g. {$a}, %s, %d, {placeholder}). Never translate, modify, or omit them.' . "\n"
+            . '3. Maintain the original tone and register of the source text.' . "\n"
+            . '4. Return translations that read naturally in the target language — avoid literal word-for-word translations.' . "\n"
+            . '5. Never add explanatory text, footnotes, or commentary to the translation.' . "\n"
+            . '6. If a string contains only a placeholder or HTML with no translatable text, return it unchanged.' . "\n"
+            . '7. Translated strings must contain no NUL bytes or ASCII control characters (U+0000–U+001F except tab/newline).';
+
+        // Domain-specific additional instructions from admin settings (e.g. theological guidance).
+        // The setting label is "Additional translation instructions" — it is appended after the core.
+        $additionalprompt = (string)get_config('local_xlate', 'openai_prompt');
+
+        // Glossary instruction:
+        // Phase 1 — critical terms are always included regardless of batch content.
+        // Phase 2 — non-critical terms are included only when the source term appears
+        //            (word-boundary, case-insensitive) in at least one item's source_text.
+        $glossaryinstruction = '';
+        if (!empty($glossary)) {
+            // Build a single string of all source texts for efficient scanning.
+            $batchtexts = implode(' ', array_column($fnitems, 'source_text'));
+
+            $glossarypairs = [];
+            foreach ($glossary as $g) {
+                if (empty($g['term']) || !array_key_exists('replacement', $g)) {
+                    continue;
+                }
+                $iscritical = !empty($g['critical']);
+                if (!$iscritical) {
+                    // Phase 2: only include if the term appears in the batch.
+                    $pattern = '/\b' . preg_quote($g['term'], '/') . '\b/ui';
+                    if (!preg_match($pattern, $batchtexts)) {
+                        continue;
+                    }
+                }
+                $pair = $g['term'] . ' => ' . $g['replacement'];
+                if (!empty($g['notes'])) {
+                    $pair .= ' [Note: ' . trim($g['notes']) . ']';
+                }
+                $glossarypairs[] = $pair;
+            }
+            if (!empty($glossarypairs)) {
+                $glossaryinstruction = "\n\nGlossary — always translate these terms as specified:\n" . implode("\n", $glossarypairs);
+            }
+        }
+
+        // Batch coherence instruction.
+        $batchinstruction = "\n\nYou will receive a JSON object with a 'request_id' and an 'items' array. "
+            . "Call the translate_batch function with a 'results' array that has exactly one entry per input item "
+            . "in the same order. Each entry needs 'id' (copied from input) and 'translated' (the translated string). "
+            . "Optionally include 'applied_glossary_terms' (array of {term, replacement}) and 'warnings' (array of strings).";
+
+        // Assemble the full system prompt: core → additional → language → glossary → batch format.
+        $systemprompt = $coreprompt;
+        if (!empty($additionalprompt)) {
+            $systemprompt .= "\n\n" . $additionalprompt;
+        }
+        $systemprompt .= "\n\nTranslate from {$sourcelang} to {$targetlang}.";
+        $systemprompt .= $glossaryinstruction;
+        $systemprompt .= $batchinstruction;
+
+        // User message: the batch to translate.
+        $userdata = [
+            'request_id'  => $requestid,
+            'source_lang' => $sourcelang,
+            'target_lang' => $targetlang,
+            'items'       => $fnitems,
+        ];
+        $usercontent = json_encode($userdata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        // Final payload.
+        $payload = [
+            'model'         => $model,
+            'messages'      => [
+                ['role' => 'system', 'content' => $systemprompt],
+                ['role' => 'user',   'content' => $usercontent],
+            ],
+            'functions'     => $functions,
+            'function_call' => ['name' => 'translate_batch'],
+            'temperature'   => isset($options['temperature']) ? (float)$options['temperature'] : 0.1,
+        ];
+        if (!empty($options['max_tokens'])) {
+            $payload['max_tokens'] = (int)$options['max_tokens'];
+        }
+
+        return [
+            'payload'   => $payload,
+            'functions' => $functions,
+            'endpoint'  => $endpoint,
+            'model'     => $model,
+        ];
     }
 
     /**
