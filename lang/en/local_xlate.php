@@ -230,6 +230,8 @@ $string['queue_status_queued'] = 'Queued';
 $string['queue_status_running'] = 'In progress';
 $string['queue_status_complete'] = 'Complete';
 $string['queue_status_complete_partial'] = 'Partial';
+$string['queue_status_failed'] = 'Failed';
+$string['queue_status_stale'] = 'Stale';
 $string['queue_summary_title'] = 'Queue activity';
 $string['queue_summary_total'] = 'Total jobs';
 $string['queue_summary_queued'] = 'Queued';
@@ -257,6 +259,9 @@ $string['queue_delete_job_confirm'] = 'Delete this job from the queue?';
 $string['queue_delete_job_deleted'] = 'Job #{$a} deleted.';
 $string['queue_delete_job_error'] = 'Unable to delete this job.';
 $string['queue_delete_running_error'] = 'Running jobs cannot be deleted.';
+$string['queue_clear_finished'] = 'Clear completed jobs';
+$string['queue_clear_finished_confirm'] = 'Delete all completed and partial jobs? This cannot be undone.';
+$string['queue_clear_finished_done'] = 'All completed jobs have been removed.';
 
 // Course custom fields
 $string['xlate_course_enable'] = 'Xlate: Enable translations';

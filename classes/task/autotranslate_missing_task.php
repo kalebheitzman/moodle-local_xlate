@@ -97,49 +97,62 @@ class autotranslate_missing_task extends scheduled_task {
                 continue;
             }
 
+            // Collect only the languages that actually have missing translations.
+            $pendinglangs = [];
+            $missingtotal = 0;
             foreach ($targetlangs as $targetlang) {
                 $missingcount = self::count_missing_course_translations($courseid, $targetlang);
                 if ($missingcount === 0) {
                     mtrace("Course {$courseid}: no pending keys for {$targetlang}.");
                     continue;
                 }
+                $pendinglangs[] = $targetlang;
+                $missingtotal += $missingcount;
+            }
 
-                if (\local_xlate\local\course_job_manager::has_pending_job($courseid, [$targetlang], true)) {
-                    mtrace("Course {$courseid}: pending job already exists for {$targetlang}, skipping enqueue.");
-                    continue;
-                }
+            if (empty($pendinglangs)) {
+                continue;
+            }
 
-                // Circuit breaker: if a job for this course completed with zero
-                // progress within the last hour, the translation backend is likely
-                // unavailable (e.g. quota exceeded). Skip re-enqueuing to avoid
-                // accumulating useless job records until the API recovers.
-                $recentfailure = $DB->get_records_select(
-                    'local_xlate_course_job',
-                    'courseid = :courseid AND status = :status AND processed = 0 AND mtime > :cooldown',
-                    ['courseid' => $courseid, 'status' => 'complete_partial', 'cooldown' => time() - HOURSECS],
-                    'id DESC',
-                    'id',
-                    0, 1
-                );
-                if (!empty($recentfailure)) {
-                    mtrace("Course {$courseid}: last job for {$targetlang} completed with no work done within the past hour — backend may be unavailable. Skipping.");
-                    continue;
-                }
+            // One job per course covering all pending languages avoids the race
+            // condition where per-language loops each create a separate job before
+            // the duplicate-guard in enqueue_course_job() can fire.
+            if (\local_xlate\local\course_job_manager::has_pending_job($courseid, $pendinglangs, true)) {
+                mtrace("Course {$courseid}: pending job already exists for [" . implode(',', $pendinglangs) . "], skipping enqueue.");
+                continue;
+            }
 
-                $result = \local_xlate\local\course_job_manager::enqueue_course_job($courseid, [
-                    'batchsize' => $batchsize,
-                    'targetlangs' => [$targetlang],
-                    'onlymissing' => true,
-                ], 0, $missingcount);
+            // Circuit breaker: if a job for this course completed with zero
+            // progress within the last hour, the translation backend is likely
+            // unavailable (e.g. quota exceeded). Skip re-enqueuing to avoid
+            // accumulating useless job records until the API recovers.
+            $recentfailure = $DB->get_records_select(
+                'local_xlate_course_job',
+                'courseid = :courseid AND status = :status AND processed = 0 AND mtime > :cooldown',
+                ['courseid' => $courseid, 'status' => 'complete_partial', 'cooldown' => time() - HOURSECS],
+                'id DESC',
+                'id',
+                0, 1
+            );
+            if (!empty($recentfailure)) {
+                mtrace("Course {$courseid}: last job completed with no work done within the past hour — backend may be unavailable. Skipping.");
+                continue;
+            }
 
-                if (!empty($result['success'])) {
-                    $taskid = $result['taskid'] ?? null;
-                    $taskinfo = ($taskid > 0) ? "adhoc taskid={$taskid}" : 'no adhoc task created';
-                    mtrace("Course {$courseid}: queued job {$result['jobid']} ({$taskinfo}) for {$targetlang} ({$missingcount} pending keys).");
-                } else {
-                    $error = isset($result['error']) ? $result['error'] : 'Unknown error.';
-                    mtrace("Course {$courseid}: failed to queue job for {$targetlang}: {$error}");
-                }
+            $result = \local_xlate\local\course_job_manager::enqueue_course_job($courseid, [
+                'batchsize' => $batchsize,
+                'targetlangs' => $pendinglangs,
+                'onlymissing' => true,
+            ], 0, $missingtotal);
+
+            if (!empty($result['success'])) {
+                $taskid = $result['taskid'] ?? null;
+                $taskinfo = ($taskid > 0) ? "adhoc taskid={$taskid}" : 'no adhoc task created';
+                $langlist = implode(',', $pendinglangs);
+                mtrace("Course {$courseid}: queued job {$result['jobid']} ({$taskinfo}) for [{$langlist}] ({$missingtotal} pending keys).");
+            } else {
+                $error = isset($result['error']) ? $result['error'] : 'Unknown error.';
+                mtrace("Course {$courseid}: failed to queue job: {$error}");
             }
         }
 

@@ -84,6 +84,54 @@ class translate_course_task extends adhoc_task {
             return;
         }
 
+        // Duplicate-job guard: if multiple jobs exist for the same course and the
+        // same target languages (a race condition during enqueue), only the
+        // lowest-ID job should proceed. Any higher-ID job for the same work is a
+        // duplicate — mark it complete_partial and exit so it doesn't waste API
+        // tokens re-translating keys the surviving job will handle.
+        if ($job->status === 'pending') {
+            $opts = [];
+            if (!empty($job->options)) {
+                $decoded = json_decode((string)$job->options, true);
+                if (is_array($decoded)) {
+                    $opts = $decoded;
+                }
+            }
+            $mytargetlangs = array_values(array_unique(array_filter(array_map('trim',
+                (array)($opts['targetlangs'] ?? $opts['targetlang'] ?? [])))));
+            sort($mytargetlangs);
+
+            list($stinSQL, $stinparams) = $DB->get_in_or_equal(['pending', 'running'], SQL_PARAMS_NAMED, 'dupst');
+            $activejobs = $DB->get_records_select(
+                'local_xlate_course_job',
+                "courseid = :courseid AND id < :jobid AND status $stinSQL",
+                array_merge(['courseid' => (int)$job->courseid, 'jobid' => $jobid], $stinparams)
+            );
+            foreach ($activejobs as $activejob) {
+                $activeopts = [];
+                if (!empty($activejob->options)) {
+                    $decoded = json_decode((string)$activejob->options, true);
+                    if (is_array($decoded)) {
+                        $activeopts = $decoded;
+                    }
+                }
+                $activelangs = array_values(array_unique(array_filter(array_map('trim',
+                    (array)($activeopts['targetlangs'] ?? $activeopts['targetlang'] ?? [])))));
+                sort($activelangs);
+
+                // If an older job covers all the same languages, this job is redundant.
+                $covered = array_values(array_intersect($mytargetlangs, $activelangs));
+                sort($covered);
+                if ($covered === $mytargetlangs) {
+                    mtrace("[local_xlate] Job {$jobid} is a duplicate of older job {$activejob->id} for course {$job->courseid}. Discarding.");
+                    $job->status = 'complete_partial';
+                    $job->mtime = time();
+                    $DB->update_record('local_xlate_course_job', $job);
+                    return;
+                }
+            }
+        }
+
         if ($job->status === 'pending') {
             $job->status = 'running';
             $job->mtime = time();
@@ -113,35 +161,63 @@ class translate_course_task extends adhoc_task {
         $onlymissing = !empty($options['onlymissing']);
         $onlyunreviewed = !empty($options['onlyunreviewed']);
 
-        // Early completion: if processed has already reached total there is no
-        // more work to do, regardless of any remaining key_course records to
-        // scan. This prevents the task from requeuing itself indefinitely when
-        // all translations are done but the cursor (lastid) has not yet reached
-        // the end of the table.
-        if ((int)$job->total > 0 && (int)$job->processed >= (int)$job->total) {
+        // When the job targets exactly one language and only wants missing
+        // translations, push the filter into SQL. This eliminates the empty-batch
+        // churn that occurs when a course is already mostly translated: instead of
+        // scanning every key_course record (and spawning hundreds of no-op tasks),
+        // the query returns only records that genuinely need work.
+        $sqlfiltered = ($onlymissing && count($targetlangs) === 1);
+
+        // Tolerance for the processed-vs-total comparison. The total is estimated
+        // at job-creation time and can be slightly stale (e.g. another process
+        // translated one item between creation and execution). Treat the job as
+        // complete when processed is within 2 % (min 1 item) of total.
+        $completetolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+        $ispracticallycomplete = ((int)$job->total > 0 &&
+            (int)$job->processed >= ((int)$job->total - $completetolerance));
+
+        // Early completion: if processed has already reached (or is within
+        // tolerance of) total, there is no more work to do.
+        if ($ispracticallycomplete) {
             $job->status = 'complete';
+            $job->processed = (int)$job->total;
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);
             return;
         }
 
         // Select next set of key-course associations for this course.
+        // When SQL-filtered, only rows without an active translation are returned,
+        // so the per-item existence check below can be skipped entirely.
         $sql = "SELECT kc.id as kc_id, kc.keyid, k.component, k.xkey, k.source
                   FROM {local_xlate_key_course} kc
                   JOIN {local_xlate_key} k ON k.id = kc.keyid";
 
         $params = ['courseid' => (int)$job->courseid, 'lastid' => $lastid];
 
+        if ($sqlfiltered) {
+            $sql .= " LEFT JOIN {local_xlate_tr} sqlt
+                        ON sqlt.keyid = k.id AND sqlt.lang = :sqltlang AND sqlt.status = 1";
+            $params['sqltlang'] = $targetlangs[0];
+        }
+
         $sql .= " WHERE kc.courseid = :courseid AND kc.id > :lastid";
+
+        if ($sqlfiltered) {
+            $sql .= " AND sqlt.id IS NULL";
+        }
+
         $sql .= " ORDER BY kc.id ASC";
 
         $records = $DB->get_records_sql($sql, $params, 0, $batchsize);
 
         if (empty($records)) {
-            // Nothing more to do; mark job complete.
-            $job->status = ((int)$job->total > 0 && (int)$job->processed < (int)$job->total)
-                ? 'complete_partial'
-                : 'complete';
+            // Nothing more to do — all records exhausted.
+            // Recompute tolerance here since processed may have changed this batch.
+            $tolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+            $done = ((int)$job->total === 0 ||
+                (int)$job->processed >= ((int)$job->total - $tolerance));
+            $job->status = $done ? 'complete' : 'complete_partial';
             if ($job->status === 'complete') {
                 $job->processed = (int)$job->total;
             }
@@ -205,8 +281,16 @@ class translate_course_task extends adhoc_task {
             }
 
             foreach ($items as $item) {
-                // Always check for an existing active translation so we can protect
-                // human-reviewed work regardless of which mode the job was queued in.
+                if ($sqlfiltered) {
+                    // SQL already excluded records that have an active translation
+                    // (including reviewed ones), so no per-item DB check is needed.
+                    $payload = $item;
+                    unset($payload['keyid']);
+                    $itemsbylang[$targetlang][] = $payload;
+                    continue;
+                }
+
+                // Not SQL-filtered: check per-item whether a translation exists.
                 $existing = $DB->get_record('local_xlate_tr', [
                     'keyid' => (int)($item['keyid'] ?? 0),
                     'lang' => $targetlang,
@@ -214,16 +298,13 @@ class translate_course_task extends adhoc_task {
                 ], 'id, reviewed', IGNORE_MISSING);
 
                 if ($existing) {
-                    // onlymissing: skip anything that already has an active translation.
                     if ($onlymissing) {
                         continue;
                     }
-                    // Always protect human-reviewed translations — never let the AI
-                    // overwrite work a translator has explicitly signed off on.
+                    // Always protect human-reviewed translations.
                     if ((int)$existing->reviewed === 1) {
                         continue;
                     }
-                    // onlyunreviewed with reviewed=0 falls through and gets re-translated.
                 }
 
                 $payload = $item;
@@ -317,16 +398,20 @@ class translate_course_task extends adhoc_task {
         $job->mtime = time();
         $DB->update_record('local_xlate_course_job', $job);
 
-        // Requeue this task if there are likely more items (we used a strict limit)
+        // Requeue this task if there are likely more items (we used a strict limit).
         if (count($records) >= $batchsize) {
             $newtask = new self();
             $newtask->set_custom_data((object)['jobid' => $jobid]);
             \core\task\manager::queue_adhoc_task($newtask);
         } else {
-            // Mark complete
-            $job->status = ((int)$job->total > 0 && (int)$job->processed < (int)$job->total)
-                ? 'complete_partial'
-                : 'complete';
+            // Last batch was smaller than batchsize — no more records remain.
+            $tolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+            $done = ((int)$job->total === 0 ||
+                (int)$job->processed >= ((int)$job->total - $tolerance));
+            $job->status = $done ? 'complete' : 'complete_partial';
+            if ($job->status === 'complete') {
+                $job->processed = (int)$job->total;
+            }
             $job->mtime = time();
             $DB->update_record('local_xlate_course_job', $job);
         }

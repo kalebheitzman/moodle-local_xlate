@@ -31,20 +31,32 @@ require_login();
 $systemcontext = context_system::instance();
 require_capability('local/xlate:manage', $systemcontext);
 
+global $DB, $OUTPUT;
+
+$stalethreshold = 4 * HOURSECS;
+
 // Handle delete-job POST before any output.
 if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'deletejob') {
-    global $DB;
     require_sesskey();
     $deletejobid = required_param('jobid', PARAM_INT);
-    $job = $DB->get_record('local_xlate_course_job', ['id' => $deletejobid], 'id, status');
+    $job = $DB->get_record('local_xlate_course_job', ['id' => $deletejobid], 'id, status, mtime');
+    $isstalerunning = $job && $job->status === 'running' && (time() - (int)$job->mtime) > $stalethreshold;
     if (!$job) {
         redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_job_error', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
-    } else if ($job->status === 'running') {
+    } else if ($job->status === 'running' && !$isstalerunning) {
         redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_running_error', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
     } else {
         $DB->delete_records('local_xlate_course_job', ['id' => $deletejobid]);
         redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_delete_job_deleted', 'local_xlate', $deletejobid), null, \core\output\notification::NOTIFY_SUCCESS);
     }
+}
+
+// Bulk-clear completed/complete_partial jobs.
+if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'clearfinished') {
+    require_sesskey();
+    list($insql, $inparams) = $DB->get_in_or_equal(['complete', 'complete_partial'], SQL_PARAMS_NAMED, 'cf');
+    $DB->delete_records_select('local_xlate_course_job', "status $insql", $inparams);
+    redirect(new moodle_url('/local/xlate/queue.php'), get_string('queue_clear_finished_done', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 $page = optional_param('page', 0, PARAM_INT);
@@ -113,8 +125,6 @@ if (!empty($conditions)) {
 
 $basefrom = "FROM {local_xlate_course_job} j
              LEFT JOIN {course} c ON c.id = j.courseid";
-
-global $DB, $OUTPUT;
 
 $summarysql = "SELECT
         COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS queued,
@@ -203,6 +213,18 @@ foreach ($summarycards as $card) {
     echo html_writer::end_div();
 }
 echo html_writer::end_div();
+// Bulk-clear button shown when there are finished jobs to clean up.
+if ($queuesummary->complete > 0 || $queuesummary->other > 0) {
+    $clearurl = new moodle_url('/local/xlate/queue.php', ['action' => 'clearfinished', 'sesskey' => sesskey()]);
+    echo html_writer::start_div('d-flex justify-content-end mb-3');
+    echo html_writer::tag('button', get_string('queue_clear_finished', 'local_xlate'), [
+        'type' => 'button',
+        'class' => 'btn btn-sm btn-outline-secondary js-xlate-clear-finished',
+        'data-url' => $clearurl->out(false),
+        'data-confirm' => get_string('queue_clear_finished_confirm', 'local_xlate'),
+    ]);
+    echo html_writer::end_div();
+}
 echo html_writer::end_div();
 
 echo html_writer::start_div('card mb-4');
@@ -320,17 +342,27 @@ if (!empty($jobs)) {
             ? get_string('queue_progress_value', 'local_xlate', (object)['processed' => $processed, 'total' => $total])
             : get_string('queue_progress_unknown', 'local_xlate', $processed);
 
+        $isstale = ($job->status === 'running' && (time() - (int)$job->mtime) > $stalethreshold);
+
         $statusclass = 'bg-secondary';
         $statuslabel = get_string('queue_status_queued', 'local_xlate');
         if ($job->status === 'complete') {
             $statusclass = 'bg-success';
             $statuslabel = get_string('queue_status_complete', 'local_xlate');
         } else if ($job->status === 'complete_partial') {
-            $statusclass = 'bg-warning text-dark';
-            $statuslabel = get_string('queue_status_complete_partial', 'local_xlate');
+            if ((int)$processed === 0 && (int)$total > 0) {
+                // Nothing was translated — almost certainly an API failure.
+                $statusclass = 'bg-danger';
+                $statuslabel = get_string('queue_status_failed', 'local_xlate');
+            } else {
+                $statusclass = 'bg-warning text-dark';
+                $statuslabel = get_string('queue_status_complete_partial', 'local_xlate');
+            }
         } else if ($job->status === 'running') {
-            $statusclass = 'bg-info text-dark';
-            $statuslabel = get_string('queue_status_running', 'local_xlate');
+            $statusclass = $isstale ? 'bg-danger' : 'bg-info text-dark';
+            $statuslabel = $isstale
+                ? get_string('queue_status_stale', 'local_xlate')
+                : get_string('queue_status_running', 'local_xlate');
         }
 
         echo html_writer::start_div('card mb-3 shadow-sm');
@@ -345,7 +377,7 @@ if (!empty($jobs)) {
         echo html_writer::start_div('d-flex align-items-center gap-2');
         echo html_writer::tag('span', get_string('queue_job_badge', 'local_xlate', $job->id), ['class' => 'badge text-bg-light']);
         echo html_writer::tag('span', $statuslabel, ['class' => 'badge ' . $statusclass]);
-        if ($job->status !== 'running') {
+        if ($job->status !== 'running' || $isstale) {
             $deleteurl = new moodle_url('/local/xlate/queue.php', [
                 'action'  => 'deletejob',
                 'jobid'   => $job->id,
@@ -410,6 +442,12 @@ echo html_writer::script(
     "}" .
     "});" .
     "});" .
+    "var clearBtn=document.querySelector('.js-xlate-clear-finished');" .
+    "if(clearBtn){clearBtn.addEventListener('click',function(){" .
+    "if(confirm(clearBtn.dataset.confirm||'Clear all finished jobs?')){" .
+    "window.location.href=clearBtn.dataset.url;" .
+    "}" .
+    "});}" .
     "})();"
 );
 

@@ -69,34 +69,47 @@ class course_job_manager {
         $onlymissing = !empty($normalizedoptions['onlymissing']);
         $onlyunreviewed = !empty($normalizedoptions['onlyunreviewed']);
 
-        // Guard against duplicate jobs: if a pending or in-progress job already
-        // exists for this course whose target langs cover all of the requested
-        // langs, return it as-is rather than creating a redundant job.
-        if (self::has_pending_job($courseid, $targetlangs, $onlymissing, $onlyunreviewed)) {
-            list($stinSQL, $stinparams) = $DB->get_in_or_equal(['pending', 'running'], SQL_PARAMS_NAMED, 'ejst');
-            $existingjobs = $DB->get_records_select(
-                'local_xlate_course_job',
-                "courseid = :courseid AND status $stinSQL",
-                array_merge(['courseid' => $courseid], $stinparams),
-                'id DESC',
-                '*', 0, 1
-            );
-            if ($existingjob = reset($existingjobs)) {
-                return ['success' => true, 'jobid' => (int)$existingjob->id, 'taskid' => 0];
-            }
-        }
-
         $total = $totaloverride ?? self::count_course_work_units($courseid, $targetlangs, $onlymissing, $onlyunreviewed);
 
-        // Purge stale no-op jobs for this course before inserting so the queue
-        // stays clean automatically. Jobs that completed with zero progress are
-        // useless for debugging and only clutter the queue UI.
+        // Purge old completed/complete_partial jobs for this course so the queue
+        // stays clean automatically. Keep the 5 most recent completed jobs per
+        // course for debugging; delete the rest. Zero-progress complete_partial
+        // jobs (API failures) are deleted unconditionally since they carry no
+        // useful history.
         try {
+            // Always delete zero-progress complete_partial jobs — they are noise.
             $DB->delete_records_select(
                 'local_xlate_course_job',
                 'courseid = :courseid AND status = :status AND processed = 0',
                 ['courseid' => $courseid, 'status' => 'complete_partial']
             );
+
+            // Keep only the 5 most recent completed/complete_partial jobs per course.
+            list($statusql, $statusparams) = $DB->get_in_or_equal(
+                ['complete', 'complete_partial'], SQL_PARAMS_NAMED, 'cls'
+            );
+            $keepids = $DB->get_fieldset_select(
+                'local_xlate_course_job',
+                'id',
+                "courseid = :courseid AND status $statusql",
+                array_merge(['courseid' => $courseid], $statusparams),
+                'id DESC',
+                5
+            );
+            if (!empty($keepids)) {
+                list($notinsql, $notinparams) = $DB->get_in_or_equal($keepids, SQL_PARAMS_NAMED, 'ki', false);
+                $DB->delete_records_select(
+                    'local_xlate_course_job',
+                    "courseid = :courseid AND status $statusql AND id $notinsql",
+                    array_merge(['courseid' => $courseid], $statusparams, $notinparams)
+                );
+            } else {
+                $DB->delete_records_select(
+                    'local_xlate_course_job',
+                    "courseid = :courseid AND status $statusql",
+                    array_merge(['courseid' => $courseid], $statusparams)
+                );
+            }
         } catch (\Throwable $e) {
             // Non-fatal: proceed even if cleanup fails.
         }
@@ -114,8 +127,31 @@ class course_job_manager {
             'mtime' => time(),
         ];
 
+        // Re-check for a duplicate inside a transaction to close the TOCTOU race
+        // window: two concurrent callers (e.g. scheduled task + manual UI trigger)
+        // could both pass has_pending_job() before either inserts. Serialising the
+        // insert inside a delegated transaction makes the check+insert atomic from
+        // the application's perspective.
         try {
+            $transaction = $DB->start_delegated_transaction();
+
+            if (self::has_pending_job($courseid, $targetlangs, $onlymissing, $onlyunreviewed)) {
+                list($stinSQL, $stinparams) = $DB->get_in_or_equal(['pending', 'running'], SQL_PARAMS_NAMED, 'ejst');
+                $existingjobs = $DB->get_records_select(
+                    'local_xlate_course_job',
+                    "courseid = :courseid AND status $stinSQL",
+                    array_merge(['courseid' => $courseid], $stinparams),
+                    'id DESC',
+                    '*', 0, 1
+                );
+                $transaction->allow_commit();
+                if ($existingjob = reset($existingjobs)) {
+                    return ['success' => true, 'jobid' => (int)$existingjob->id, 'taskid' => 0];
+                }
+            }
+
             $jobid = $DB->insert_record('local_xlate_course_job', $record);
+            $transaction->allow_commit();
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
