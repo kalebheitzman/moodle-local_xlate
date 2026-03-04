@@ -47,6 +47,36 @@ class mlang_migration {
     const DEFAULT_SAMPLE = 1000;
 
     /**
+     * Tables that must never be touched by the migration.
+     *
+     * These are log, audit, and analytics tables that contain historical
+     * snapshots of content. Rewriting mlang tags in them would corrupt the
+     * audit trail without providing any user-facing benefit — the original
+     * tagged text is the correct historical record.
+     */
+    const SKIP_TABLES = [
+        // Event / audit logs.
+        'logstore_standard_log',
+        'logstore_database_log',
+        'task_log',
+        'config_log',
+        'upgrade_log',
+        // Quiz attempt history — student response data.
+        'question_attempts',
+        'question_attempt_steps',
+        'question_attempt_step_data',
+        'question_response_analysis',
+        'question_response_count',
+        // Grade history tables.
+        'grade_items_history',
+        'grade_grades_history',
+        'grade_categories_history',
+        'grade_outcomes_history',
+        // Search index — rebuilt automatically, never needs migration.
+        'search_simpledb_index',
+    ];
+
+    /**
      * Run a non-destructive dry-run scan for MLang occurrences.
      *
      * @param \moodle_database $DB Database handle used for scanning.
@@ -538,13 +568,15 @@ class mlang_migration {
         $prefix = $opts['prefix'] ?? $DB->get_prefix();
         // Only include these types for candidate columns
         $types = ["text","tinytext","mediumtext","longtext","varchar"];
+        // Merge caller-supplied exclusions with the permanent skip list.
+        $excludetables = array_merge(self::SKIP_TABLES, $opts['exclude_tables'] ?? []);
         $map = [];
         $tables = $DB->get_tables();
         foreach ($tables as $tablename) {
             if (stripos($tablename, 'xlate') !== false) {
                 continue;
             }
-            if (isset($opts['exclude_tables']) && in_array($tablename, $opts['exclude_tables'])) {
+            if (in_array($tablename, $excludetables, true)) {
                 continue;
             }
             $columns = $DB->get_columns($tablename);

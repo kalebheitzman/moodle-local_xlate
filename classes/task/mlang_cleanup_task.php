@@ -62,11 +62,20 @@ class mlang_cleanup_task extends \core\task\scheduled_task {
             return;
         }
 
+        // Cap each run to 300 changes so the task finishes well within cron
+        // timeouts even on large sites. Remaining records are picked up on the
+        // next nightly run. Log/audit tables are excluded via SKIP_TABLES.
+        $maxchanges = (int)get_config('local_xlate', 'mlang_cleanup_batch_size');
+        if ($maxchanges <= 0) {
+            $maxchanges = 300;
+        }
+
         $report = \local_xlate\mlang_migration::migrate($DB, [
-            'execute' => true,
-            'courseids' => $enabledcourses
+            'execute'     => true,
+            'courseids'   => $enabledcourses,
+            'max_changes' => $maxchanges,
         ]);
-        mtrace('[mlang_cleanup_task] Completed. Changed: ' . ($report['changed'] ?? 0));
+        mtrace('[mlang_cleanup_task] Completed. Changed: ' . ($report['changed'] ?? 0) . ' (limit: ' . $maxchanges . ')');
         // Optionally, log/report more details or errors here.
     }
 }
