@@ -24,7 +24,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
         autoTranslateCourseQueued:  {component: 'local_xlate', key: 'autotranslate_course_queued'},
         autoTranslateCourseQueueFailed: {component: 'local_xlate', key: 'autotranslate_course_queue_failed'},
         autoTranslateSelectTarget:  {component: 'local_xlate', key: 'autotranslate_select_target'},
-        retranslateUnreviewedQueued:{component: 'local_xlate', key: 'retranslate_unreviewed_queued'},
         saveSuccess:                {component: 'local_xlate', key: 'translation_saved'},
         saveFailed:                 {component: 'local_xlate', key: 'translation_save_failed'},
         saveIndicator:              {component: 'local_xlate', key: 'translation_saved_short'}
@@ -637,7 +636,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
             attachAutoTranslateHandlers(config);
             enableIconTooltips();
             var courseButton = document.getElementById('local_xlate_autotranslate_course');
-            var retranslateUnreviewedButton = document.getElementById('local_xlate_retranslate_unreviewed_course');
 
             // If the server passed an active job id but the Manage page card or
             // its elements are not present (for example because the course
@@ -772,24 +770,6 @@ define(['core/ajax', 'core/notification', 'core/str'], function (Ajax, notificat
                             config,
                             'autoTranslateCourseQueued',
                             'Course autotranslate job queued. Job id: {$a}'
-                        ),
-                        getString(
-                            config,
-                            'autoTranslateCourseQueueFailed',
-                            'Failed to enqueue course autotranslate job.'
-                        )
-                    );
-                });
-            }
-
-            if (retranslateUnreviewedButton) {
-                retranslateUnreviewedButton.addEventListener('click', function () {
-                    enqueueCourseJob(
-                        { onlyunreviewed: true },
-                        getString(
-                            config,
-                            'retranslateUnreviewedQueued',
-                            'Unreviewed retranslation job queued. Job id: {$a}'
                         ),
                         getString(
                             config,

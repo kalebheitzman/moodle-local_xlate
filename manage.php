@@ -332,101 +332,6 @@ local_xlate_render_admin_nav('manage');
 
 // (Autotranslate controls are rendered below inside a styled card.)
 
-if ($filter_courseid > 0) {
-    $retranslatetargets = !empty($selectedtargets)
-        ? array_values($selectedtargets)
-        : array_values(array_filter($enabledlangsarray, static function(string $code) use ($displaysourcelang): bool {
-            return $code !== '' && $code !== $displaysourcelang;
-        }));
-
-    echo html_writer::start_div('card mb-4');
-    echo html_writer::div(get_string('autotranslate_course', 'local_xlate'), 'card-header');
-    echo html_writer::start_div('card-body');
-
-    echo html_writer::tag('p', get_string('retranslate_unreviewed_course_desc', 'local_xlate'), ['class' => 'text-muted mb-3']);
-
-    echo html_writer::start_div('mb-3', ['id' => 'local_xlate_target_container']);
-    echo html_writer::tag('div', get_string('autotranslate_target', 'local_xlate'), ['class' => 'fw-semibold mb-2']);
-    if (!empty($retranslatetargets)) {
-        echo html_writer::start_div('d-flex flex-wrap gap-2');
-        foreach ($retranslatetargets as $langcode) {
-            if ($langcode === '' || !isset($installedlangs[$langcode])) {
-                continue;
-            }
-            $label = $installedlangs[$langcode];
-            if (strpos($label, '(' . $langcode . ')') === false) {
-                $label .= ' (' . $langcode . ')';
-            }
-            $checkboxid = 'local_xlate_target_' . preg_replace('/[^a-z0-9_\-]/i', '_', $langcode);
-            $input = html_writer::empty_tag('input', [
-                'type' => 'checkbox',
-                'id' => $checkboxid,
-                'value' => $langcode,
-                'checked' => 'checked',
-                'class' => 'form-check-input me-1'
-            ]);
-            $labelhtml = html_writer::tag('label', $input . s($label), [
-                'class' => 'form-check-label border rounded px-2 py-1 bg-light',
-                'for' => $checkboxid,
-            ]);
-            echo $labelhtml;
-        }
-        echo html_writer::end_div();
-    } else {
-        echo html_writer::div(get_string('autotranslate_no_targets', 'local_xlate'), 'text-muted fst-italic');
-    }
-    echo html_writer::end_div();
-
-    echo html_writer::start_div('d-flex align-items-center gap-2 flex-wrap');
-    echo html_writer::tag('button', get_string('retranslate_unreviewed_course', 'local_xlate'), [
-        'type' => 'button',
-        'id' => 'local_xlate_retranslate_unreviewed_course',
-        'class' => 'btn btn-warning'
-    ]);
-    echo html_writer::tag('span', get_string('retranslate_unreviewed_course_hint', 'local_xlate'), [
-        'class' => 'text-muted small'
-    ]);
-    echo html_writer::end_div();
-
-    echo html_writer::start_div('mt-3', [
-        'id' => 'local_xlate_course_progress',
-        'style' => 'display:none;'
-    ]);
-    echo html_writer::start_div('d-flex justify-content-between align-items-center mb-1');
-    echo html_writer::tag('span', '', [
-        'id' => 'local_xlate_course_job_owner',
-        'style' => 'font-weight:600;'
-    ]);
-    echo html_writer::tag('span', '', [
-        'id' => 'local_xlate_course_job_status',
-        'style' => 'color:#666;'
-    ]);
-    echo html_writer::tag('span', '', [
-        'id' => 'local_xlate_course_job_langs',
-        'style' => 'font-size:90%;'
-    ]);
-    echo html_writer::end_div();
-    echo html_writer::start_div('progress', [
-        'role' => 'progressbar',
-        'aria-label' => 'Autotranslate progress'
-    ]);
-    echo html_writer::tag('div', '0%', [
-        'id' => 'local_xlate_course_progress_bar',
-        'class' => 'progress-bar progress-bar-striped progress-bar-animated bg-info',
-        'style' => 'width:0%',
-        'aria-valuemin' => '0',
-        'aria-valuemax' => '100'
-    ]);
-    echo html_writer::end_div();
-    echo html_writer::tag('div', '0 / 0', [
-        'id' => 'local_xlate_course_progress_text',
-        'style' => 'margin-top:6px; font-size:90%'
-    ]);
-    echo html_writer::end_div();
-
-    echo html_writer::end_div();
-    echo html_writer::end_div();
-}
 
 // Show the autotranslate card only when a course filter is active so that
 // course-scoped autotranslate can run against the specified course.
@@ -1155,7 +1060,6 @@ $PAGE->requires->strings_for_js([
     'autotranslate_course_queued',
     'autotranslate_course_queue_failed',
     'autotranslate_select_target',
-    'retranslate_unreviewed_queued',
     'translation_saved',
     'translation_save_failed',
     'translation_saved_short'

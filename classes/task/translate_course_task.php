@@ -171,8 +171,11 @@ class translate_course_task extends adhoc_task {
         // Tolerance for the processed-vs-total comparison. The total is estimated
         // at job-creation time and can be slightly stale (e.g. another process
         // translated one item between creation and execution). Treat the job as
-        // complete when processed is within 2 % (min 1 item) of total.
-        $completetolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+        // complete when processed is within 2 % of total. No min-1 floor: for
+        // small jobs (total=1,2,3) the tolerance must be 0 or a failed
+        // translation would mark the job complete and trigger an infinite
+        // re-queue loop (scheduled task finds the same key still missing).
+        $completetolerance = (int)$job->total > 0 ? (int)round((int)$job->total * 0.02) : 0;
         $ispracticallycomplete = ((int)$job->total > 0 &&
             (int)$job->processed >= ((int)$job->total - $completetolerance));
 
@@ -214,7 +217,7 @@ class translate_course_task extends adhoc_task {
         if (empty($records)) {
             // Nothing more to do — all records exhausted.
             // Recompute tolerance here since processed may have changed this batch.
-            $tolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+            $tolerance = (int)$job->total > 0 ? (int)round((int)$job->total * 0.02) : 0;
             $done = ((int)$job->total === 0 ||
                 (int)$job->processed >= ((int)$job->total - $tolerance));
             $job->status = $done ? 'complete' : 'complete_partial';
@@ -405,7 +408,7 @@ class translate_course_task extends adhoc_task {
             \core\task\manager::queue_adhoc_task($newtask);
         } else {
             // Last batch was smaller than batchsize — no more records remain.
-            $tolerance = (int)$job->total > 0 ? max(1, (int)round((int)$job->total * 0.02)) : 0;
+            $tolerance = (int)$job->total > 0 ? (int)round((int)$job->total * 0.02) : 0;
             $done = ((int)$job->total === 0 ||
                 (int)$job->processed >= ((int)$job->total - $tolerance));
             $job->status = $done ? 'complete' : 'complete_partial';
