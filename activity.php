@@ -513,7 +513,7 @@ if (!empty($activities)) {
         }
         echo html_writer::tag('td', $xkeycell);
         echo html_writer::tag('td', (string)$activity->translationid);
-        echo html_writer::tag('td', $notes);
+        echo html_writer::tag('td', s($notes));
         echo html_writer::end_tag('tr');
     }
     echo html_writer::end_tag('tbody');

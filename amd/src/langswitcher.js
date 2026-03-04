@@ -25,7 +25,17 @@ define([], function () {
             return;
         }
         var current = window.XLATE_LANG_SWITCHER_STATE || {};
-        window.XLATE_LANG_SWITCHER_STATE = Object.assign({}, current, state);
+        var merged = {};
+        var keys = Object.keys(current);
+        var i;
+        for (i = 0; i < keys.length; i++) {
+            merged[keys[i]] = current[keys[i]];
+        }
+        keys = Object.keys(state);
+        for (i = 0; i < keys.length; i++) {
+            merged[keys[i]] = state[keys[i]];
+        }
+        window.XLATE_LANG_SWITCHER_STATE = merged;
     }
 
     /**

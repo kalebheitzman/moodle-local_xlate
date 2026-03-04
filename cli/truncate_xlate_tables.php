@@ -12,6 +12,7 @@ $xlateTables = [
     'local_xlate_key_course',
     'local_xlate_tr',
     'local_xlate_bundle',
+    'local_xlate_activity',
     'local_xlate_glossary',
     'local_xlate_mlang_migration',
     'local_xlate_course_job',

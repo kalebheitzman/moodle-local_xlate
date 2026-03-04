@@ -920,14 +920,19 @@ class api {
     public static function save_key_with_translation(string $component, string $xkey, string $source, string $lang, string $translation, int $reviewed = 0, int $courseid = 0, string $context = '', ?int $critical = null, string $translationsource = self::SOURCE_MANUAL): int {
         global $DB;
         
+        // Reject calls where both source and translation are empty — nothing to persist.
+        $source = self::normalize_inline_markup($source);
+        $translation = self::normalize_inline_markup($translation);
+        if ($source === '' && $translation === '') {
+            throw new \coding_exception('save_key_with_translation: source and translation cannot both be empty');
+        }
+        if ($source === '') {
+            $source = $translation;
+        }
+
         $transaction = $DB->start_delegated_transaction();
-        
+
         try {
-            $source = self::normalize_inline_markup($source);
-            $translation = self::normalize_inline_markup($translation);
-            if ($source === '') {
-                $source = $translation;
-            }
             $xkey = self::resolve_preferred_xkey($component, $xkey, $source, $courseid);
             // Create or update the key
             $keyid = self::create_or_update_key($component, $xkey, $source, $critical);
@@ -970,14 +975,18 @@ class api {
                 }
             }
             
-            // Invalidate cache for this language
-            self::invalidate_bundle_cache($lang);
-            
-            // Update bundle version
-            self::update_bundle_version($lang);
-            
             $transaction->allow_commit();
-            
+
+            // Invalidate cache and bump bundle version after the transaction commits
+            // so a rollback cannot leave the cache out of sync with the DB.
+            try {
+                self::invalidate_bundle_cache($lang);
+                self::update_bundle_version($lang);
+            } catch (\Throwable $cacheerr) {
+                // Non-fatal: the cache self-heals on TTL expiry.
+                debugging('[local_xlate] Failed to update bundle cache/version after commit: ' . $cacheerr->getMessage(), DEBUG_DEVELOPER);
+            }
+
             return $keyid;
             
         } catch (\Throwable $e) {

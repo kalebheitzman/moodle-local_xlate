@@ -688,5 +688,34 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026022801, 'local', 'xlate');
     }
 
+    // Add missing indexes: idx_keyid on local_xlate_activity and idx_reviewed on local_xlate_tr.
+    if ($oldversion < 2026030300) {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+
+        $activitytable = new xmldb_table('local_xlate_activity');
+        $keyidindex = new xmldb_index('idx_keyid', XMLDB_INDEX_NOTUNIQUE, ['keyid']);
+        if ($dbman->table_exists($activitytable) && !$dbman->index_exists($activitytable, $keyidindex)) {
+            try {
+                $dbman->add_index($activitytable, $keyidindex);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add idx_keyid on local_xlate_activity: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        $trtable = new xmldb_table('local_xlate_tr');
+        $reviewedindex = new xmldb_index('idx_reviewed', XMLDB_INDEX_NOTUNIQUE, ['reviewed']);
+        if ($dbman->table_exists($trtable) && !$dbman->index_exists($trtable, $reviewedindex)) {
+            try {
+                $dbman->add_index($trtable, $reviewedindex);
+            } catch (\Exception $e) {
+                debugging('[local_xlate] failed to add idx_reviewed on local_xlate_tr: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026030300, 'local', 'xlate');
+    }
+
     return true;
 }
