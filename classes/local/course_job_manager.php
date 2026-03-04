@@ -256,11 +256,10 @@ class course_job_manager {
         }
 
         try {
-            if (!$onlymissing && !$onlyunreviewed) {
-                $keys = (int)$DB->count_records('local_xlate_key_course', ['courseid' => $courseid]);
-                return $keys * count($targetlangs);
-            }
-
+            // All modes use a per-lang query so `total` matches what the task
+            // will actually process. The fast-path (key_count × lang_count) was
+            // removed because the task unconditionally skips reviewed=1 translations
+            // regardless of mode, causing `processed` to never reach `total`.
             $total = 0;
             foreach ($targetlangs as $lang) {
                 $sql = "SELECT COUNT(1)
@@ -270,8 +269,11 @@ class course_job_manager {
                          WHERE kc.courseid = :courseid";
 
                 if ($onlymissing) {
+                    // Only keys that have no active translation at all.
                     $sql .= ' AND t.id IS NULL';
-                } else if ($onlyunreviewed) {
+                } else {
+                    // Default and onlyunreviewed modes: the task always skips
+                    // reviewed=1 translations, so exclude them from the total.
                     $sql .= ' AND (t.id IS NULL OR t.reviewed <> 1)';
                 }
                 $total += (int)$DB->get_field_sql($sql, ['courseid' => $courseid, 'targetlang' => $lang]);
