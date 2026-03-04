@@ -113,6 +113,18 @@ class translate_course_task extends adhoc_task {
         $onlymissing = !empty($options['onlymissing']);
         $onlyunreviewed = !empty($options['onlyunreviewed']);
 
+        // Early completion: if processed has already reached total there is no
+        // more work to do, regardless of any remaining key_course records to
+        // scan. This prevents the task from requeuing itself indefinitely when
+        // all translations are done but the cursor (lastid) has not yet reached
+        // the end of the table.
+        if ((int)$job->total > 0 && (int)$job->processed >= (int)$job->total) {
+            $job->status = 'complete';
+            $job->mtime = time();
+            $DB->update_record('local_xlate_course_job', $job);
+            return;
+        }
+
         // Select next set of key-course associations for this course.
         $sql = "SELECT kc.id as kc_id, kc.keyid, k.component, k.xkey, k.source
                   FROM {local_xlate_key_course} kc

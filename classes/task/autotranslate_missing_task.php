@@ -133,7 +133,9 @@ class autotranslate_missing_task extends scheduled_task {
                 ], 0, $missingcount);
 
                 if (!empty($result['success'])) {
-                    mtrace("Course {$courseid}: queued job {$result['jobid']} for {$targetlang} ({$missingcount} pending keys).");
+                    $taskid = $result['taskid'] ?? null;
+                    $taskinfo = ($taskid > 0) ? "adhoc taskid={$taskid}" : 'no adhoc task created';
+                    mtrace("Course {$courseid}: queued job {$result['jobid']} ({$taskinfo}) for {$targetlang} ({$missingcount} pending keys).");
                 } else {
                     $error = isset($result['error']) ? $result['error'] : 'Unknown error.';
                     mtrace("Course {$courseid}: failed to queue job for {$targetlang}: {$error}");

@@ -171,6 +171,24 @@ class backend {
                     return ['ok' => false, 'errors' => ['rate_limited']];
                 }
 
+                // Some models (e.g. gpt-5, o-series reasoning models) only support the
+                // default temperature and reject any custom value with a 400. Detect this,
+                // strip temperature from the payload, and retry immediately.
+                if ($httpcode === 400 && $attempt < $maxattempts) {
+                    $errbody = is_string($result) ? json_decode($result, true) : null;
+                    if (
+                        isset($errbody['error']['code']) &&
+                        $errbody['error']['code'] === 'unsupported_value' &&
+                        isset($errbody['error']['param']) &&
+                        $errbody['error']['param'] === 'temperature'
+                    ) {
+                        debugging('[local_xlate] Model does not support custom temperature; retrying without it.', DEBUG_DEVELOPER);
+                        unset($payload['temperature']);
+                        $postdata = json_encode($payload);
+                        continue;
+                    }
+                }
+
                 // For other transient-like failures (httpcode 0 or 5xx), retry if attempts remain.
                 if ($attempt < $maxattempts) {
                     // Exponential-ish backoff: 2, then 4 seconds.

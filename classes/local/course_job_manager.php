@@ -148,8 +148,24 @@ class course_job_manager {
             return false;
         }
 
+        // Running jobs that have not been updated recently are considered dead:
+        // the adhoc task likely failed permanently and was abandoned by Moodle's
+        // retry policy. 4 hours is well beyond any realistic single-task runtime.
+        $stalenessthreshold = time() - (4 * HOURSECS);
+
         sort($targetlangs);
         foreach ($jobs as $job) {
+            if ($job->status === 'running' && (int)$job->mtime < $stalenessthreshold) {
+                // Auto-heal: mark the orphaned job complete_partial so the queue
+                // stays clean and new jobs can be enqueued for these courses.
+                try {
+                    $DB->set_field('local_xlate_course_job', 'status', 'complete_partial', ['id' => $job->id]);
+                } catch (\Throwable $e) {
+                    // Non-fatal — proceed even if the update fails.
+                }
+                continue;
+            }
+
             $opts = [];
             if (!empty($job->options)) {
                 $decoded = json_decode((string)$job->options, true);
