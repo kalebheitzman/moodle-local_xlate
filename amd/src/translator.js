@@ -535,7 +535,7 @@ define(['core/ajax'], function (Ajax) {
    * @returns {boolean} True when text looks translatable
    */
   function isTranslatableText(text) {
-    if (!text || text.length < 3) {
+    if (!text) {
       return false;
     }
 
