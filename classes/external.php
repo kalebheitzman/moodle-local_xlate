@@ -466,7 +466,7 @@ class local_xlate_external extends external_api {
                 new external_single_structure([
                     'component' => new external_value(PARAM_TEXT, 'Component identifier'),
                     'key' => new external_value(PARAM_TEXT, 'Translation key'),
-                    'source' => new external_value(PARAM_TEXT, 'Source text', VALUE_DEFAULT, '')
+                    'source' => new external_value(PARAM_RAW_TRIMMED, 'Source text', VALUE_DEFAULT, '')
                 ]), 'Keys to associate'
             ),
             'courseid' => new external_value(PARAM_INT, 'Course id'),
@@ -531,7 +531,7 @@ class local_xlate_external extends external_api {
             if ($component === '') {
                 $component = 'core';
             }
-            $source = isset($k['source']) ? clean_param($k['source'], PARAM_TEXT) : '';
+            $source = isset($k['source']) ? trim($k['source']) : '';
             $sanitised[] = [
                 'component' => $component,
                 'xkey' => $xkey,
