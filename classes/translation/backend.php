@@ -360,10 +360,24 @@ class backend {
             global $DB;
             $usage = $meta['usage_tokens'] ?? null;
             if (is_array($usage) && (!empty($usage['prompt']) || !empty($usage['completion']) || !empty($usage['total']))) {
-                $inputtokens = isset($usage['prompt']) ? (int)$usage['prompt'] : 0;
-                $cachedtokens = isset($options['cached_input_tokens']) ? (int)$options['cached_input_tokens'] : 0;
-                $outputtokens = isset($usage['completion']) ? (int)$usage['completion'] : 0;
-                $totaltokens = (int)($usage['total'] ?? ($inputtokens + $cachedtokens + $outputtokens));
+                // Extract cached token counts from the API response, which differs per provider.
+                $provider = self::detect_provider($endpoint);
+                if ($provider === 'anthropic') {
+                    // Anthropic response fields: cache_read_input_tokens, cache_creation_input_tokens.
+                    $cachedtokens  = (int)($response['usage']['cache_read_input_tokens'] ?? 0);
+                    $inputtokens   = (int)($response['usage']['input_tokens'] ?? 0);
+                    $outputtokens  = (int)($response['usage']['output_tokens'] ?? 0);
+                    $totaltokens   = $inputtokens + $cachedtokens
+                                   + (int)($response['usage']['cache_creation_input_tokens'] ?? 0)
+                                   + $outputtokens;
+                } else {
+                    // OpenAI response field: prompt_tokens_details.cached_tokens.
+                    $promptdetails = $response['usage']['prompt_tokens_details'] ?? [];
+                    $cachedtokens  = (int)($promptdetails['cached_tokens'] ?? 0);
+                    $inputtokens   = isset($usage['prompt']) ? (int)$usage['prompt'] : 0;
+                    $outputtokens  = isset($usage['completion']) ? (int)$usage['completion'] : 0;
+                    $totaltokens   = (int)($usage['total'] ?? ($inputtokens + $cachedtokens + $outputtokens));
+                }
 
                 $inputrate = (float)get_config('local_xlate', 'pricing_input_per_million');
                 $cachedrate = (float)get_config('local_xlate', 'pricing_cached_input_per_million');
@@ -502,27 +516,16 @@ class backend {
         // The setting label is "Additional translation instructions" — it is appended after the core.
         $additionalprompt = (string)get_config('local_xlate', 'openai_prompt');
 
-        // Glossary instruction:
-        // Phase 1 — critical terms are always included regardless of batch content.
-        // Phase 2 — non-critical terms are included only when the source term appears
-        //            (word-boundary, case-insensitive) in at least one item's source_text.
+        // Glossary instruction: always include the full glossary so the system prompt
+        // remains stable per language pair across batches, enabling prompt caching.
+        // Per-batch filtering was previously used to save tokens but prevented caching —
+        // the cache economics favour a stable full-glossary prompt.
         $glossaryinstruction = '';
         if (!empty($glossary)) {
-            // Build a single string of all source texts for efficient scanning.
-            $batchtexts = implode(' ', array_column($fnitems, 'source_text'));
-
             $glossarypairs = [];
             foreach ($glossary as $g) {
                 if (empty($g['term']) || !array_key_exists('replacement', $g)) {
                     continue;
-                }
-                $iscritical = !empty($g['critical']);
-                if (!$iscritical) {
-                    // Phase 2: only include if the term appears in the batch.
-                    $pattern = '/\b' . preg_quote($g['term'], '/') . '\b/ui';
-                    if (!preg_match($pattern, $batchtexts)) {
-                        continue;
-                    }
                 }
                 $pair = $g['term'] . ' => ' . $g['replacement'];
                 if (!empty($g['notes'])) {
@@ -541,14 +544,43 @@ class backend {
             . "in the same order. Each entry needs 'id' (copied from input) and 'translated' (the translated string). "
             . "Optionally include 'applied_glossary_terms' (array of {term, replacement}) and 'warnings' (array of strings).";
 
-        // Assemble the full system prompt: core → additional → language → glossary → batch format.
-        $systemprompt = $coreprompt;
+        // Split the system prompt into two logical blocks with different stability profiles:
+        //   Static block  — core rules + batch instructions; never changes across requests.
+        //   Lang+glossary — language pair + full glossary; stable per language pair.
+        // This split maximises prompt-cache hits on both OpenAI (automatic prefix caching)
+        // and Anthropic (explicit cache_control breakpoints).
+        $staticblock = $coreprompt;
         if (!empty($additionalprompt)) {
-            $systemprompt .= "\n\n" . $additionalprompt;
+            $staticblock .= "\n\n" . $additionalprompt;
         }
-        $systemprompt .= "\n\nTranslate from {$sourcelang} to {$targetlang}.";
-        $systemprompt .= $glossaryinstruction;
-        $systemprompt .= $batchinstruction;
+        $staticblock .= $batchinstruction;
+
+        $langblock = "\n\nTranslate from {$sourcelang} to {$targetlang}.";
+        $langblock .= $glossaryinstruction;
+
+        // Build messages array; Anthropic requires explicit cache_control markers while
+        // OpenAI caches automatically from a stable prompt prefix.
+        $provider = self::detect_provider($endpoint);
+        if ($provider === 'anthropic') {
+            $systemmessage = [
+                'role'    => 'system',
+                'content' => [
+                    [
+                        'type'          => 'text',
+                        'text'          => $staticblock,
+                        'cache_control' => ['type' => 'ephemeral'],
+                    ],
+                    [
+                        'type'          => 'text',
+                        'text'          => $langblock,
+                        'cache_control' => ['type' => 'ephemeral'],
+                    ],
+                ],
+            ];
+        } else {
+            // OpenAI / Azure: single string, automatic prefix caching.
+            $systemmessage = ['role' => 'system', 'content' => $staticblock . $langblock];
+        }
 
         // User message: the batch to translate.
         $userdata = [
@@ -563,8 +595,8 @@ class backend {
         $payload = [
             'model'         => $model,
             'messages'      => [
-                ['role' => 'system', 'content' => $systemprompt],
-                ['role' => 'user',   'content' => $usercontent],
+                $systemmessage,
+                ['role' => 'user', 'content' => $usercontent],
             ],
             'functions'     => $functions,
             'function_call' => ['name' => 'translate_batch'],
@@ -635,5 +667,24 @@ class backend {
         }
 
         return ['translated' => $translated, 'applied_glossary_terms' => $applied, 'warnings' => $warnings];
+    }
+
+    /**
+     * Detect the AI provider from the configured endpoint URL.
+     *
+     * Used to apply provider-specific prompt-caching strategies and to parse
+     * cached token counts from the correct response fields.
+     *
+     * @param string $endpoint Configured OpenAI-compatible endpoint URL.
+     * @return string 'anthropic', 'azure', or 'openai'.
+     */
+    private static function detect_provider($endpoint) {
+        if (stripos($endpoint, 'api.anthropic.com') !== false) {
+            return 'anthropic';
+        }
+        if (stripos($endpoint, 'openai.azure.com') !== false || stripos($endpoint, 'azure') !== false) {
+            return 'azure';
+        }
+        return 'openai';
     }
 }
