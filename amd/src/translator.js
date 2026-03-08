@@ -32,6 +32,15 @@ define(['core/ajax'], function (Ajax) {
   // Precomputed combined critical selector — built once on first use.
   var _criticalCombined = null;
   var _criticalCombinedBuilt = false;
+
+  // Batch queues for capture-mode network calls.
+  // Both queues are flushed together after each synchronous walk via a
+  // setTimeout(0) so the entire scan cycle sends at most two HTTP requests
+  // (one Ajax.call batch for saves + one for critical updates) regardless of
+  // how many elements were found.
+  var _pendingSaveCalls = [];    // {ajaxCall, dedupeKey, element, type, key, text}
+  var _pendingCriticalCalls = []; // raw Ajax call objects {methodname, args}
+  var _captureFlushTimer = null;
   var missingFetchTimer = null;
   var indicatorStylesAdded = false;
   var BLOCK_CHILD_TAGS = [
@@ -1208,6 +1217,22 @@ define(['core/ajax'], function (Ajax) {
    * @return {{critical: boolean, selector: string|null}}
    */
   function isCriticalElement(element) {
+    // Forum post content is never critical — guard against closest() matching
+    // a critical ancestor selector through forum discussion containers.
+    if (element.closest) {
+      var forumPostContainers = [
+        '.forum-post-container',
+        '.discussion-list',
+        '[data-region="post"]',
+        '[data-region="discussion-list-item"]'
+      ];
+      for (var f = 0; f < forumPostContainers.length; f++) {
+        if (element.closest(forumPostContainers[f])) {
+          return { critical: false, selector: null };
+        }
+      }
+    }
+
     var selectors = window.XLATE_CRITICAL_SELECTORS;
     if (!selectors || !Array.isArray(selectors) || !selectors.length) {
       return { critical: false, selector: null };
@@ -1277,7 +1302,7 @@ define(['core/ajax'], function (Ajax) {
         xlateDebug('[XLATE][Capture] Skip save - identical text already stored', key);
         // The key is already captured. Still check whether its critical flag needs
         // updating — this is how pre-deployment keys get marked as critical without
-        // a full re-save.
+        // a full re-save.  The call is queued and batched with all others.
         var critMap = (window.__XLATE__ && window.__XLATE__.criticalMap) || {};
         if (!critMap[key]) {
           var critCheck = isCriticalElement(element);
@@ -1288,16 +1313,17 @@ define(['core/ajax'], function (Ajax) {
             } else if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
               critCourseId = M.cfg.courseid;
             }
-            // Optimistically mark in criticalMap so we don't re-call on the same page.
+            // Optimistically update criticalMap so we don't re-queue on the same page.
             if (window.__XLATE__) {
               if (!window.__XLATE__.criticalMap) { window.__XLATE__.criticalMap = {}; }
               window.__XLATE__.criticalMap[key] = 1;
             }
-            Ajax.call([{
+            _pendingCriticalCalls.push({
               methodname: 'local_xlate_set_critical',
               args: { key: key, critical: true, courseid: critCourseId }
-            }]);
-            xlateDebug('[XLATE][Capture] Marking existing key as critical', key);
+            });
+            scheduleCaptureFlush();
+            xlateDebug('[XLATE][Capture] Queued critical update for existing key', key);
           }
         }
         return;
@@ -1313,7 +1339,7 @@ define(['core/ajax'], function (Ajax) {
     }
     detectedStrings.add(dedupeKey);
 
-    xlateDebug('[XLATE][Capture] Saving key', key, 'component', component, 'type', type, 'snippet:', abbreviateValue(text));
+    xlateDebug('[XLATE][Capture] Queuing key save', key, 'component', component, 'type', type, 'snippet:', abbreviateValue(text));
 
     // Determine page-level course id (prefer server-injected XLATE_COURSEID when present)
     var pageCourseId = 0;
@@ -1344,7 +1370,7 @@ define(['core/ajax'], function (Ajax) {
       critical: criticalResult.critical ? 1 : 0
     };
 
-    xlateDebug('[XLATE][Capture] Ajax save payload', {
+    xlateDebug('[XLATE][Capture] Queuing save payload', {
       key: key,
       component: component,
       type: type,
@@ -1354,33 +1380,74 @@ define(['core/ajax'], function (Ajax) {
       length: text.length
     });
 
-    Ajax.call([{
-      methodname: 'local_xlate_save_key',
-      args: payload
-    }])[0].then(function (response) {
-      var persistedKey = key;
-      if (response && typeof response.xkey === 'string' && response.xkey.trim() !== '') {
-        persistedKey = response.xkey.trim();
-      }
-      if (persistedKey !== key) {
-        setKeyAttribute(element, type, persistedKey);
-      }
-      if (window.__XLATE__) {
-        if (!window.__XLATE__.map) {
-          window.__XLATE__.map = {};
-        }
-        window.__XLATE__.map[persistedKey] = text;
-        if (!window.__XLATE__.reviewMap) {
-          window.__XLATE__.reviewMap = {};
-        }
-        window.__XLATE__.reviewMap[persistedKey] = 1;
-      }
-      xlateDebug('[XLATE][Capture] Save success', persistedKey, response || '');
-      return true;
-    }).catch(function (err) {
-      detectedStrings.delete(dedupeKey);
-      xlateDebug('[XLATE][Capture] Save failed', key, err && err.message ? err.message : err);
+    _pendingSaveCalls.push({
+      ajaxCall: { methodname: 'local_xlate_save_key', args: payload },
+      dedupeKey: dedupeKey,
+      element: element,
+      type: type,
+      key: key,
+      text: text
     });
+    scheduleCaptureFlush();
+  }
+
+  /**
+   * Schedule a deferred flush of pending capture batch queues.
+   * setTimeout(0) lets the synchronous walk finish collecting all elements
+   * before the network calls are dispatched — one Ajax.call per queue type.
+   */
+  function scheduleCaptureFlush() {
+    if (_captureFlushTimer) { return; }
+    _captureFlushTimer = setTimeout(flushCaptureBatch, 0);
+  }
+
+  /**
+   * Send all queued save_key and set_critical calls as two batched Ajax requests
+   * (one per WS method), each going out as a single HTTP POST.
+   */
+  function flushCaptureBatch() {
+    _captureFlushTimer = null;
+
+    // --- save_key batch ---
+    if (_pendingSaveCalls.length) {
+      var saves = _pendingSaveCalls.slice();
+      _pendingSaveCalls = [];
+      var ajaxCalls = saves.map(function(s) { return s.ajaxCall; });
+      var promises = Ajax.call(ajaxCalls);
+      for (var i = 0; i < saves.length; i++) {
+        (function(item, promise) {
+          promise.then(function(response) {
+            var persistedKey = item.key;
+            if (response && typeof response.xkey === 'string' && response.xkey.trim() !== '') {
+              persistedKey = response.xkey.trim();
+            }
+            if (persistedKey !== item.key) {
+              setKeyAttribute(item.element, item.type, persistedKey);
+            }
+            if (window.__XLATE__) {
+              if (!window.__XLATE__.map) { window.__XLATE__.map = {}; }
+              window.__XLATE__.map[persistedKey] = item.text;
+              if (!window.__XLATE__.reviewMap) { window.__XLATE__.reviewMap = {}; }
+              window.__XLATE__.reviewMap[persistedKey] = 1;
+            }
+            xlateDebug('[XLATE][Capture] Save success', persistedKey, response || '');
+            return true;
+          }).catch(function(err) {
+            detectedStrings.delete(item.dedupeKey);
+            xlateDebug('[XLATE][Capture] Save failed', item.key, err && err.message ? err.message : err);
+          });
+        })(saves[i], promises[i]);
+      }
+      xlateDebug('[XLATE][Capture] Flushed', saves.length, 'save_key calls as one batch');
+    }
+
+    // --- set_critical batch ---
+    if (_pendingCriticalCalls.length) {
+      var criticals = _pendingCriticalCalls.slice();
+      _pendingCriticalCalls = [];
+      Ajax.call(criticals);
+      xlateDebug('[XLATE][Capture] Flushed', criticals.length, 'set_critical calls as one batch');
+    }
   }
   Translator.capture.saveToDatabase = saveToDatabase;
   Translator.capture.saveToDatabase = saveToDatabase;

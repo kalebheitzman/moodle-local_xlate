@@ -254,6 +254,7 @@ class output {
             '.activity-description',
             '.primary-navigation',
             '#course-index',   // left drawer course index (dynamically populated by Moodle JS)
+            '#page-navbar',    // breadcrumb navigation
         ];
         $default_exclude_selectors = [
             '[data-block="calendar_month"]',
@@ -265,7 +266,6 @@ class output {
             '.path-admin',
             '.pagelayout-admin',
             '.pagelayout-maintenance',
-            '.path-mod-forum',
             '.forum-post-container',
             '.discussion-list',
             '[data-region="discussion-list-item"]',
@@ -279,7 +279,7 @@ class output {
             '.drawer-header',
             '.drawer-toggles',
             '.fixed-drawer',
-            '.breadcrumb',
+            // .breadcrumb REMOVED — ancestor exclusion via element.closest() blocked #page-navbar breadcrumb items
             '.page-footer',
             '.toast-wrapper',
             '.toast',
@@ -308,9 +308,10 @@ class output {
             '.activity-subtitle',
             '[data-region="activity-card"] .card-title',
 
-            // Page headings
+            // Page headings & navigation
             '.page-header-headings h1',
             '#page-header h1',
+            '#page-navbar .breadcrumb-item',
 
             // Quiz / assessment
             '.qtext',
