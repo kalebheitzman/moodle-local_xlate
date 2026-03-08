@@ -293,12 +293,12 @@ $string['pricing_value_invalid'] = 'Enter a numeric value (decimals supported).'
 $string['openai_prompt'] = 'Additional translation instructions';
 $string['openai_prompt_desc'] = 'Optional domain-specific context appended after the core translation prompt. Use this for subject matter guidance, theological or specialist terminology preferences, register or tone requirements, and content type descriptions. Core technical rules (HTML preservation, placeholder handling, JSON output format, control character sanitisation) and batch coherence instructions are always enforced automatically — there is no need to repeat them here.';
 $string['language_heading'] = 'Languages & Capture';
-$string['capture_selectors'] = 'Capture area selectors';
-$string['capture_selectors_desc'] = 'Only text within elements matching these CSS selectors will be captured for translation. One selector per line. Leave blank to capture everything.';
-$string['exclude_selectors'] = 'Exclude selectors';
-$string['exclude_selectors_desc'] = 'Elements matching these CSS selectors will be excluded from capture, even if inside a capture area. One selector per line. Common defaults included.';
-$string['excluded_paths'] = 'Exclude path prefixes';
-$string['excluded_paths_desc'] = 'Requests whose paths begin with one of these prefixes will never load the translator (useful for administrative or edit-only pages). One prefix per line.';
+$string['capture_selectors'] = 'Additional capture area selectors';
+$string['capture_selectors_desc'] = 'Site- or theme-specific CSS selectors to add on top of the built-in defaults. The built-in defaults always apply and cannot be removed here. One selector per line.';
+$string['exclude_selectors'] = 'Additional exclude selectors';
+$string['exclude_selectors_desc'] = 'Site- or theme-specific CSS selectors to exclude from capture, added on top of the built-in defaults. The built-in defaults always apply and cannot be removed here. One selector per line.';
+$string['excluded_paths'] = 'Additional exclude path prefixes';
+$string['excluded_paths_desc'] = 'Site-specific path prefixes to add on top of the built-in defaults. Requests whose paths begin with any of these prefixes will never load the translator. The built-in defaults always apply and cannot be removed here. One prefix per line.';
 
 // Language switcher + translation notice.
 $string['langswitcher_notice_label'] = 'AI-assisted translation';

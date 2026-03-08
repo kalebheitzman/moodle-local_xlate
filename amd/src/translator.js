@@ -2290,18 +2290,14 @@ define(['core/ajax'], function (Ajax) {
    * @param {TranslatorConfig} config Configuration object injected server-side.
    */
   function init(config) {
-    document.documentElement.classList.add('xlate-loading');
-
     if (config && Object.prototype.hasOwnProperty.call(config, 'courseEnabled') && config.courseEnabled === false) {
       xlateDebug('[XLATE] Course toggle disabled; skipping translator bootstrap.');
-      document.documentElement.classList.remove('xlate-loading');
       return;
     }
 
     // If editing mode is enabled, skip all capture/tagging logic
     if (config.isEditing) {
       xlateDebug('[XLATE] Edit mode detected (isEditing=true): skipping translation/capture logic.');
-      document.documentElement.classList.remove('xlate-loading');
       return;
     }
 
@@ -2345,10 +2341,10 @@ define(['core/ajax'], function (Ajax) {
 
     if (!window.__XLATE__.isTargetLang) {
       xlateDebug('[XLATE] Current language is not a configured target; skipping translation runtime.');
-      document.documentElement.classList.remove('xlate-loading');
       return;
     }
 
+    document.documentElement.classList.add('xlate-loading');
     initTranslationMode(config);
   }
   Translator.api.init = init;

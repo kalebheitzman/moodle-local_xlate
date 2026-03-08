@@ -75,8 +75,7 @@ class output {
             ]);
             return;
         }
-        
-        $hook->add_html('<style>html.xlate-loading body{visibility:hidden}</style>');
+
         // Debug marker
         $hook->add_html('<!-- XLATE HEAD HOOK FIRED -->');
     }
@@ -238,14 +237,80 @@ class output {
             ];
         }
 
-        // Output capture/exclude selectors as global JS variables
-        $capture_selectors = get_config('local_xlate', 'capture_selectors');
-        $exclude_selectors = get_config('local_xlate', 'exclude_selectors');
+        // Hardcoded defaults — always applied regardless of admin settings.
+        $default_capture_selectors = [
+            '#page-content',
+            '.page-context-header',
+            '.drawer-right',
+            '.course-content',
+            '.course-content [data-region="activity-card"]',
+            '.course-content [data-region="activity-information"]',
+            '.course-content [data-region="completion-info"]',
+            '.course-content [data-region="text"]',
+            '.course-content .instancename',
+            '.course-content .activity-subtitle',
+            '[data-region="activity-card"] .card-text',
+            '.course-content .summary .no-overflow',
+            '.activity-description',
+            '.primary-navigation',
+            '#course-index',   // left drawer course index (dynamically populated by Moodle JS)
+        ];
+        $default_exclude_selectors = [
+            '[data-block="calendar_month"]',
+            '[data-block="calendar_upcoming"]',
+            '[data-block="search_forums"]',
+            '[data-block="recent_activity"]',
+            '[data-block="admin_bookmarks"]',
+            '.activity-dates',
+            '.path-admin',
+            '.pagelayout-admin',
+            '.pagelayout-maintenance',
+            '.path-mod-forum',
+            '.forum-post-container',
+            '.discussion-list',
+            '[data-region="discussion-list-item"]',
+            '[data-region="post"]',
+            // .navbar REMOVED — ancestor exclusion via element.closest() blocked .primary-navigation
+            '#usernavigation',               // search, notifications, user menu, edit toggle
+            '.secondary-navigation',
+            // .nav-drawer REMOVED — ancestor of #course-index; blocked via element.closest()
+            // .drawer-left REMOVED — ancestor of #course-index; blocked via element.closest()
+            // .courseindex REMOVED — now a capture root via #course-index; was self-excluding
+            '.drawer-header',
+            '.drawer-toggles',
+            '.fixed-drawer',
+            '.breadcrumb',
+            '.page-footer',
+            '.toast-wrapper',
+            '.toast',
+            '.alert',
+            '.badge',
+            '.jumpmenu',
+            '._jswarning',
+            '.popover-region',
+            '.popover-region-container',
+            '.popover-region-toggle',
+            '.moodle-actionmenu',
+            '[role="dialog"]',
+        ];
+
+        // Merge admin-configured additions on top of the hardcoded defaults.
+        $extra_capture = get_config('local_xlate', 'capture_selectors');
+        $extra_exclude  = get_config('local_xlate', 'exclude_selectors');
+        $capture_selectors = array_values(array_unique(array_merge(
+            $default_capture_selectors,
+            $extra_capture ? preg_split('/\r?\n/', $extra_capture, -1, PREG_SPLIT_NO_EMPTY) : []
+        )));
+        $exclude_selectors = array_values(array_unique(array_merge(
+            $default_exclude_selectors,
+            $extra_exclude ? preg_split('/\r?\n/', $extra_exclude, -1, PREG_SPLIT_NO_EMPTY) : []
+        )));
+
         $debugflag = (defined('DEBUG_DEVELOPER') && (debugging() & DEBUG_DEVELOPER)) ? 'true' : 'false';
 
         $selectors_script = '<script>'
-            . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors ? preg_split('/\r?\n/', $capture_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . "\n"
-            . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors ? preg_split('/\r?\n/', $exclude_selectors, -1, PREG_SPLIT_NO_EMPTY) : []) . "\n"
+            . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors) . "\n"
+            . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors) . "\n"
             . 'window.XLATE_COURSEID = ' . json_encode($courseid) . "\n"
             . 'window.XLATE_DEBUG = ' . $debugflag . "\n"
             . 'window.XLATE_LANG_SWITCHER = ' . json_encode($language_switcher, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
@@ -285,6 +350,27 @@ class output {
             'showInlineIndicators' => false,
             'courseEnabled' => $courseenabled,
         ];
+
+        // For target-language users, inject a style element and add the xlate-loading
+        // class synchronously at the top of <body>. At this point all <head> stylesheets
+        // have been parsed, so our dynamically-appended style is last in source order —
+        // it wins cascade ties against theme CSS. We use color:transparent so layout and
+        // images remain visible while text is hidden during bundle fetch. A 5 s safety
+        // timeout removes the class if the JS pipeline fails entirely.
+        $fout_script = '';
+        if ($istargetlang && !$isediting) {
+            $fout_script = '<script>'
+                . '(function(){'
+                . 'var s=document.createElement("style");'
+                . 's.textContent="html.xlate-loading body *{color:transparent!important;text-shadow:none!important}'
+                . 'html.xlate-loading body *::placeholder{color:transparent!important}";'
+                . 'document.head.appendChild(s);'
+                . 'document.documentElement.classList.add("xlate-loading");'
+                . 'setTimeout(function(){document.documentElement.classList.remove("xlate-loading")},5000);'
+                . '})();'
+                . '</script>';
+        }
+        $hook->add_html($fout_script);
 
         $script = '<script>'
             . '(function(){'
@@ -448,16 +534,13 @@ class output {
 
     /**
      * Resolve the configured URL prefixes that should skip translator injection.
+     *
+     * Hardcoded defaults always apply; admin-configured entries are additive.
      */
     private static function get_excluded_paths(): array {
         $configured = get_config('local_xlate', 'excluded_paths');
-        $paths = [];
-        if (!empty($configured)) {
-            $paths = preg_split('/\r?\n/', $configured, -1, PREG_SPLIT_NO_EMPTY);
-        }
-        if (empty($paths)) {
-            $paths = self::default_excluded_paths();
-        }
+        $extras = $configured ? preg_split('/\r?\n/', $configured, -1, PREG_SPLIT_NO_EMPTY) : [];
+        $paths = array_merge(self::default_excluded_paths(), $extras);
         $normalized = [];
         foreach ($paths as $path) {
             $path = trim($path);
