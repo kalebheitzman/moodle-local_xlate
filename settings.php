@@ -137,6 +137,12 @@ if ($hassiteconfig) {
             get_string('excluded_paths', 'local_xlate'),
             get_string('excluded_paths_desc', 'local_xlate'),
             '', PARAM_TEXT));
+
+        // Additional critical selectors (additive — built-in defaults always apply).
+        $settings->add(new admin_setting_configtextarea('local_xlate/critical_selectors',
+            get_string('critical_selectors', 'local_xlate'),
+            get_string('critical_selectors_desc', 'local_xlate'),
+            '', PARAM_TEXT));
     }
 
     $ADMIN->add('localplugins', $settings);

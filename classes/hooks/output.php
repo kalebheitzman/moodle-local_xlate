@@ -294,9 +294,42 @@ class output {
             '[role="dialog"]',
         ];
 
+        // Hardcoded default critical selectors — always applied regardless of admin settings.
+        $default_critical_selectors = [
+            // Course structure
+            '.sectionname',
+            '.section-summary .no-overflow',
+            '.summary .no-overflow',
+
+            // Activity elements
+            '.instancename',
+            '.contentwithoutlink',
+            '.activity-description',
+            '.activity-subtitle',
+            '[data-region="activity-card"] .card-title',
+
+            // Page headings
+            '.page-header-headings h1',
+            '#page-header h1',
+
+            // Quiz / assessment
+            '.qtext',
+            '.formulation',
+            '.answer label',
+            '.prompt',
+            '.generalfeedback .text_to_html',
+            '.outcome .feedback',
+
+            // Book / lesson content headings
+            '.book_content h1',
+            '.book_content h2',
+            '.book_content h3',
+        ];
+
         // Merge admin-configured additions on top of the hardcoded defaults.
         $extra_capture = get_config('local_xlate', 'capture_selectors');
         $extra_exclude  = get_config('local_xlate', 'exclude_selectors');
+        $extra_critical = get_config('local_xlate', 'critical_selectors');
         $capture_selectors = array_values(array_unique(array_merge(
             $default_capture_selectors,
             $extra_capture ? preg_split('/\r?\n/', $extra_capture, -1, PREG_SPLIT_NO_EMPTY) : []
@@ -305,12 +338,17 @@ class output {
             $default_exclude_selectors,
             $extra_exclude ? preg_split('/\r?\n/', $extra_exclude, -1, PREG_SPLIT_NO_EMPTY) : []
         )));
+        $critical_selectors = array_values(array_unique(array_merge(
+            $default_critical_selectors,
+            $extra_critical ? preg_split('/\r?\n/', $extra_critical, -1, PREG_SPLIT_NO_EMPTY) : []
+        )));
 
         $debugflag = (defined('DEBUG_DEVELOPER') && (debugging() & DEBUG_DEVELOPER)) ? 'true' : 'false';
 
         $selectors_script = '<script>'
             . 'window.XLATE_CAPTURE_SELECTORS = ' . json_encode($capture_selectors) . "\n"
             . 'window.XLATE_EXCLUDE_SELECTORS = ' . json_encode($exclude_selectors) . "\n"
+            . 'window.XLATE_CRITICAL_SELECTORS = ' . json_encode($critical_selectors) . "\n"
             . 'window.XLATE_COURSEID = ' . json_encode($courseid) . "\n"
             . 'window.XLATE_DEBUG = ' . $debugflag . "\n"
             . 'window.XLATE_LANG_SWITCHER = ' . json_encode($language_switcher, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"

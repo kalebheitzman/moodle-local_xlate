@@ -299,6 +299,8 @@ $string['exclude_selectors'] = 'Additional exclude selectors';
 $string['exclude_selectors_desc'] = 'Site- or theme-specific CSS selectors to exclude from capture, added on top of the built-in defaults. The built-in defaults always apply and cannot be removed here. One selector per line.';
 $string['excluded_paths'] = 'Additional exclude path prefixes';
 $string['excluded_paths_desc'] = 'Site-specific path prefixes to add on top of the built-in defaults. Requests whose paths begin with any of these prefixes will never load the translator. The built-in defaults always apply and cannot be removed here. One prefix per line.';
+$string['critical_selectors'] = 'Additional critical CSS selectors';
+$string['critical_selectors_desc'] = 'CSS selectors whose matched elements will be auto-marked as critical during capture, in addition to the built-in Moodle defaults. Built-in defaults always apply and cannot be removed here. One selector per line.';
 
 // Language switcher + translation notice.
 $string['langswitcher_notice_label'] = 'AI-assisted translation';

@@ -28,6 +28,10 @@ define(['core/ajax'], function (Ajax) {
   var processThrottle = 250;
   var pendingTranslationKeys = new Set();
   var requestedTranslationKeys = new Set();
+
+  // Precomputed combined critical selector — built once on first use.
+  var _criticalCombined = null;
+  var _criticalCombinedBuilt = false;
   var missingFetchTimer = null;
   var indicatorStylesAdded = false;
   var BLOCK_CHILD_TAGS = [
@@ -1193,6 +1197,66 @@ define(['core/ajax'], function (Ajax) {
   Translator.capture.detectComponent = detectComponent;
 
   /**
+   * Check whether an element (or any of its ancestors) matches a critical selector.
+   *
+   * Uses a precomputed combined selector for an O(1) fast-path rejection so that
+   * non-critical elements (the vast majority) only pay for one DOM traversal instead
+   * of one per selector in the list.  The specific matching selector is identified
+   * in the slow path (only reached when the combined check returns true).
+   *
+   * @param {Element} element - The DOM element to test
+   * @return {{critical: boolean, selector: string|null}}
+   */
+  function isCriticalElement(element) {
+    var selectors = window.XLATE_CRITICAL_SELECTORS;
+    if (!selectors || !Array.isArray(selectors) || !selectors.length) {
+      return { critical: false, selector: null };
+    }
+
+    // Build combined selector once per page load.
+    if (!_criticalCombinedBuilt) {
+      _criticalCombinedBuilt = true;
+      var valid = [];
+      for (var j = 0; j < selectors.length; j++) {
+        if (selectors[j]) { valid.push(selectors[j]); }
+      }
+      _criticalCombined = valid.length ? valid.join(',') : null;
+    }
+
+    if (!_criticalCombined) {
+      return { critical: false, selector: null };
+    }
+
+    // Fast-path: one combined DOM traversal — rejects non-critical elements cheaply.
+    var isMatch = false;
+    try {
+      isMatch = element.matches(_criticalCombined) ||
+                !!(element.closest && element.closest(_criticalCombined));
+    } catch (e) {
+      // Combined selector invalid in this browser; fall through to individual checks.
+    }
+
+    if (!isMatch) {
+      return { critical: false, selector: null };
+    }
+
+    // Slow-path: find the specific selector that matched (needed for context field).
+    for (var i = 0; i < selectors.length; i++) {
+      var sel = selectors[i];
+      if (!sel) { continue; }
+      try {
+        if (element.matches(sel) || (element.closest && element.closest(sel))) {
+          return { critical: true, selector: sel };
+        }
+      } catch (e) {
+        xlateDebug('[XLATE][DEBUG] Invalid critical selector:', sel, e);
+      }
+    }
+
+    return { critical: false, selector: null };
+  }
+
+  /**
    * Save translatable string to database
    * @param {Element} element - The element being saved
    * @param {string} text - The text content
@@ -1211,6 +1275,31 @@ define(['core/ajax'], function (Ajax) {
       var existingValue = (existingMap[key] || '').trim();
       if (existingValue === text.trim()) {
         xlateDebug('[XLATE][Capture] Skip save - identical text already stored', key);
+        // The key is already captured. Still check whether its critical flag needs
+        // updating — this is how pre-deployment keys get marked as critical without
+        // a full re-save.
+        var critMap = (window.__XLATE__ && window.__XLATE__.criticalMap) || {};
+        if (!critMap[key]) {
+          var critCheck = isCriticalElement(element);
+          if (critCheck.critical) {
+            var critCourseId = 0;
+            if (typeof window !== 'undefined' && typeof window.XLATE_COURSEID !== 'undefined') {
+              critCourseId = window.XLATE_COURSEID;
+            } else if (typeof M !== 'undefined' && M.cfg && M.cfg.courseid) {
+              critCourseId = M.cfg.courseid;
+            }
+            // Optimistically mark in criticalMap so we don't re-call on the same page.
+            if (window.__XLATE__) {
+              if (!window.__XLATE__.criticalMap) { window.__XLATE__.criticalMap = {}; }
+              window.__XLATE__.criticalMap[key] = 1;
+            }
+            Ajax.call([{
+              methodname: 'local_xlate_set_critical',
+              args: { key: key, critical: true, courseid: critCourseId }
+            }]);
+            xlateDebug('[XLATE][Capture] Marking existing key as critical', key);
+          }
+        }
         return;
       }
     }
@@ -1239,6 +1328,7 @@ define(['core/ajax'], function (Ajax) {
       (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
     var reviewedFlag = (curLang === sourceLang) ? 1 : 0;
 
+    var criticalResult = isCriticalElement(element);
     var payload = {
       component: component,
       key: key,
@@ -1247,7 +1337,11 @@ define(['core/ajax'], function (Ajax) {
       translation: text,
       reviewed: reviewedFlag,
       courseid: pageCourseId,
-      context: component
+      context: JSON.stringify({
+        component: component,
+        criticalSelector: criticalResult.selector || null
+      }),
+      critical: criticalResult.critical ? 1 : 0
     };
 
     xlateDebug('[XLATE][Capture] Ajax save payload', {
