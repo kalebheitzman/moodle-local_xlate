@@ -171,24 +171,6 @@ class backend {
                     return ['ok' => false, 'errors' => ['rate_limited']];
                 }
 
-                // Some models (e.g. gpt-5, o-series reasoning models) only support the
-                // default temperature and reject any custom value with a 400. Detect this,
-                // strip temperature from the payload, and retry immediately.
-                if ($httpcode === 400 && $attempt < $maxattempts) {
-                    $errbody = is_string($result) ? json_decode($result, true) : null;
-                    if (
-                        isset($errbody['error']['code']) &&
-                        $errbody['error']['code'] === 'unsupported_value' &&
-                        isset($errbody['error']['param']) &&
-                        $errbody['error']['param'] === 'temperature'
-                    ) {
-                        debugging('[local_xlate] Model does not support custom temperature; retrying without it.', DEBUG_DEVELOPER);
-                        unset($payload['temperature']);
-                        $postdata = json_encode($payload);
-                        continue;
-                    }
-                }
-
                 // For other transient-like failures (httpcode 0 or 5xx), retry if attempts remain.
                 if ($attempt < $maxattempts) {
                     // Exponential-ish backoff: 2, then 4 seconds.
@@ -500,17 +482,21 @@ class backend {
 
         // Hardcoded core prompt — always present regardless of admin settings.
         // Covers the technical rules that must never be omitted: role, HTML/placeholder
-        // preservation, natural fluency, and control character sanitisation.
+        // preservation, natural fluency, grammar, cultural adaptation, and control character sanitisation.
         $coreprompt = 'You are a professional translator for a learning management system. '
             . 'Translate UI strings accurately and naturally into the target language.' . "\n\n"
             . 'Rules you must always follow:' . "\n"
             . '1. Preserve all HTML tags and attributes exactly — translate only the visible text content between tags.' . "\n"
-            . '2. Preserve all placeholder variables exactly as they appear (e.g. {$a}, %s, %d, {placeholder}). Never translate, modify, or omit them.' . "\n"
-            . '3. Maintain the original tone and register of the source text.' . "\n"
-            . '4. Return translations that read naturally in the target language — avoid literal word-for-word translations.' . "\n"
-            . '5. Never add explanatory text, footnotes, or commentary to the translation.' . "\n"
-            . '6. If a string contains only a placeholder or HTML with no translatable text, return it unchanged.' . "\n"
-            . '7. Translated strings must contain no NUL bytes or ASCII control characters (U+0000–U+001F except tab/newline).';
+            . '2. Preserve all placeholder variables exactly as they appear (e.g. {$a}, %s, %d). Never translate, modify, or omit them. If a string contains only placeholders or HTML with no translatable text, return it unchanged.' . "\n"
+            . '3. Translate the meaning faithfully — do not omit, add, or distort any meaning present in the source string, even when rephrasing for naturalness.' . "\n"
+            . '4. Translate naturally and idiomatically, preserving the tone, style, and rhetorical intent of the source. Avoid literal word-for-word translations and apply economy of expression: prefer the shortest natural equivalent that communicates the meaning unambiguously. Never add explanatory text, footnotes, or commentary.' . "\n"
+            . '5. Apply grammatically correct inflection — including verb conjugation, gender agreement, adjective agreement, case endings, and plural forms. Do not default to masculine or base forms when context requires otherwise. For numeric placeholders (e.g. %d, {$a}), use the most appropriate plural form for the target language; if uncertain, prefer the most general form that works across counts.' . "\n"
+            . '6. Be consistent within a batch: translate the same term the same way in every string unless a grammatical variation is required.' . "\n"
+            . '7. UI strings (buttons, labels, headings) should be concise and use the imperative or noun form conventional for interfaces in the target language.' . "\n"
+            . '8. Adapt cultural references appropriately — including punctuation conventions, date and number formats, and culturally loaded expressions — to match the norms of the target language and region.' . "\n"
+            . '9. Do not translate proper nouns, brand names, or product names unless a widely accepted localised equivalent exists. Retain technical terms and acronyms from the source unless the target language has a standard equivalent.' . "\n"
+            . '10. If a source string is ambiguous or poorly written, make the most conservative interpretation and preserve the ambiguity in the translation rather than resolving it. Do not silently assume intent.' . "\n"
+            . '11. Translated strings must contain no NUL bytes or ASCII control characters (U+0000–U+001F except tab/newline). For languages using non-Latin scripts, always use the native script — do not romanize or transliterate unless the term has an established romanized form.';
 
         // Domain-specific additional instructions from admin settings (e.g. theological guidance).
         // The setting label is "Additional translation instructions" — it is appended after the core.
@@ -600,7 +586,6 @@ class backend {
             ],
             'functions'     => $functions,
             'function_call' => ['name' => 'translate_batch'],
-            'temperature'   => isset($options['temperature']) ? (float)$options['temperature'] : 0.1,
         ];
         if (!empty($options['max_tokens'])) {
             $payload['max_tokens'] = (int)$options['max_tokens'];
