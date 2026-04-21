@@ -432,6 +432,91 @@ class backend {
     }
 
     /**
+     * Return per-language Tier 2 appendix text for the system prompt lang block.
+     *
+     * Appendices target real LLM failure modes for morphologically complex languages.
+     * Only languages with known systematic issues have an entry; all others return ''.
+     * Language matching strips the region suffix so 'ar_sa' and 'ar' both match 'ar'.
+     *
+     * @param string $lang Target language code (e.g. 'uk', 'pl', 'ar_sa').
+     * @return string Appendix text (starts with "\n\n") or empty string.
+     */
+    private static function get_lang_appendix($lang) {
+        $base = strtolower(explode('_', $lang)[0]);
+        switch ($base) {
+            case 'ar':
+                return "\n\n"
+                    . "Arabic-specific rules:\n"
+                    . "- Use Modern Standard Arabic (MSA / الفصحى) throughout. Do not use dialect forms (Egyptian, Levantine, Gulf, etc.) even if they sound more natural to a regional audience.\n"
+                    . "- Apply full tashkeel (diacritical marks) only when it is present in the source material. For unvocalised source text, produce unvocalised output — do not add diacritics.\n"
+                    . "- Dual number: use the dual suffix (-ان/-ين) when the source explicitly refers to exactly two items. Do not use the dual as a stylistic choice for plural strings.\n"
+                    . "- Broken plural (جمع التكسير): always use the grammatically correct broken plural for the noun in question rather than defaulting to the sound plural suffix (-ون/-ات), which is incorrect for many common nouns.\n"
+                    . "- Numerals 3–10 govern the opposite grammatical gender of the noun they count (rule of gender polarity). Apply this correctly — do not default the numeral gender to masculine.\n"
+                    . "- Right-to-left punctuation: place punctuation at the logical end of the RTL string. Do not mirror Latin punctuation placement.\n"
+                    . "- Register default: formal (رسمي). Use formal verb forms and avoid colloquial contractions.";
+            case 'bg':
+                return "\n\n"
+                    . "Bulgarian-specific rules:\n"
+                    . "- Bulgarian has no grammatical cases for nouns (except the vocative and a residual dative in pronouns). Do not invent case endings.\n"
+                    . "- Definiteness is marked by a postfixed definite article, not a separate word. Apply the correct article form: -ът/-ят (m. subject), -а/-я (m. object/other contexts), -та (f.), -то (n.), -те (pl.). Choose the subject vs. object form based on the syntactic role of the noun in the translation.\n"
+                    . "- Verb aspect (svyrshen / nesyvrshen): choose the perfective or imperfective aspect appropriate to the context. Button labels and one-off actions typically use perfective; ongoing or habitual actions use imperfective.\n"
+                    . "- Register default: neutral-formal (неутрално-официален). Use the formal second-person plural (Вие) for direct address in UI strings rather than informal ти.";
+            case 'cs':
+                return "\n\n"
+                    . "Czech-specific rules:\n"
+                    . "- Czech has seven grammatical cases. Assign the correct case to every noun, pronoun, and adjective based on its syntactic function. Do not default to the nominative for non-subject positions.\n"
+                    . "- Aspect pairs: prefer the perfective aspect for completed, one-off actions (button labels, success messages) and the imperfective for ongoing states or settings descriptions.\n"
+                    . "- Plural count agreement: Czech has three count classes — singular (1), paucal (2–4), and plural (5+). For strings with a numeric placeholder, supply the form for 5+ unless context makes a smaller count unambiguous, since that form is most general.\n"
+                    . "- Genitive of negation: use the genitive case (not accusative) after negated verbs when the negation scopes over the object.\n"
+                    . "- Register default: neutral-formal (neutrální-formální). Use the formal second-person plural (Vy / vykání) in UI strings that address the user directly.";
+            case 'hu':
+                return "\n\n"
+                    . "Hungarian-specific rules:\n"
+                    . "- Vowel harmony: all suffixes must harmonise with the vowel inventory of the stem (back vowels: a/á/o/ó/u/ú → back-vowel suffix; front vowels: e/é/i/í/ö/ő/ü/ű → front-vowel suffix). This applies to case suffixes, possessive suffixes, verbal conjugation endings, and derivational suffixes.\n"
+                    . "- Hungarian marks the object with the accusative suffix (-t/-ot/-at/-et/-öt depending on the stem). Do not omit the accusative on definite direct objects.\n"
+                    . "- Definite vs. indefinite conjugation: use the definite conjugation when the verb has a definite object (including third-person object pronouns and noun phrases with a definite article), and the indefinite conjugation otherwise.\n"
+                    . "- Postpositions: Hungarian uses postpositions, not prepositions. Ensure the postposition follows its noun phrase.\n"
+                    . "- Compound words are written as single words in Hungarian when the components form a stable lexical unit. Do not insert spaces between the parts of an established compound.\n"
+                    . "- Register default: formal (magázó). Use the third-person singular polite pronoun (Ön / Önnek) for direct address in UI strings rather than the informal te.";
+            case 'pl':
+                return "\n\n"
+                    . "Polish-specific rules:\n"
+                    . "- Polish has seven grammatical cases. Assign the correct case to every noun, pronoun, and adjective. Do not default to the nominative for non-subject positions.\n"
+                    . "- Plural count agreement: Polish has four count classes — singular (1), paucal (2–4), plural (5–21, 22–24 etc. require the paucal again for the last digit 2–4, and plural for 5–9 and 0 and 11–19). For strings with a numeric placeholder, supply the genitive plural form (most general and correct for large numbers) unless context makes a specific count unambiguous.\n"
+                    . "- Verbal aspect: use the perfective aspect for one-off completed actions (button labels) and the imperfective for ongoing descriptions or settings.\n"
+                    . "- Animate vs. inanimate masculine: in the accusative singular, animate masculine nouns take the genitive form. Apply this rule correctly.\n"
+                    . "- Register default: formal (formalny). Use the third-person plural polite address (Pan/Pani/Państwo + third-person verb) for direct address in UI strings rather than the informal second person.";
+            case 'ro':
+                return "\n\n"
+                    . "Romanian-specific rules:\n"
+                    . "- Comma-below letters: always use the correct Unicode characters — ș (U+0219, s with comma below) and ț (U+021B, t with comma below). Never substitute the visually similar cedilla variants ş (U+015F) or ţ (U+0163); they are orthographically incorrect in modern Romanian.\n"
+                    . "- Romanian has three genders (masculine, feminine, neuter). Neuter nouns behave like masculine in the singular and feminine in the plural. Ensure adjective agreement follows the correct pattern for neuter nouns.\n"
+                    . "- Definiteness is expressed by a postfixed definite article. Apply the correct form for gender, number, and case (e.g. -ul/-le for m.sg., -a for f.sg., -i for m.pl., -le for f./n.pl.).\n"
+                    . "- Romanian has five cases; nominative/accusative share one form, and genitive/dative share another. Ensure the genitive/dative form (with -ului/-ei/-lor) is used correctly for possession and indirect objects.\n"
+                    . "- Register default: formal (formal). Use the polite second-person pronoun dumneavoastră (+ second-person plural verb agreement) for direct address in UI strings rather than informal tu.";
+            case 'tr':
+                return "\n\n"
+                    . "Turkish-specific rules:\n"
+                    . "- I/ı dotted/dotless distinction: Turkish has four high vowels — İ (uppercase dotted i), i (lowercase dotted i), I (uppercase dotless i), ı (lowercase dotless i). Never conflate them. Uppercasing 'i' must produce 'İ', not 'I'; uppercasing 'ı' must produce 'I', not 'İ'. Verify that your output respects this in any mixed-case words.\n"
+                    . "- Vowel harmony: all suffixes must harmonise with the last vowel of the stem. The two harmony axes are: back/front (a, ı, o, u vs. e, i, ö, ü) and rounded/unrounded. Apply four-way harmony (-ı/-i/-u/-ü) and two-way harmony (-a/-e) correctly.\n"
+                    . "- Consonant mutation (ünsüz değişimi): when a suffix beginning with a voiced consonant is attached to a stem ending in a voiceless consonant, apply the appropriate assimilation (e.g. t→d, ç→c, k→ğ in certain positions).\n"
+                    . "- Turkish is agglutinative; build complex forms by chaining the correct suffixes rather than using periphrastic constructions where a single suffixed form is the norm.\n"
+                    . "- Register default: formal-polite (resmi-nazik). Use second-person plural (siz + plural verb ending) for direct address in UI strings rather than informal sen.";
+            case 'uk':
+                return "\n\n"
+                    . "Ukrainian-specific rules:\n"
+                    . "- Ukrainian has seven grammatical cases. Assign the correct case to every noun, pronoun, and adjective based on its syntactic function. Do not default to the nominative for non-subject positions.\n"
+                    . "- The Ukrainian letter І (и з крапкою, U+0406) is distinct from the Cyrillic И (U+0418) and the Latin I. Use І/і (U+0406/U+0456) in Ukrainian words, not the Cyrillic И or Latin I.\n"
+                    . "- The apostrophe (') is used in Ukrainian before я, ю, є, ї after labial consonants (б, п, в, м, ф), р, and the prefix. Use the right single quotation mark (U+2019) or the straight apostrophe (U+0027) — never the Cyrillic ъ or other substitutes.\n"
+                    . "- Plural count agreement: Ukrainian has three count classes — singular (1, 21, 31…), paucal (2–4, 22–24…), and plural (5–20, 25–30…). For strings with a numeric placeholder, supply the genitive plural form unless context makes a smaller count unambiguous.\n"
+                    . "- Verbal aspect: use perfective for completed one-off actions (button labels, confirmations) and imperfective for descriptions of ongoing states or settings.\n"
+                    . "- Register default: formal (офіційний). Use the formal second-person plural (Ви + plural verb) for direct address in UI strings rather than informal ти.";
+            default:
+                return '';
+        }
+    }
+
+    /**
      * Build the OpenAI-compatible request payload for a translation batch.
      *
      * Extracted from translate_batch() so CLI/debug tooling can inspect the
@@ -482,21 +567,24 @@ class backend {
 
         // Hardcoded core prompt — always present regardless of admin settings.
         // Covers the technical rules that must never be omitted: role, HTML/placeholder
-        // preservation, natural fluency, grammar, cultural adaptation, and control character sanitisation.
+        // preservation, natural fluency, grammar, register, cultural adaptation, and
+        // control character sanitisation. Appendix references in rules 5 and 6 point
+        // to the per-language Tier 2 appendices added to the lang block.
         $coreprompt = 'You are a professional translator for a learning management system. '
             . 'Translate UI strings accurately and naturally into the target language.' . "\n\n"
             . 'Rules you must always follow:' . "\n"
             . '1. Preserve all HTML tags and attributes exactly — translate only the visible text content between tags.' . "\n"
             . '2. Preserve all placeholder variables exactly as they appear (e.g. {$a}, %s, %d). Never translate, modify, or omit them. If a string contains only placeholders or HTML with no translatable text, return it unchanged.' . "\n"
-            . '3. Translate the meaning faithfully — do not omit, add, or distort any meaning present in the source string, even when rephrasing for naturalness.' . "\n"
-            . '4. Translate naturally and idiomatically, preserving the tone, style, and rhetorical intent of the source. Avoid literal word-for-word translations and apply economy of expression: prefer the shortest natural equivalent that communicates the meaning unambiguously. Never add explanatory text, footnotes, or commentary.' . "\n"
-            . '5. Apply grammatically correct inflection — including verb conjugation, gender agreement, adjective agreement, case endings, and plural forms. Do not default to masculine or base forms when context requires otherwise. For numeric placeholders (e.g. %d, {$a}), use the most appropriate plural form for the target language; if uncertain, prefer the most general form that works across counts.' . "\n"
-            . '6. Be consistent within a batch: translate the same term the same way in every string unless a grammatical variation is required.' . "\n"
-            . '7. UI strings (buttons, labels, headings) should be concise and use the imperative or noun form conventional for interfaces in the target language.' . "\n"
-            . '8. Adapt cultural references appropriately — including punctuation conventions, date and number formats, and culturally loaded expressions — to match the norms of the target language and region.' . "\n"
-            . '9. Do not translate proper nouns, brand names, or product names unless a widely accepted localised equivalent exists. Retain technical terms and acronyms from the source unless the target language has a standard equivalent.' . "\n"
-            . '10. If a source string is ambiguous or poorly written, make the most conservative interpretation and preserve the ambiguity in the translation rather than resolving it. Do not silently assume intent.' . "\n"
-            . '11. Translated strings must contain no NUL bytes or ASCII control characters (U+0000–U+001F except tab/newline). For languages using non-Latin scripts, always use the native script — do not romanize or transliterate unless the term has an established romanized form.';
+            . '3. Translate the meaning faithfully — do not omit, add, or distort any meaning present in the source string, even when rephrasing for naturalness. When faithfulness and naturalness conflict, prefer naturalness provided no meaning is lost or distorted.' . "\n"
+            . '4. Translate naturally and idiomatically, preserving the tone, style, and rhetorical intent of the source. Restructuring sentence syntax is acceptable and often necessary — prioritise natural word order and phrasing in the target language over the structure of the source. Avoid calques and word-for-word renderings. Apply economy of expression: prefer the shortest natural equivalent that communicates the meaning unambiguously. Never add explanatory text, footnotes, or commentary.' . "\n"
+            . '5. Apply grammatically correct inflection — including verb conjugation, gender agreement, adjective agreement, case endings, and plural forms. Do not default to uninflected or base forms when context requires otherwise. For numeric placeholders (e.g. %d, {$a}), use the plural form most appropriate for the target language; if uncertain, prefer the most general form that works across counts. See per-language appendices for languages with complex plural or number systems.' . "\n"
+            . '6. Use a consistent register throughout. Map the register of the source (formal, informal, neutral) to the closest equivalent in the target language. Where the source register is ambiguous, default to the register conventional for software UI in that language. See per-language appendices for specific register defaults.' . "\n"
+            . '7. Be consistent within a batch: translate the same term the same way in every string unless a grammatical variation is required.' . "\n"
+            . '8. UI strings (buttons, labels, headings) should be concise and use the imperative or noun form conventional for interfaces in the target language.' . "\n"
+            . '9. Adapt cultural references appropriately — including punctuation conventions, date and number formats, and culturally loaded expressions — to match the norms of the target language and region.' . "\n"
+            . '10. Do not translate proper nouns, brand names, or product names unless a widely accepted localised equivalent exists. Retain technical terms and acronyms from the source unless the target language has a standard equivalent.' . "\n"
+            . '11. If a source string is ambiguous or poorly written, make the most conservative interpretation and preserve the ambiguity in the translation rather than resolving it silently.' . "\n"
+            . '12. Translated strings must contain no NUL bytes or ASCII control characters (U+0000–U+001F except tab/newline). For languages using non-Latin scripts, always use the native script — do not romanise or transliterate unless the term has an established romanised form in that language community.';
 
         // Domain-specific additional instructions from admin settings (e.g. theological guidance).
         // The setting label is "Additional translation instructions" — it is appended after the core.
@@ -530,11 +618,13 @@ class backend {
             . "in the same order. Each entry needs 'id' (copied from input) and 'translated' (the translated string). "
             . "Optionally include 'applied_glossary_terms' (array of {term, replacement}) and 'warnings' (array of strings).";
 
-        // Split the system prompt into two logical blocks with different stability profiles:
-        //   Static block  — core rules + batch instructions; never changes across requests.
-        //   Lang+glossary — language pair + full glossary; stable per language pair.
+        // Split the system prompt into three logical blocks with different stability profiles:
+        //   Static block   — Tier 1 rules + admin prompt + batch instruction; globally stable.
+        //   Lang block     — "Translate from X to Y." + Tier 2 per-language appendix; per-lang stable.
+        //   Glossary block — full glossary; per-(lang+glossary) stable, omitted when empty.
         // This split maximises prompt-cache hits on both OpenAI (automatic prefix caching)
-        // and Anthropic (explicit cache_control breakpoints).
+        // and Anthropic (explicit cache_control breakpoints). For Anthropic a glossary edit
+        // only evicts the third block; for OpenAI the stable prefix still benefits from caching.
         $staticblock = $coreprompt;
         if (!empty($additionalprompt)) {
             $staticblock .= "\n\n" . $additionalprompt;
@@ -542,30 +632,46 @@ class backend {
         $staticblock .= $batchinstruction;
 
         $langblock = "\n\nTranslate from {$sourcelang} to {$targetlang}.";
-        $langblock .= $glossaryinstruction;
+        $langappendix = self::get_lang_appendix($targetlang);
+        if (!empty($langappendix)) {
+            $langblock .= $langappendix;
+        }
 
         // Build messages array; Anthropic requires explicit cache_control markers while
         // OpenAI caches automatically from a stable prompt prefix.
+        // Three-block split for Anthropic:
+        //   Block 1 (static)  — Tier 1 rules + admin prompt + batch instruction; global cache.
+        //   Block 2 (per lang) — "Translate from X to Y." + Tier 2 appendix; per-lang cache.
+        //   Block 3 (glossary) — glossary terms; per-(lang+glossary) cache, omitted when empty.
+        // This means a glossary edit only evicts block 3; blocks 1 and 2 remain cached.
         $provider = self::detect_provider($endpoint);
         if ($provider === 'anthropic') {
+            $contentblocks = [
+                [
+                    'type'          => 'text',
+                    'text'          => $staticblock,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ],
+                [
+                    'type'          => 'text',
+                    'text'          => $langblock,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ],
+            ];
+            if (!empty($glossaryinstruction)) {
+                $contentblocks[] = [
+                    'type'          => 'text',
+                    'text'          => $glossaryinstruction,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ];
+            }
             $systemmessage = [
                 'role'    => 'system',
-                'content' => [
-                    [
-                        'type'          => 'text',
-                        'text'          => $staticblock,
-                        'cache_control' => ['type' => 'ephemeral'],
-                    ],
-                    [
-                        'type'          => 'text',
-                        'text'          => $langblock,
-                        'cache_control' => ['type' => 'ephemeral'],
-                    ],
-                ],
+                'content' => $contentblocks,
             ];
         } else {
             // OpenAI / Azure: single string, automatic prefix caching.
-            $systemmessage = ['role' => 'system', 'content' => $staticblock . $langblock];
+            $systemmessage = ['role' => 'system', 'content' => $staticblock . $langblock . $glossaryinstruction];
         }
 
         // User message: the batch to translate.

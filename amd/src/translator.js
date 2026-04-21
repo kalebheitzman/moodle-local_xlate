@@ -278,6 +278,8 @@ define(['core/ajax'], function (Ajax) {
    */
   function setElementHtml(element, html) {
     var saved = [];
+    // { node, prepend } — prepend=true means the img preceded any text content.
+    var savedImgs = [];
     // Only search for .accesshide children when the element has child elements
     // at all — the vast majority of translated nodes are plain text leaves.
     if (element.firstElementChild) {
@@ -285,8 +287,30 @@ define(['core/ajax'], function (Ajax) {
       for (var i = 0; i < ahNodes.length; i++) {
         saved.push(ahNodes[i]);
       }
+      // Preserve <img> elements that sit alongside translatable text.  They are
+      // stripped by sanitizeTranslationHtml (not in ALLOWED_INLINE_TAGS) so they
+      // are never part of the stored translation — without this they disappear
+      // when innerHTML is replaced.  Track whether each img preceded any text so
+      // we can restore it to roughly the same position (prepend vs append).
+      var hadText = false;
+      var cn = element.childNodes;
+      for (var j = 0; j < cn.length; j++) {
+        if (cn[j].nodeType === 3 && cn[j].textContent.trim()) {
+          hadText = true;
+        } else if (cn[j].nodeType === 1 && cn[j].tagName.toLowerCase() === 'img') {
+          savedImgs.push({ node: cn[j], prepend: !hadText });
+        }
+      }
     }
     element.innerHTML = html;
+    // Re-insert <img> nodes in their original relative position.
+    for (var k = 0; k < savedImgs.length; k++) {
+      if (savedImgs[k].prepend) {
+        element.insertBefore(savedImgs[k].node, element.firstChild);
+      } else {
+        element.appendChild(savedImgs[k].node);
+      }
+    }
     for (var i = 0; i < saved.length; i++) {
       element.appendChild(saved[i]);
     }
