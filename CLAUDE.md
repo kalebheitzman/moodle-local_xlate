@@ -430,6 +430,7 @@ All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`.
 | `find_key.php` | Search for keys by source text |
 | `rehash_keys_dryrun.php` | Preview xkey migration — shows counts, merges, conflicts. No DB changes. |
 | `rehash_keys.php` | Execute xkey migration — recomputes all xkeys, merges duplicates, preserves reviewed translations. **Take DB backup first.** |
+| `repair_course_associations.php` | Create missing `local_xlate_key_course` rows for a course. Fixes keys captured on system-context pages (courseid=0) that are invisible to autotranslation and manage.php courseid filters. `--global-only` restricts to keys with zero existing associations. `--key=XKEY` targets one key. `--enqueue` queues autotranslation after repair. |
 
 ---
 
@@ -479,6 +480,21 @@ sudo -u www-data php local/xlate/cli/rehash_keys_dryrun.php --verbose
 
 # Run xkey hash migration (TAKE DB BACKUP FIRST)
 sudo -u www-data php local/xlate/cli/rehash_keys.php
+
+# Investigate a specific translation key (shows source, component, course associations, translations)
+sudo -u www-data php local/xlate/cli/find_key.php --key=81sjhr1ym7ht
+
+# Preview missing course associations for a course
+sudo -u www-data php local/xlate/cli/repair_course_associations.php --courseid=42 --dry-run
+
+# Repair only global keys (no existing associations) — safest
+sudo -u www-data php local/xlate/cli/repair_course_associations.php --courseid=42 --global-only
+
+# Repair all missing associations and enqueue autotranslation in one step
+sudo -u www-data php local/xlate/cli/repair_course_associations.php --courseid=42 --enqueue
+
+# Repair a single specific key for a course
+sudo -u www-data php local/xlate/cli/repair_course_associations.php --courseid=42 --key=81sjhr1ym7ht --enqueue
 ```
 
 ---

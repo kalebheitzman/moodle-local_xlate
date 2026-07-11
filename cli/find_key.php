@@ -64,23 +64,37 @@ if (!$record) {
 
 cli_writeln('--- Key Record ---');
 cli_writeln('ID:        ' . $record->id);
+cli_writeln('XKey:      ' . $record->xkey);
 cli_writeln('Component: ' . $record->component);
+cli_writeln('Critical:  ' . ($record->critical ? 'yes' : 'no'));
 cli_writeln('Source:    ' . $record->source);
-cli_writeln('Created:   ' . ($record->ctime ? userdate($record->ctime) : '')); 
+cli_writeln('Created:   ' . ($record->ctime ? userdate($record->ctime) : ''));
 cli_writeln('Modified:  ' . ($record->mtime ? userdate($record->mtime) : ''));
+
+$associations = $DB->get_records('local_xlate_key_course', ['keyid' => $record->id]);
+cli_writeln("\n--- Course Associations (" . count($associations) . ") ---");
+if (empty($associations)) {
+    cli_writeln('(none — this key has no course associations)');
+} else {
+    foreach ($associations as $assoc) {
+        $course = $DB->get_record('course', ['id' => $assoc->courseid], 'id,shortname,fullname', IGNORE_MISSING);
+        $label = $course ? "  courseid={$assoc->courseid}  [{$course->shortname}] {$course->fullname}" : "  courseid={$assoc->courseid}  (course not found)";
+        cli_writeln($label);
+    }
+}
 
 $translations = $DB->get_records('local_xlate_tr', ['keyid' => $record->id]);
 if (empty($translations)) {
-    cli_writeln('No translations found for this key.');
+    cli_writeln("\nNo translations found for this key.");
     exit(0);
 }
 
-cli_writeln("\n--- Translations ---");
+cli_writeln("\n--- Translations (" . count($translations) . ") ---");
 foreach ($translations as $tr) {
-    cli_writeln('Lang:   ' . $tr->lang);
-    cli_writeln('Status: ' . $tr->status);
-    cli_writeln('Text:   ' . $tr->text);
+    cli_writeln('Lang:     ' . $tr->lang);
+    cli_writeln('Status:   ' . $tr->status);
     cli_writeln('Reviewed: ' . $tr->reviewed);
-    cli_writeln('mtime: ' . ($tr->mtime ? userdate($tr->mtime) : ''));
+    cli_writeln('Text:     ' . $tr->text);
+    cli_writeln('mtime:    ' . ($tr->mtime ? userdate($tr->mtime) : ''));
     cli_writeln('-------------------------');
 }

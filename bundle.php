@@ -136,6 +136,15 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, max-age=120');
 
 try {
+    // Backfill any missing course associations before assembling the bundle.
+    // This makes the plugin self-healing: the first page load by any user on a
+    // course page wires up missing local_xlate_key_course rows so the
+    // autotranslation task finds them on its next run, without requiring a
+    // manager to browse the page in source language first.
+    if ($courseparam > 0 && !empty($keys)) {
+        \local_xlate\local\api::backfill_key_course_associations($keys, $courseparam);
+    }
+
     $bundle = \local_xlate\local\api::get_keys_bundle_with_associations($lang, $keys, $courseparam);
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {

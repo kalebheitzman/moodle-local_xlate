@@ -235,6 +235,65 @@ class api {
     }
     
     /**
+     * Ensure every key in $xkeys has a local_xlate_key_course row for $courseid.
+     *
+     * Called automatically from bundle.php on every course-context bundle request.
+     * Any key that exists in local_xlate_key but lacks an association for this
+     * course gets one created here, making the autotranslation task pick it up on
+     * its next run without requiring a manager capture-mode walk.
+     *
+     * @param array<int,string> $xkeys Raw xkey strings from the bundle request.
+     * @param int $courseid Course to associate with.
+     * @return int Number of new associations created.
+     */
+    public static function backfill_key_course_associations(array $xkeys, int $courseid): int {
+        global $DB;
+
+        if ($courseid <= 0 || empty($xkeys)) {
+            return 0;
+        }
+
+        $clean = array_values(array_unique(array_filter(array_map('strval', $xkeys), static function ($k) {
+            return preg_match('/^[a-z0-9\-_:]{3,64}$/i', $k);
+        })));
+
+        if (empty($clean)) {
+            return 0;
+        }
+
+        list($insql, $inparams) = $DB->get_in_or_equal($clean, SQL_PARAMS_NAMED, 'bk');
+        $params = array_merge(['courseid' => $courseid], $inparams);
+
+        $sql = "SELECT k.id
+                  FROM {local_xlate_key} k
+                 WHERE k.xkey $insql
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {local_xlate_key_course} kc
+                        WHERE kc.keyid = k.id AND kc.courseid = :courseid
+                   )";
+
+        $missing = $DB->get_fieldset_sql($sql, $params);
+        if (empty($missing)) {
+            return 0;
+        }
+
+        $created = 0;
+        foreach ($missing as $keyid) {
+            try {
+                $DB->insert_record('local_xlate_key_course', (object)[
+                    'keyid'    => (int)$keyid,
+                    'courseid' => $courseid,
+                ]);
+                $created++;
+            } catch (\Throwable $e) {
+                // Race condition or duplicate — harmless, skip.
+            }
+        }
+
+        return $created;
+    }
+
+    /**
      * Build a cached bundle for the current page context.
      *
      * Generates a translation set plus source map tailored to the supplied
@@ -700,14 +759,16 @@ class api {
      * @param int $reviewed Reviewer flag (0/1).
      * @param string $source Source indicator (manual/autotranslate).
       * @param int $courseid Optional course context id for logging/activity attribution.
+      * @param bool $force When true, allows an autotranslate source to overwrite a
+      *                     human-reviewed translation. Ignored for non-autotranslate sources.
       * @return int Translation record ID.
      */
         public static function save_translation(int $keyid, string $lang, string $text,
                                             int $status = 1, int $reviewed = 0,
                                                           string $source = self::SOURCE_MANUAL,
-                                                          int $courseid = 0): int {
+                                                          int $courseid = 0, bool $force = false): int {
         global $DB;
-        
+
             $text = self::normalize_utf8_text($text);
         $text = translation_cleanup::sanitize_html($text);
                 $lang = trim($lang);
@@ -718,7 +779,15 @@ class api {
 
         $existing = $DB->get_record('local_xlate_tr', ['keyid' => $keyid, 'lang' => $lang]);
         $now = time();
-        
+
+        // Never let machine translation silently clobber a human-reviewed translation.
+        // The nightly course task already filters these out before calling the backend;
+        // this is the last line of defense for every other caller (batch task, inline
+        // autotranslate) that doesn't pre-filter.
+        if ($existing && $isautotranslate && (int)$existing->reviewed === 1 && !$force) {
+            return (int)$existing->id;
+        }
+
         if ($existing) {
             // Update existing translation
             $previousText = $existing->text ?? '';
