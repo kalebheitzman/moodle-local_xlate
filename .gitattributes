@@ -1,0 +1,35 @@
+# Normalize all text files to LF line endings in the repository, regardless
+# of the OS/editor used to check them out. Moodle coding style requires Unix
+# (LF) line endings in source files, and mixed CRLF/LF has been causing every
+# file to show as fully modified on Windows checkouts.
+* text=auto eol=lf
+
+# Explicit language/file types (redundant with text=auto but documents intent
+# and guards against future auto-detection edge cases).
+*.php text eol=lf
+*.js  text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.css text eol=lf
+*.md  text eol=lf
+*.map text eol=lf -diff
+*.dist text eol=lf
+.gitignore text eol=lf
+.eslintignore text eol=lf
+.editorconfig text eol=lf
+
+# Minified/build output: keep as text but skip diffing (generated, noisy).
+amd/build/*.min.js text eol=lf -diff
+
+# Binary assets — never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.pdf binary
