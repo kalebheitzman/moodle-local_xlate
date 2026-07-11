@@ -61,9 +61,13 @@ class api {
      * @param \context|null $context Context used to derive component filters; defaults to system.
      * @param string $pagetype Optional pagetype hint (e.g. `mod-forum-view`).
      * @param int $courseid Optional course to scope associations.
+     * @param array<int,int>|null $visiblecourseids Only used when $courseid is 0 (system-context
+     *        requests): null = no restriction; an array restricts course-associated keys to the
+     *        listed courses (global/unassociated keys are always served). Pass the requesting
+     *        user's enrolled course ids to prevent arbitrary-key mining of other courses' content.
     * @return array{translations:array<string,string>,sources:array<string,string>,reviewed:array<string,int>,critical:array<string,int>,keyids:array<string,int>} Map of xkey => translation + source metadata.
      */
-    public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0): array {
+    public static function get_keys_bundle(string $lang, array $keys, ?\context $context = null, string $pagetype = '', int $courseid = 0, ?array $visiblecourseids = null): array {
         global $DB;
 
         if (empty($keys)) {
@@ -112,6 +116,19 @@ class api {
             $coursewhere = " AND (NOT EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id)
                                    OR EXISTS (SELECT 1 FROM {local_xlate_key_course} kc2 WHERE kc2.keyid = k.id AND kc2.courseid = :courseid))";
             $params['courseid'] = $courseid;
+        } else if ($visiblecourseids !== null) {
+            // System-context request with a visibility restriction (C5): serve
+            // global (unassociated) keys, plus keys associated with the courses
+            // the requester may see. An empty array means global keys only.
+            if (empty($visiblecourseids)) {
+                $coursewhere = " AND NOT EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id)";
+            } else {
+                list($vcsql, $vcparams) = $DB->get_in_or_equal(
+                    array_map('intval', $visiblecourseids), SQL_PARAMS_NAMED, 'vc');
+                $coursewhere = " AND (NOT EXISTS (SELECT 1 FROM {local_xlate_key_course} kc WHERE kc.keyid = k.id)
+                                       OR EXISTS (SELECT 1 FROM {local_xlate_key_course} kc2 WHERE kc2.keyid = k.id AND kc2.courseid $vcsql))";
+                $params = array_merge($params, $vcparams);
+            }
         }
 
         // Resolve translation ids separately so each get_records_sql call keeps a unique key column.
@@ -170,27 +187,31 @@ class api {
      * @param string $lang Target language code.
      * @param array<int,string> $keys Stable translation keys to resolve.
      * @param int $courseid Optional course to include association status for.
+     * @param \context|null $context Context used to derive component filters (C5: must be
+     *        threaded through from the serving endpoint, otherwise no scoping applies).
+     * @param string $pagetype Optional pagetype hint for component filtering.
+     * @param array<int,int>|null $visiblecourseids Course-visibility restriction for
+     *        system-context requests — see get_keys_bundle().
     * @return array{translations:array<string,string>,sources:array<string,string>,sourceMap:array<string,string>,critical:array<string,int>,keyids:array<string,int>,associations?:array<string,bool>} Structured bundle response.
      */
-    public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0): array {
+    public static function get_keys_bundle_with_associations(string $lang, array $keys, int $courseid = 0,
+            ?\context $context = null, string $pagetype = '', ?array $visiblecourseids = null): array {
         global $DB;
 
-        $bundle = self::get_keys_bundle($lang, $keys);
+        $bundle = self::get_keys_bundle($lang, $keys, $context, $pagetype, $courseid, $visiblecourseids);
         $translations = $bundle['translations'];
         $reviewedmap = $bundle['reviewed'];
         $sources = $bundle['sources'] ?? [];
 
-        // Build sourceMap for the returned keys
+        // Build sourceMap from the SCOPED bundle results only. The previous
+        // implementation re-queried local_xlate_key for every requested xkey
+        // with no context/course filter, leaking source strings for keys the
+        // requester was not entitled to see (C5).
         $sourceMap = [];
-        if (!empty($keys)) {
-            list($insql, $inparams) = $DB->get_in_or_equal($keys, SQL_PARAMS_NAMED, 'k');
-            $sql = "SELECT k.id, k.xkey, k.source FROM {local_xlate_key} k WHERE k.xkey $insql";
-            $recs = $DB->get_records_sql($sql, $inparams);
-            foreach ($recs as $r) {
-                $normalized = self::normalise_source($r->source ?? '');
-                if ($normalized !== '' && !isset($sourceMap[$normalized])) {
-                    $sourceMap[$normalized] = $r->xkey;
-                }
+        foreach ($sources as $xkey => $src) {
+            $normalized = self::normalise_source((string)$src);
+            if ($normalized !== '' && !isset($sourceMap[$normalized])) {
+                $sourceMap[$normalized] = $xkey;
             }
         }
 
@@ -1171,44 +1192,57 @@ class api {
     /**
      * Compute a deterministic bundle version hash for a language.
      *
-     * Uses the maximum mtime across keys/translations to invalidate cached
-     * bundles whenever content changes.
+     * @deprecated Not monotonic: derived from MAX(mtime), so deleting the
+     * newest translation lowers the input and REVERTS the version to a value
+     * browsers may already have cached in localStorage — which then serves
+     * the stale bundle indefinitely. Same-second edits also collide. Kept
+     * only for backward compatibility; update_bundle_version() no longer
+     * uses it. Do not reintroduce as the version source.
      *
      * @param string $lang Language code.
      * @return string SHA1 hash representing the latest bundle state.
      */
     public static function generate_version_hash(string $lang): string {
         global $DB;
-        
+
         // Get maximum mtime for this language's translations
         $sql = "SELECT MAX(GREATEST(k.mtime, t.mtime)) as maxtime
                 FROM {local_xlate_key} k
                 JOIN {local_xlate_tr} t ON t.keyid = k.id
                 WHERE t.lang = ? AND t.status = 1";
-        
+
         $maxtime = $DB->get_field_sql($sql, [$lang]) ?: time();
-        
+
         // Create hash from language + maxtime
         return sha1($lang . ':' . $maxtime);
     }
-    
+
     /**
      * Persist a new bundle version hash for the given language.
      *
      * Creates the row when absent and updates the timestamp for existing
      * records.
      *
+     * The version is a MONOTONIC chained hash: each bump hashes the previous
+     * version together with the current time, so the value always changes on
+     * every bump and can never revert to one a browser has already cached
+     * (unlike the old MAX(mtime)-derived hash — see generate_version_hash()).
+     * Chaining also guarantees distinct values for same-second bumps.
+     *
      * @param string $lang Language code being refreshed.
      * @return string Newly computed version hash.
      */
     public static function update_bundle_version(string $lang): string {
         global $DB;
-        
-        $version = self::generate_version_hash($lang);
+
         $now = time();
-        
+
         $existing = $DB->get_record('local_xlate_bundle', ['lang' => $lang]);
-        
+
+        // Chain on the previous version so the new value is always novel.
+        $previous = $existing ? (string)$existing->version : '';
+        $version = sha1($lang . ':' . $previous . ':' . $now);
+
         if ($existing) {
             $existing->version = $version;
             $existing->mtime = $now;
@@ -1221,7 +1255,7 @@ class api {
             ];
             $DB->insert_record('local_xlate_bundle', $record);
         }
-        
+
         return $version;
     }
     

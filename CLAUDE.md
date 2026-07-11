@@ -4,6 +4,22 @@ This file is the authoritative reference for AI-assisted development on the `loc
 
 ---
 
+## 0. KNOWN ISSUES / DO NOT
+
+A full code review (2026-07-06, findings C1–C7 / H1–H12) lives outside the repo; [TODO.md](TODO.md) mirrors its roadmap with current status. Work items ONE AT A TIME, quoting the finding. Things every session must know:
+
+- **DO NOT disable or "fix the schedule of" `mlang_cleanup_task`.** The `*/5` recurring destructive cleanup is intentional — courses with legacy mlang tags are imported continuously. Event-driven per-course cleanup (observer + adhoc task) is the primary mechanism; the scheduled task is the safety net.
+- **`translation_cleanup::sanitize_html()` is NOT an HTML sanitizer** (H4, open). It only fixes `\/` artifacts and strips control chars. Real sanitization happens client-side in `translator.js` at render time. Do not add new consumers of stored translations (REST, email, mobile) without adding server-side sanitization first.
+- **Capture mode has NO capability gate in JS** (C4, open). `translator.js` enters capture mode for ANY user browsing in the source language; their WS saves fail server-side. Don't cite the docs' "capture = source lang + manage capability" as implemented behavior.
+- **`external::autotranslate_key()` blocks a PHP worker for up to ~10 min** (C6, open). Don't build UI that encourages concurrent inline autotranslate clicks until fixed.
+- **No Privacy API provider yet** (C2, open) — GDPR blocker; plugins-directory blocker.
+- **JS/PHP hash implementations must stay byte-identical:** `translator.js` `simpleHash`/`normalizeKeyText` ⟷ `cli/rehash_hash_lib.php` `xlate_simple_hash` + plain-text derivation. Any change to either requires changing both + running `cli/rehash_keys_dryrun.php`.
+- **Every write to `local_xlate_tr`/`local_xlate_key` must bump the bundle version AND invalidate the cache** (centralized in `api::save_key_with_translation()` — route writes through it).
+- **After ANY `amd/src/*.js` change:** `grunt amd --root=local/xlate --force` + purge caches. After ANY PHP change: purge caches.
+- **`db/upgrade.php` + `version.php` bump required for schema/observer/service changes.**
+
+---
+
 ## 1. Project Overview
 
 `local_xlate` is a client-side automatic translation plugin for Moodle 5+. It injects a JavaScript bootloader into every eligible page that:
@@ -15,7 +31,7 @@ This file is the authoritative reference for AI-assisted development on the `loc
 The AI translation pipeline uses an OpenAI-compatible endpoint. A human review workflow in `manage.php` lets admins inspect, edit, and approve AI-generated translations before they go live.
 
 Plugin component name: `local_xlate`
-Current version: `2026022500` (see [version.php](version.php))
+Current version: `2026071100` (see [version.php](version.php) — check there, this line drifts)
 Moodle requirement: 5.0+ (`requires = 2025000000`)
 Maturity: ALPHA
 
@@ -57,7 +73,7 @@ local/xlate/
 │   ├── glossary.php                 # Glossary CRUD
 │   ├── observer.php                 # Event observers: course_restored/created → queue mlang_course_cleanup_task
 │   └── mlang_migration.php          # MLang tag autodiscovery, migration, and translation harvesting
-├── cli/                             # 14 CLI utilities (see Section 10)
+├── cli/                             # ~30 CLI utilities (see Section 15 — list there is partial)
 ├── db/
 │   ├── install.xml                  # DB schema (8 tables)
 │   ├── upgrade.php                  # Migration steps (bump version.php to trigger)
@@ -67,7 +83,7 @@ local/xlate/
 │   ├── events.php                   # Event observer registrations (course import → mlang cleanup)
 │   ├── hooks.php                    # Output hook registrations
 │   └── caches.php                   # Application cache definitions
-├── lang/en/local_xlate.php          # 297 English strings
+├── lang/en/local_xlate.php          # English language strings
 ├── spec/
 │   ├── translate_batch_function.json        # OpenAI function-call schema
 │   └── translate_batch_response_schema.json # OpenAI response validation schema
@@ -95,7 +111,7 @@ local/xlate/
 | ORM / DB | Moodle `$DB` API — MySQL/MariaDB or PostgreSQL |
 | Frontend JS | AMD modules (ES5, no build transpilation needed for logic changes) |
 | CSS | Bootstrap 5 via Moodle theme; one inline style block injected in `<head>` |
-| Caching | Moodle application cache (`local_xlate/bundles`) + browser `localStorage` |
+| Caching | Moodle application caches `local_xlate/bundle` (30-min TTL) + `local_xlate/keymap` (1h) + browser `localStorage` |
 | AI Backend | OpenAI-compatible HTTP API (configurable endpoint, default `gpt-4o-mini`) |
 | Moodle integration | Hooks API, External API, Custom Fields API, Scheduled Tasks, Capabilities |
 
@@ -105,7 +121,7 @@ local/xlate/
 
 ## 4. Database Schema
 
-Eight tables — all prefixed with `{local_xlate_*}`:
+Ten tables — all prefixed with `{local_xlate_*}`:
 
 | Table | Purpose | Key Indexes |
 |---|---|---|
@@ -115,6 +131,7 @@ Eight tables — all prefixed with `{local_xlate_*}`:
 | `local_xlate_key_course` | Associates keys with course IDs | UNIQUE `(keyid, courseid)`, FK→`local_xlate_key.id` CASCADE DELETE |
 | `local_xlate_activity` | Audit log for translation actions | `(userid, timecreated)`, `(courseid, timecreated)`, `(action)` |
 | `local_xlate_glossary` | Language pair glossary terms | `(source_lang, target_lang)` |
+| `local_xlate_glossary_term` | Canonical glossary terms (glossary rows link via `term_id`) | — |
 | `local_xlate_mlang_migration` | Provenance log for destructive MLang tag migrations | `(tablename, recordid)` |
 | `local_xlate_course_job` | Course-level autotranslation job tracking | `(courseid)`, `(status)` |
 | `local_xlate_token_batch` | AI API token usage per batch request | `(timecreated)`, `(lang)` |
@@ -169,10 +186,11 @@ autotranslate_missing_task.php (scheduled)
                       └─ logs to local_xlate_token_batch
                       └─ bumps bundle version + invalidates cache
 
-mlang_cleanup_task.php (scheduled)
+mlang_cleanup_task.php (scheduled, */5) + mlang_course_cleanup_task.php (adhoc, queued by observer.php on course import/creation)
   └─ calls mlang_migration.php::migrate()
-       └─ discovers text columns across all Moodle tables
-       └─ strips/replaces {mlang}...{mlang} and <span class="multilang"> tags
+       └─ discovers text columns across all Moodle tables (or SQL-scoped to courseids)
+       └─ strips/replaces {mlang}...{mlang} and multilang spans IN PLACE
+       └─ harvest_translations() → writes embedded translations to local_xlate_tr (reviewed, SOURCE_MLANG)
        └─ logs provenance to local_xlate_mlang_migration
 ```
 
@@ -180,14 +198,15 @@ mlang_cleanup_task.php (scheduled)
 
 ## 6. Capability Model
 
-Four capabilities — always check before assuming access:
+Five capabilities — always check before assuming access:
 
 | Capability | Context | Who Needs It | Grants |
 |---|---|---|---|
 | `local/xlate:manage` | System | Site admins, managers | Full access: manage UI, glossary, bundle rebuild, capture writes, inspector |
 | `local/xlate:managecourse` | Course | Course-level managers | Manage translations for one course; "Manage Translations" link in course More menu |
+| `local/xlate:viewui` | System | UI consumers | Read-only WS access (`get_key`, `autotranslate_progress`, etc.) |
 | `local/xlate:viewbundle` | Course | All enrolled users (default) | Receive translation bundles for course pages |
-| `local/xlate:viewsystem` | System | Site managers, front-page roles | Receive translation bundles for system-context pages |
+| `local/xlate:viewsystem` | System | Site managers, front-page roles | Receive translation bundles for system-context pages; non-managers are restricted to global keys + their enrolled courses' keys (C5 fix) |
 
 **Ripple effect:** Revoking `viewbundle` from a role disables translation delivery for that role's members — translations simply won't load.
 
@@ -224,7 +243,7 @@ The bundle is the JSON payload delivered to the browser containing all translati
 **Flow:**
 1. `bundle.php` handles POST requests. Requires `sesskey` + capability check.
 2. Calls `local\api::get_keys_bundle()` — queries `local_xlate_key` JOIN `local_xlate_tr`.
-3. Result is cached in Moodle application cache `local_xlate/bundles` (1-hour TTL).
+3. Result is cached in Moodle application cache `local_xlate/bundle` (30-min TTL). Note: the primary serving path (`get_keys_bundle_with_associations`) is NOT cached; only `get_page_bundle` uses this cache.
 4. Browser caches bundle in `localStorage` keyed as `xlate:<lang>:<version>`.
 5. When any translation is saved/deleted, `api::update_bundle_version()` bumps the SHA1 hash in `local_xlate_bundle` AND `api::invalidate_bundle_cache()` clears the Moodle cache — forcing fresh fetch on next page load.
 
@@ -322,7 +341,7 @@ Responsibilities:
 
 ### Scheduled Autotranslation (`task/autotranslate_missing_task.php`)
 
-- Runs nightly (configurable in Moodle admin)
+- Runs every 5 minutes by default (configurable in Moodle admin) — NOT nightly; recurring by design, same rationale as mlang cleanup (continuous course imports)
 - Only enabled when `autotranslate_task_enabled = 1`
 - For each course with Xlate enabled: derives target language list, finds keys with missing translations, enqueues `translate_course_task` adhoc tasks (batch size: 20 default)
 - Never overwrites existing translations

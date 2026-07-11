@@ -197,6 +197,15 @@ class backend {
 
             // Attempt to extract function_call.arguments (preferred) or message content.
             $choice = $response['choices'][0] ?? null;
+
+            // A truncated completion (hit max_tokens / model output cap) yields
+            // malformed JSON whose brace-extraction "rescue" below can silently
+            // drop the tail of the batch. Fail cleanly instead so the caller
+            // retries rather than persisting a partial result.
+            if (!empty($choice['finish_reason']) && $choice['finish_reason'] === 'length') {
+                return ['ok' => false, 'errors' => ['truncated_response']];
+            }
+
             $functionargs = null;
             if (!empty($choice['message']['function_call']['arguments'])) {
                 $functionargs = $choice['message']['function_call']['arguments'];
@@ -696,6 +705,11 @@ class backend {
         if (!empty($options['max_tokens'])) {
             $payload['max_tokens'] = (int)$options['max_tokens'];
         }
+        // Low temperature for translation: we want faithful, deterministic output,
+        // not creative variation. Provider default (typically 1.0) measurably
+        // increases terminology drift between batches. Overridable via options.
+        $payload['temperature'] = isset($options['temperature'])
+            ? (float)$options['temperature'] : 0.2;
 
         return [
             'payload'   => $payload,
@@ -734,8 +748,12 @@ class backend {
             }
             $term = $g['term'];
             $replacement = $g['replacement'];
-            $pattern = '/\b' . preg_quote($term, '/') . '\b/ui';
-            $repattern = '/\b' . preg_quote($replacement, '/') . '\b/ui';
+            // Unicode-aware word boundaries. PCRE \b is ASCII-based even with /u,
+            // so \bПривет\b NEVER matches at the start of a Cyrillic word —
+            // glossary detection silently failed for non-Latin target languages
+            // (ru, uk, bg, ar...). Use letter/number lookarounds instead.
+            $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($term, '/') . '(?![\p{L}\p{N}])/ui';
+            $repattern = '/(?<![\p{L}\p{N}])' . preg_quote($replacement, '/') . '(?![\p{L}\p{N}])/ui';
 
             // Advisory mode: if the translation contains the replacement string, mark applied.
             if (preg_match($repattern, $translated)) {

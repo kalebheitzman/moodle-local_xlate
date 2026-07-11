@@ -145,7 +145,18 @@ try {
         \local_xlate\local\api::backfill_key_course_associations($keys, $courseparam);
     }
 
-    $bundle = \local_xlate\local\api::get_keys_bundle_with_associations($lang, $keys, $courseparam);
+    // C5: thread context/pagetype through so component filters and course
+    // scoping actually apply on the serving path. For system-context requests
+    // (no course), restrict course-associated keys to the requester's own
+    // courses — managers are unrestricted; everyone else gets global keys
+    // plus keys from courses they are enrolled in.
+    $visiblecourseids = null;
+    if ($courseparam === 0 && !has_capability('local/xlate:manage', context_system::instance())) {
+        $visiblecourseids = array_keys(enrol_get_my_courses('id'));
+    }
+
+    $bundle = \local_xlate\local\api::get_keys_bundle_with_associations(
+        $lang, $keys, $courseparam, $context, $pagetype, $visiblecourseids);
     echo json_encode($bundle, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Exception $e) {
     http_response_code(200);
