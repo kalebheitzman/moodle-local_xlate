@@ -43,6 +43,8 @@ defined('MOODLE_INTERNAL') || die();
 class api {
     public const SOURCE_MANUAL = 'manual';
     public const SOURCE_AUTOTRANSLATE = 'autotranslate';
+    /** Translation harvested from legacy {mlang}/multilang-span content during migration. */
+    public const SOURCE_MLANG = 'mlang';
 
     /** @var array<int,string|null> */
     protected static array $courseSourceCache = [];

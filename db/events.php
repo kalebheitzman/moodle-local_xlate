@@ -15,20 +15,29 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Version metadata for the Local Xlate plugin.
+ * Event observer registrations for Local Xlate.
  *
- * Declares plugin component name, required Moodle version, and release
- * identifiers used by the upgrade system.
+ * Courses are continuously imported into this Moodle carrying legacy
+ * {mlang}/multilang-span content. These observers queue a course-scoped
+ * mlang cleanup immediately after import/restore/creation, so cleanup is
+ * event-driven and scoped instead of relying solely on the site-wide
+ * scheduled scan.
  *
  * @package    local_xlate
+ * @category   event
  * @copyright  2025 Kaleb Heitzman <kalebheitzman@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_xlate';
-$plugin->version   = 2026071100;
-$plugin->requires  = 2025000000; // Moodle 5.0+ baseline (adjust to your site's $CFG->version).
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '2026071100';
+$observers = [
+    [
+        'eventname' => '\core\event\course_restored',
+        'callback'  => '\local_xlate\observer::course_restored',
+    ],
+    [
+        'eventname' => '\core\event\course_created',
+        'callback'  => '\local_xlate\observer::course_created',
+    ],
+];

@@ -75,7 +75,9 @@ class mlang_cleanup_task extends \core\task\scheduled_task {
             'courseids'   => $enabledcourses,
             'max_changes' => $maxchanges,
         ]);
-        mtrace('[mlang_cleanup_task] Completed. Changed: ' . ($report['changed'] ?? 0) . ' (limit: ' . $maxchanges . ')');
+        mtrace('[mlang_cleanup_task] Completed. Changed: ' . ($report['changed'] ?? 0)
+            . ', harvested translations: ' . ($report['harvested'] ?? 0)
+            . ' (limit: ' . $maxchanges . ')');
         // Optionally, log/report more details or errors here.
     }
 }

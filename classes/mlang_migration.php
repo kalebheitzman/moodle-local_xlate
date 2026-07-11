@@ -43,6 +43,42 @@ class mlang_migration {
     /** Default chunk size for scanning rows. */
     const DEFAULT_CHUNK = 250;
 
+    /**
+     * Generic span matcher used for multilang span handling.
+     *
+     * Deliberately matches ANY span open tag and defers multilang/lang
+     * detection to parse_multilang_span(), so attribute order and extra
+     * attributes (id, style, dir, ...) never cause tags to be silently
+     * skipped. Non-multilang spans are returned untouched by the callbacks.
+     *
+     * Limitation (pre-existing): the non-greedy body match stops at the first
+     * </span>, so multilang spans containing NESTED spans are truncated. In
+     * practice multilang spans wrap inline text; nested markup other than
+     * spans is unaffected.
+     */
+    const SPAN_PATTERN = '/<span\b([^>]*)>(.*?)<\/span>/is';
+
+    /**
+     * Extract the language code from a span's attribute string when the span
+     * is a multilang span; return null for any other span.
+     *
+     * Tolerant of attribute order (lang before or after class), single or
+     * double quotes, extra attributes, and multi-class values such as
+     * class="multilang highlight".
+     *
+     * @param string $attrs Raw attribute string captured from the open tag.
+     * @return string|null Lowercase language code, or null if not multilang.
+     */
+    public static function parse_multilang_span(string $attrs): ?string {
+        if (!preg_match('/\bclass\s*=\s*["\'][^"\']*\bmultilang\b[^"\']*["\']/i', $attrs)) {
+            return null;
+        }
+        if (!preg_match('/\blang\s*=\s*["\']([a-zA-Z0-9_-]+)["\']/i', $attrs, $m)) {
+            return null;
+        }
+        return strtolower($m[1]);
+    }
+
     /** Default sample size for report. */
     const DEFAULT_SAMPLE = 1000;
 
@@ -179,7 +215,9 @@ class mlang_migration {
     public static function contains_mlang(string $text): bool {
         if ($text === '') { return false; }
         if (stripos($text, '{mlang') !== false) { return true; }
-        if (stripos($text, '<span') !== false && stripos($text, 'class="multilang"') !== false) { return true; }
+        // Tolerant of quote style, attribute order, and multi-class values;
+        // parse_multilang_span() does the precise check downstream.
+        if (stripos($text, '<span') !== false && stripos($text, 'multilang') !== false) { return true; }
         return false;
     }
 
@@ -201,12 +239,16 @@ class mlang_migration {
         $displaytext = '';
         $firstcontent = null;
 
-        // Process <span lang="xx" class="multilang"> first
-        $pattern = '/<span\s+lang=["\']([a-zA-Z-]+)["\']\s+class=["\']multilang["\']>(.*?)<\/span>/is';
-        if (preg_match_all($pattern, $text, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $lang = strtolower($match[1]);
-                $content = trim($match[2]);
+        // Process multilang spans first. Attribute-order tolerant: matches any
+        // span and filters via parse_multilang_span(); non-multilang spans are
+        // left untouched. Processed spans are removed in the same pass.
+        $text = preg_replace_callback(self::SPAN_PATTERN,
+            function(array $m) use (&$translations, &$sourcetext, &$displaytext, &$firstcontent, $sitelang) {
+                $lang = self::parse_multilang_span($m[1]);
+                if ($lang === null) {
+                    return $m[0]; // Not a multilang span — keep as-is.
+                }
+                $content = trim($m[2]);
                 if ($firstcontent === null) { $firstcontent = $content; }
                 if ($lang === $sitelang || $lang === 'other') {
                     $sourcetext .= $content . ' ';
@@ -214,10 +256,8 @@ class mlang_migration {
                 } else {
                     $translations[$lang] = isset($translations[$lang]) ? $translations[$lang] . ' ' . $content : $content;
                 }
-            }
-            // Remove processed spans so they are not handled again.
-            $text = preg_replace($pattern, '', $text);
-        }
+                return ''; // Remove processed span so it is not handled again.
+            }, $text) ?? $text;
 
         // Process {mlang xx}...{mlang} pairs
         if (preg_match_all('/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is', $text, $matches, PREG_SET_ORDER)) {
@@ -274,32 +314,29 @@ class mlang_migration {
     public static function strip_mlang_tags(string $text, string $preferred = 'other'): string {
         $sitelang = get_config('core', 'lang') ?: 'en';
 
-        // Replace <span lang="xx" class="multilang">...</span>
-        $result = '';
-        $offset = 0;
-
-        // We'll iterate over both span and {mlang ...} constructs; simple approach: replace spans first.
-        $patternspan = '/<span\s+lang=["\']([a-zA-Z-]+)["\']\s+class=["\']multilang["\']>(.*?)<\/span>/is';
         // Null safety
         if ($text === null) {
             return '';
         }
 
-        // Handle <span class="multilang"> blocks (unchanged logic, but null-safe)
-        if (preg_match_all($patternspan, $text, $matches, PREG_SET_ORDER)) {
-            $built = '';
-            foreach ($matches as $m) {
-                $lang = strtolower($m[1] ?? '');
-                $content = trim($m[2] ?? '');
-                if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
-                    $built .= $content . ' ';
+        // Handle multilang spans with IN-PLACE replacement: each span is
+        // replaced at its own position by its content (preferred language) or
+        // removed (other languages). The previous implementation concatenated
+        // all preferred-language content and PREPENDED it to the text, which
+        // scrambled any mid-sentence multilang span. Attribute-order tolerant
+        // via parse_multilang_span(); non-multilang spans are left untouched.
+        $text = preg_replace_callback(self::SPAN_PATTERN,
+            function(array $m) use ($preferred, $sitelang) {
+                $lang = self::parse_multilang_span($m[1]);
+                if ($lang === null) {
+                    return $m[0]; // Not a multilang span — keep as-is.
                 }
-            }
-            if (trim($built) !== '') {
-                $text = preg_replace($patternspan, '', $text ?? '');
-                $text = trim($built) . ' ' . $text;
-            }
-        }
+                $content = trim($m[2]);
+                if ($lang === $preferred || ($preferred === 'sitelang' && $lang === $sitelang) || $lang === $sitelang || $lang === 'other') {
+                    return $content;
+                }
+                return '';
+            }, $text) ?? $text;
 
         // Now handle {mlang xx}...{mlang} pairs with offset-based replacement to avoid huge regexes
         $pattern = '/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is';
@@ -332,6 +369,77 @@ class mlang_migration {
     }
 
     /**
+     * Persist translations embedded in legacy mlang content instead of discarding them.
+     *
+     * The content being stripped by migrate() contains human-authored
+     * translations. This writes each non-source-language block into
+     * local_xlate_tr as a reviewed row keyed by the same plain-text xkey the
+     * JS capture pipeline will generate for the cleaned source text, so the
+     * harvested translation is served the moment the string is captured.
+     *
+     * Never overwrites: any existing translation row for (key, lang) is left
+     * untouched — in-system work always wins over harvested legacy content.
+     *
+     * @param array{source_text:string,display_text:string,translations:array<string,string>} $parsed
+     *        Output of process_mlang_tags() for the original content.
+     * @param int $courseid Course to associate the key with (0 = none).
+     * @param string $context Context string stored on the course association (e.g. "table:column").
+     * @return int Number of translation rows created.
+     */
+    public static function harvest_translations(array $parsed, int $courseid = 0, string $context = ''): int {
+        global $DB;
+
+        $translations = $parsed['translations'] ?? [];
+        $sourcetext = trim($parsed['source_text'] ?? '');
+        if ($sourcetext === '' || empty($translations)) {
+            return 0;
+        }
+
+        // Compute the plain-text xkey exactly as translator.js / rehash_keys.php do:
+        // strip tags, decode entities, hash. Shared implementation lives in
+        // cli/rehash_hash_lib.php — the single PHP port of JS simpleHash().
+        require_once(__DIR__ . '/../cli/rehash_hash_lib.php');
+        $plain = html_entity_decode(strip_tags($sourcetext), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (trim($plain) === '') {
+            return 0;
+        }
+        $xkey = xlate_simple_hash($plain);
+
+        $existingkey = $DB->get_record('local_xlate_key', ['component' => 'core', 'xkey' => $xkey]);
+
+        $count = 0;
+        foreach ($translations as $lang => $text) {
+            $lang = strtolower(trim((string)$lang));
+            $text = trim((string)$text);
+            // Skip empty content and implausible language tokens.
+            if ($lang === '' || $text === '' || !preg_match('/^[a-z]{2,3}(?:[_-][a-z0-9]+)?$/', $lang)) {
+                continue;
+            }
+            // Never clobber an existing translation for this key+lang.
+            if ($existingkey && $DB->record_exists('local_xlate_tr', ['keyid' => $existingkey->id, 'lang' => $lang])) {
+                continue;
+            }
+            try {
+                \local_xlate\local\api::save_key_with_translation(
+                    'core', $xkey, $sourcetext, $lang, $text,
+                    1, // Reviewed: this is human-authored legacy content.
+                    $courseid, $context, null,
+                    \local_xlate\local\api::SOURCE_MLANG
+                );
+                $count++;
+                if (!$existingkey) {
+                    // Re-fetch so subsequent langs in this loop see the key.
+                    $existingkey = $DB->get_record('local_xlate_key', ['component' => 'core', 'xkey' => $xkey]);
+                }
+            } catch (\Throwable $e) {
+                debugging('[local_xlate] mlang harvest failed for xkey ' . $xkey . ' lang ' . $lang . ': '
+                    . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Perform destructive migration replacing legacy markup with preferred text.
      *
      * Options:
@@ -361,7 +469,7 @@ class mlang_migration {
         $sample = $options['sample'] ?? self::DEFAULT_SAMPLE;
         $maxchanges = isset($options['max_changes']) ? (int)$options['max_changes'] : 0;
 
-        $report = ['run' => date('c'), 'changed' => 0, 'samples' => []];
+        $report = ['run' => date('c'), 'changed' => 0, 'harvested' => 0, 'samples' => []];
         $courseidsfilter = [];
         if (!empty($options['courseids']) && is_array($options['courseids'])) {
             $courseidsfilter = array_values(array_unique(array_filter(array_map('intval', $options['courseids']), static function($id) {
@@ -411,10 +519,20 @@ class mlang_migration {
             $lastid = 0;
             $table_update_count = 0;
             $table_exception = null;
+            // Push the course filter into SQL so scoped runs (event-driven
+            // per-course cleanup, courseids option) only read matching rows
+            // instead of scanning the whole table and filtering in PHP.
+            $wherecourse = '';
+            $courseparams = [];
+            if (!empty($courseidsfilter) && $coursecol !== null) {
+                list($insql, $courseparams) = $DB->get_in_or_equal($courseidsfilter, SQL_PARAMS_NAMED, 'xlatecourse');
+                $wherecourse = " AND {$coursecol} {$insql}";
+            }
             while (true) {
                 try {
-                    $sql = "SELECT $selectcols FROM {{$table}} WHERE id > :lastid ORDER BY id ASC LIMIT $chunk";
-                    $rows = $DB->get_records_sql($sql, ['lastid' => $lastid]);
+                    // Portable chunking via limitnum instead of a raw LIMIT clause.
+                    $sql = "SELECT $selectcols FROM {{$table}} WHERE id > :lastid{$wherecourse} ORDER BY id ASC";
+                    $rows = $DB->get_records_sql($sql, array_merge(['lastid' => $lastid], $courseparams), 0, $chunk);
                     if (empty($rows)) {
                         break;
                     }
@@ -432,6 +550,7 @@ class mlang_migration {
                             $orig = (string)$row->{$col};
                             $isblockconfig = ($table === 'block_instances' || $table === 'mdl_block_instances') && $col === 'configdata';
                             $new = $orig;
+                            $parsed = null;
                             if ($isblockconfig) {
                                 // Handle base64-encoded, serialized configdata for blocks.
                                 $decoded = @base64_decode($orig);
@@ -526,6 +645,15 @@ class mlang_migration {
                                             debugging('[local_xlate] provenance insert failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
                                         }
                                     }
+                                }
+                                // Harvest embedded translations before they are lost.
+                                // Reached only when the update succeeded (failure paths
+                                // `continue` above). Runs in execute mode only.
+                                if ($execute && is_array($parsed) && !empty($parsed['translations'])) {
+                                    $rowcourseid = ($coursecol !== null && isset($row->{$coursealias}))
+                                        ? (int)$row->{$coursealias} : 0;
+                                    $report['harvested'] += self::harvest_translations(
+                                        $parsed, max(0, $rowcourseid), $table . ':' . $col);
                                 }
                                 $report['changed']++;
                                 $table_update_count++;

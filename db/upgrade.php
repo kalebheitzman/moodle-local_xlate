@@ -805,5 +805,15 @@ function xmldb_local_xlate_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026030400, 'local', 'xlate');
     }
 
+    if ($oldversion < 2026071100) {
+        // No schema changes. This version registers the course_restored/
+        // course_created event observers (db/events.php) that queue the
+        // course-scoped mlang cleanup adhoc task, and adds translation
+        // harvesting to the mlang migration. Observer registrations are
+        // reloaded automatically as part of the upgrade/version bump.
+
+        upgrade_plugin_savepoint(true, 2026071100, 'local', 'xlate');
+    }
+
     return true;
 }

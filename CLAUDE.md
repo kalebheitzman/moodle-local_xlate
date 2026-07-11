@@ -41,10 +41,11 @@ local/xlate/
 │   │   ├── activity_logger.php      # Audit log writer
 │   │   └── translation_cleanup.php  # Stale-data helpers
 │   ├── task/
-│   │   ├── autotranslate_missing_task.php  # Nightly scheduled task
+│   │   ├── autotranslate_missing_task.php  # Scheduled task (*/5 min)
 │   │   ├── translate_batch_task.php         # Adhoc batch AI translation
 │   │   ├── translate_course_task.php        # Adhoc per-course translation
-│   │   ├── mlang_cleanup_task.php           # Nightly MLang tag cleanup
+│   │   ├── mlang_cleanup_task.php           # Scheduled MLang cleanup (*/5 min — intentional, catches course imports)
+│   │   ├── mlang_course_cleanup_task.php    # Adhoc course-scoped MLang cleanup (queued by observer on import)
 │   │   ├── mlang_migrate.php                # Adhoc MLang migration wrapper
 │   │   └── mlang_dryrun.php                 # Adhoc dry-run report
 │   ├── translation/
@@ -54,14 +55,16 @@ local/xlate/
 │   ├── external.php                 # Moodle external API endpoints (11 functions)
 │   ├── customfield_helper.php       # Course custom field provisioning & config resolution
 │   ├── glossary.php                 # Glossary CRUD
-│   └── mlang_migration.php          # MLang tag autodiscovery and migration logic
+│   ├── observer.php                 # Event observers: course_restored/created → queue mlang_course_cleanup_task
+│   └── mlang_migration.php          # MLang tag autodiscovery, migration, and translation harvesting
 ├── cli/                             # 14 CLI utilities (see Section 10)
 ├── db/
 │   ├── install.xml                  # DB schema (8 tables)
 │   ├── upgrade.php                  # Migration steps (bump version.php to trigger)
 │   ├── access.php                   # 4 capabilities
 │   ├── services.php                 # 11 web service function definitions
-│   ├── tasks.php                    # 3 scheduled task registrations
+│   ├── tasks.php                    # Scheduled task registrations
+│   ├── events.php                   # Event observer registrations (course import → mlang cleanup)
 │   ├── hooks.php                    # Output hook registrations
 │   └── caches.php                   # Application cache definitions
 ├── lang/en/local_xlate.php          # 297 English strings
@@ -380,14 +383,22 @@ Defined in `db/services.php`. All require sesskey validation + capability checks
 
 ## 13. MLang Migration
 
-Legacy Moodle content uses `{mlang xx}...{mlang}` tags and `<span lang="xx" class="multilang">` tags. The migration tooling strips these and extracts the preferred language's text.
+Legacy Moodle content uses `{mlang xx}...{mlang}` tags and `<span lang="xx" class="multilang">` tags (any attribute order/quoting tolerated). The migration tooling strips these IN PLACE — each tag is replaced at its own position by the preferred language's content — and **harvests** the non-source-language content into `local_xlate_tr` as reviewed translations (source `mlang`) keyed by the same plain-text xkey the JS capture pipeline generates. Harvesting never overwrites an existing `(key, lang)` translation row.
+
+**Why cleanup is recurring, not one-time:** courses carrying legacy mlang tags are imported into this site continuously. Cleanup is event-driven (course import/creation queues a course-scoped adhoc task) with the `*/5` scheduled task as a site-wide safety net. Do NOT "fix" the recurring schedule by disabling it.
 
 **Key files:**
-- [classes/mlang_migration.php](classes/mlang_migration.php) — core logic: autodiscovery, dry-run, migrate
+- [classes/mlang_migration.php](classes/mlang_migration.php) — core logic: autodiscovery, dry-run, migrate, `harvest_translations()`, tolerant span parsing (`SPAN_PATTERN` + `parse_multilang_span()`)
+- [classes/observer.php](classes/observer.php) + [db/events.php](db/events.php) — `course_restored`/`course_created` → queue adhoc cleanup for that course
+- [classes/task/mlang_course_cleanup_task.php](classes/task/mlang_course_cleanup_task.php) — adhoc course-scoped cleanup (re-checks `is_course_enabled()` at run time)
+- [classes/task/mlang_cleanup_task.php](classes/task/mlang_cleanup_task.php) — scheduled site-wide cleanup (`*/5`, capped by `mlang_cleanup_batch_size`)
 - [cli/mlang_migrate.php](cli/mlang_migrate.php) — CLI runner
-- [classes/task/mlang_cleanup_task.php](classes/task/mlang_cleanup_task.php) — scheduled nightly cleanup
 
-**`block_instances.configdata`** is special: the script base64-decodes + unserializes, recursively scans all string fields, re-serializes + base64-encodes before saving.
+When the `courseids` option is set, the course filter is pushed into SQL (`course`/`courseid IN (...)`) and tables without a course column are skipped. Chunking uses `$DB->get_records_sql(..., 0, $chunk)` (no raw `LIMIT`).
+
+**Known limitation:** the span matcher's non-greedy body stops at the first `</span>`, so multilang spans containing nested spans are truncated. Multilang spans conventionally wrap inline text only.
+
+**`block_instances.configdata`** is special: the script base64-decodes + unserializes, recursively scans all string fields, re-serializes + base64-encodes before saving. (No harvesting on this path.)
 
 Every migration change is logged to `local_xlate_mlang_migration` (old_value, new_value, migrated_at, migrated_by).
 
