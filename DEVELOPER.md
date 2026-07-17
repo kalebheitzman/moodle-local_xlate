@@ -204,7 +204,7 @@ Code notes:
 ## Scheduled Autotranslation Task
 
 - Class: `local_xlate\task\autotranslate_missing_task`
-- Registered in `db/tasks.php`, runs nightly by default.
+- Registered in `db/tasks.php`, runs every 5 minutes by default (recurring by design — new keys arrive continuously from captures and course imports).
 - Iterates every course that has an Xlate source language configured, derives the effective target list (either the course-level checkboxes or the enabled-language list minus the source), and batches missing keys per course/target (default batch size: 20) to avoid DB/API overload.
 - Only fills in missing translations; never overwrites existing ones.
 - Controlled by the `autotranslate_task_enabled` setting.
@@ -214,6 +214,8 @@ Code notes:
   - `cli/autotranslate_dryrun.php` shows which courses/targets would run and how many keys remain (optionally printing sample keys with `--showmissing`).
   - `cli/list_translatable_courses.php` prints the ready-to-run course matrix.
   - `cli/queue_course_job.php`, `cli/inspect_job.php`, `cli/show_new_translations.php`, and `cli/run_adhoc_process.php` help enqueue, inspect, and replay course-specific adhoc jobs.
+  - `cli/diagnose_retranslation.php` is a read-only health check that verifies the pipeline is only filling gaps: no retranslate loops, no machine overwrites of reviewed rows, plus job churn and token volume summaries.
+  - The complete CLI catalogue lives in CLAUDE.md, Section 15.
 
 ### Token Usage Logging
   Every autotranslation batch logs token usage to the `local_xlate_token_batch` table (see `db/install.xml`).
@@ -478,7 +480,7 @@ Happy hacking!
 ## Scheduled MLang cleanup task
 
 - The scheduled task class is `local_xlate\task\mlang_cleanup_task` (see `classes/task/mlang_cleanup_task.php`).
-- It is registered in `db/tasks.php` to run nightly by default, but can be configured in the Moodle admin UI.
+- It is registered in `db/tasks.php` to run every 5 minutes by default (intentional — it is the site-wide safety net behind the event-driven per-course cleanup queued on course import/creation), and can be configured in the Moodle admin UI.
 - The task reuses the migration logic in `mlang_migration.php` and will autodiscover all candidate columns, including block configdata, and clean up legacy multilang tags.
 - Logs are output via `mtrace()` and can be viewed in the CLI or scheduled task logs.
 - You can trigger the task manually with:

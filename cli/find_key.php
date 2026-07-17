@@ -28,9 +28,11 @@ require_once($CFG->libdir . '/clilib.php');
 
 list($options, $unrecognized) = cli_get_params([
     'key' => null,
+    'keyid' => null,
     'help' => false,
 ], [
     'k' => 'key',
+    'i' => 'keyid',
     'h' => 'help',
 ]);
 
@@ -38,28 +40,37 @@ if (!empty($unrecognized)) {
     cli_error('Unknown options: ' . implode(', ', $unrecognized));
 }
 
-if ($options['help'] || empty($options['key'])) {
-    $help = "Query the local_xlate_key table for a specific xkey.\n\n" .
+if ($options['help'] || (empty($options['key']) && empty($options['keyid']))) {
+    $help = "Query the local_xlate_key table for a specific key.\n\n" .
         "Options:\n" .
-        "--key, -k     Structural hash to inspect (required)\n" .
+        "--key, -k     Structural hash to inspect\n" .
+        "--keyid, -i   Numeric key id to inspect (alternative to --key)\n" .
         "--help, -h    Show this help\n\n" .
         "Example:\n" .
-        "sudo -u www-data php local/xlate/cli/find_key.php --key=abc123xyz\n";
+        "sudo -u www-data php local/xlate/cli/find_key.php --key=abc123xyz\n" .
+        "sudo -u www-data php local/xlate/cli/find_key.php --keyid=5351\n";
     cli_writeln($help);
     exit(0);
 }
 
-$key = trim($options['key']);
-if ($key === '') {
-    cli_error('Key value cannot be empty.');
-}
-
 global $DB;
 
-$record = $DB->get_record('local_xlate_key', ['xkey' => $key], '*', IGNORE_MISSING);
-if (!$record) {
-    cli_writeln('No record found for key: ' . $key);
-    exit(0);
+if (!empty($options['keyid'])) {
+    $record = $DB->get_record('local_xlate_key', ['id' => (int)$options['keyid']], '*', IGNORE_MISSING);
+    if (!$record) {
+        cli_writeln('No record found for keyid: ' . (int)$options['keyid']);
+        exit(0);
+    }
+} else {
+    $key = trim($options['key']);
+    if ($key === '') {
+        cli_error('Key value cannot be empty.');
+    }
+    $record = $DB->get_record('local_xlate_key', ['xkey' => $key], '*', IGNORE_MISSING);
+    if (!$record) {
+        cli_writeln('No record found for key: ' . $key);
+        exit(0);
+    }
 }
 
 cli_writeln('--- Key Record ---');

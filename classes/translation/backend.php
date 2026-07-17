@@ -708,8 +708,14 @@ class backend {
         // Low temperature for translation: we want faithful, deterministic output,
         // not creative variation. Provider default (typically 1.0) measurably
         // increases terminology drift between batches. Overridable via options.
-        $payload['temperature'] = isset($options['temperature'])
-            ? (float)$options['temperature'] : 0.2;
+        // Reasoning-tier models (gpt-5, o1, o3, ...) reject any non-default
+        // temperature with an HTTP 400, so omit the field for those entirely.
+        $isreasoningmodel = (bool)preg_match('/^(o[0-9]|gpt-5)/i', $model);
+        if (isset($options['temperature'])) {
+            $payload['temperature'] = (float)$options['temperature'];
+        } else if (!$isreasoningmodel) {
+            $payload['temperature'] = 0.2;
+        }
 
         return [
             'payload'   => $payload,

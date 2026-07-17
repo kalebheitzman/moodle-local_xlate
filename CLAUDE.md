@@ -58,6 +58,7 @@ local/xlate/
 │   │   └── translation_cleanup.php  # Stale-data helpers
 │   ├── task/
 │   │   ├── autotranslate_missing_task.php  # Scheduled task (*/5 min)
+│   │   ├── html_tag_cleanup_task.php        # Scheduled task (every 6h): normalise malformed HTML in stored translations
 │   │   ├── translate_batch_task.php         # Adhoc batch AI translation
 │   │   ├── translate_course_task.php        # Adhoc per-course translation
 │   │   ├── mlang_cleanup_task.php           # Scheduled MLang cleanup (*/5 min — intentional, catches course imports)
@@ -73,9 +74,9 @@ local/xlate/
 │   ├── glossary.php                 # Glossary CRUD
 │   ├── observer.php                 # Event observers: course_restored/created → queue mlang_course_cleanup_task
 │   └── mlang_migration.php          # MLang tag autodiscovery, migration, and translation harvesting
-├── cli/                             # ~30 CLI utilities (see Section 15 — list there is partial)
+├── cli/                             # 30 CLI utilities + 1 shared hash library (complete catalogue in Section 15)
 ├── db/
-│   ├── install.xml                  # DB schema (8 tables)
+│   ├── install.xml                  # DB schema (10 tables)
 │   ├── upgrade.php                  # Migration steps (bump version.php to trigger)
 │   ├── access.php                   # 4 capabilities
 │   ├── services.php                 # 11 web service function definitions
@@ -325,7 +326,7 @@ Responsibilities:
 | Setting key | Description | Default |
 |---|---|---|
 | `local_xlate/autotranslate_enabled` | Enable AI translation features | 0 |
-| `local_xlate/autotranslate_task_enabled` | Enable nightly scheduled task | 0 |
+| `local_xlate/autotranslate_task_enabled` | Enable recurring scheduled task (*/5 min) | 0 |
 | `local_xlate/openai_endpoint` | API endpoint URL | `https://api.openai.com/v1/chat/completions` |
 | `local_xlate/openai_api_key` | API key (masked in UI) | empty |
 | `local_xlate/openai_model` | Model identifier | `gpt-4o-mini` |
@@ -440,27 +441,61 @@ Every migration change is logged to `local_xlate_mlang_migration` (old_value, ne
 
 ## 15. CLI Tools
 
-All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`.
+All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (30 scripts + 1 shared library); keep it in sync when adding or removing scripts.
+
+### Queue & translation operations
+
+| Script | Purpose |
+|---|---|
+| `autotranslate_dryrun.php` | Preview which courses/languages would autotranslate (`--showmissing`, `--courseid=N`, `--limit=N`) |
+| `list_translatable_courses.php` | Show courses ready for translation with their config |
+| `queue_course_job.php` | Manually enqueue a course autotranslate job |
+| `inspect_job.php` | Show status + progress of a course job (`inspect_job.php <jobid>` — positional arg, not `--jobid`) |
+| `replay_job.php` | Replay a completed course job on a small sample for debugging (`--jobid=N [--limit=3] [--targetlang=CODE] [--dryrun] [--verbose]`) |
+| `dedup_queue_jobs.php` | Remove duplicate pending/running course jobs for the same course + target set (`--courseid=N` to scope) |
+| `retranslate_unreviewed.php` | Queue a job that REGENERATES AI translations for all unreviewed strings in a course (`--courseid=N [--targetlangs=es,fr] [--batchsize=50] [--dry-run]`). Deliberately overwrites unreviewed translations; reviewed rows are protected. |
+| `compare_models.php` | Compare translation quality across AI models on a sample of course strings (`--courseid=N --models=m1,m2 [--targetlang=xx] [--count=15] [--random]`) |
+| `show_new_translations.php` | Display recently generated translations |
+| `list_adhoc.php` | List queued adhoc tasks (site-wide, not just xlate) |
+| `run_adhoc_process.php` | Manually trigger an adhoc task |
+
+### Diagnostics & repair
+
+| Script | Purpose |
+|---|---|
+| `diagnose_retranslation.php` | Read-only health check: verifies nothing is stuck in a retranslate loop and no reviewed row was machine-overwritten; reports job churn + daily token volume |
+| `find_key.php` | Inspect one key: source, course associations, translations (`--key=XKEY` or `--keyid=N`) |
+| `repair_course_associations.php` | Create missing `local_xlate_key_course` rows for a course. Fixes keys captured on system-context pages (courseid=0) that are invisible to autotranslation and manage.php courseid filters. `--global-only` restricts to keys with zero existing associations. `--key=XKEY` targets one key. `--enqueue` queues autotranslation after repair. |
+| `sync_source_language_indices.php` | Repair custom field integer→locale mapping after option order change |
+| `analyze_html_selectors.php` | Report on CSS selectors used in capture |
+| `mark_critical_by_selector.php` | Backfill critical flags on keys captured before the auto-critical selector feature (`--dry-run`, `--verbose`) |
+| `delete_activity_date_keys.php` | Find and delete dynamic activity-date keys, e.g. "Closes: Sunday, 4 October…" (`--pattern=…`, `--execute`) |
+| `cleanup_translation_tags.php` | Clean stale HTML tags in translation records |
+
+### Migrations & destructive resets
 
 | Script | Purpose |
 |---|---|
 | `mlang_migrate.php` | Dry-run or execute MLang tag migration (`--execute`, `--max=N`, `--preferred=<lang>`) |
-| `autotranslate_dryrun.php` | Preview which courses/languages would autotranslate |
-| `list_translatable_courses.php` | Show courses ready for translation with their config |
-| `queue_course_job.php` | Manually enqueue a course autotranslate job |
-| `inspect_job.php` | Show status + progress of a course job |
-| `show_new_translations.php` | Display recently generated translations |
-| `list_adhoc.php` | List queued adhoc tasks |
-| `run_adhoc_process.php` | Manually trigger an adhoc task |
-| `sync_source_language_indices.php` | Repair custom field integer→locale mapping after option order change |
-| `recreate_customfields.php` | Drop and rebuild Xlate custom field category (dev only) |
-| `truncate_xlate_tables.php` | Reset all `local_xlate_*` tables (`--dry-run` first!) |
-| `cleanup_translation_tags.php` | Clean stale HTML tags in translation records |
-| `analyze_html_selectors.php` | Report on CSS selectors used in capture |
-| `find_key.php` | Search for keys by source text |
 | `rehash_keys_dryrun.php` | Preview xkey migration — shows counts, merges, conflicts. No DB changes. |
 | `rehash_keys.php` | Execute xkey migration — recomputes all xkeys, merges duplicates, preserves reviewed translations. **Take DB backup first.** |
-| `repair_course_associations.php` | Create missing `local_xlate_key_course` rows for a course. Fixes keys captured on system-context pages (courseid=0) that are invisible to autotranslation and manage.php courseid filters. `--global-only` restricts to keys with zero existing associations. `--key=XKEY` targets one key. `--enqueue` queues autotranslation after repair. |
+| `truncate_xlate_tables.php` | Reset all `local_xlate_*` tables (`--dry-run` first!) |
+| `recreate_customfields.php` | Drop and rebuild Xlate custom field category (dev only) |
+
+### One-off historical helpers (kept for reference; not part of routine operations)
+
+| Script | Purpose |
+|---|---|
+| `diagnose_question_chain.php` | Diagnose "Can't find data record" errors from orphaned `question_bank_entries` (`--id=N`, `--scan`) |
+| `inspect_orphan_contexts.php` | Show course-category structure around orphaned question clusters found by `diagnose_question_chain.php` |
+| `repair_orphan_question_categories.php` | Repair `question_bank_entries` rows whose `question_categories` row was deleted (`--dry-run`, `--execute`) |
+| `check_orphan_cleanup_task.php` | Check the adhoc queue for the core question-deletion cleanup task |
+| `cleanup_double_logged_reviews.php` | Remove double-counted `translation_review_mark` activity entries from before the `save_translation()` logging fix (`--execute`) |
+| `cleanup_sourcelang_activity.php` | Remove source-language capture events mislogged as translator work (`--sourcelang=xx`, `--allcourses`) |
+
+### Shared library (not runnable)
+
+- `rehash_hash_lib.php` — PHP implementation of `xlate_simple_hash` + plain-text normalization. **Must stay byte-identical to `translator.js` `simpleHash`/`normalizeKeyText`** (see Section 0).
 
 ---
 
@@ -477,7 +512,7 @@ php admin/cli/purge_caches.php
 # Must run from Moodle root (where Gruntfile.js lives)
 grunt amd --root=local/xlate --force
 
-# Run the nightly autotranslation task manually
+# Run the scheduled autotranslation task manually
 sudo -u www-data php admin/cli/scheduled_task.php \
   --execute='\local_xlate\task\autotranslate_missing_task'
 
@@ -513,6 +548,10 @@ sudo -u www-data php local/xlate/cli/rehash_keys.php
 
 # Investigate a specific translation key (shows source, component, course associations, translations)
 sudo -u www-data php local/xlate/cli/find_key.php --key=81sjhr1ym7ht
+sudo -u www-data php local/xlate/cli/find_key.php --keyid=5351
+
+# Health check: retranslate loops, reviewed-overwrite guard, job churn, token volume (read-only)
+sudo -u www-data php local/xlate/cli/diagnose_retranslation.php
 
 # Preview missing course associations for a course
 sudo -u www-data php local/xlate/cli/repair_course_associations.php --courseid=42 --dry-run
@@ -650,7 +689,7 @@ This section documents which files depend on which others. Before changing any f
 | Course language config / custom fields | [classes/customfield_helper.php](classes/customfield_helper.php) |
 | Glossary management | [classes/glossary.php](classes/glossary.php) + [glossary.php](glossary.php) |
 | MLang tag migration | [classes/mlang_migration.php](classes/mlang_migration.php) |
-| Nightly autotranslation task | [classes/task/autotranslate_missing_task.php](classes/task/autotranslate_missing_task.php) |
+| Scheduled autotranslation task (*/5) | [classes/task/autotranslate_missing_task.php](classes/task/autotranslate_missing_task.php) |
 | Course-level job queueing | [classes/local/course_job_manager.php](classes/local/course_job_manager.php) |
 | Plugin admin settings | [settings.php](settings.php) |
 | Navigation (course More menu link) | [lib.php](lib.php) |

@@ -154,7 +154,7 @@ Notes and safety:
 
 ## Automated MLang cleanup (scheduled task)
 
-A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automatically (default: nightly) to detect and remove legacy `{mlang ...}` and `<span class="multilang">` tags from new or imported content. No manual intervention is needed for ongoing hygiene.
+A scheduled task (`Scheduled MLang cleanup (legacy multilang tags)`) runs automatically (default: every 5 minutes) to detect and remove legacy `{mlang ...}` and `<span class="multilang">` tags from new or imported content. The frequent schedule is intentional — courses carrying legacy mlang tags are imported continuously, and this task is the site-wide safety net behind the event-driven per-course cleanup. No manual intervention is needed for ongoing hygiene.
 
 Courses must have the **Enable Xlate** custom field checked for the cleanup to run; toggling it off preserves existing `{mlang}` markup for that course.
 
@@ -244,13 +244,18 @@ Notes about glossary and ordering
 - **Repair course custom fields**: `cli/sync_source_language_indices.php` realigns stored select indices with the current option order, and `cli/recreate_customfields.php` drops/rebuilds the entire Xlate category if you need a clean slate.
 - **Queue and inspect course jobs**: `cli/queue_course_job.php` seeds `local_xlate_course_job` + its adhoc task for a specific course. Pair it with `cli/inspect_job.php`, `cli/show_new_translations.php`, `cli/list_adhoc.php`, or `cli/run_adhoc_process.php` to debug queued work.
 - **Reset captured data safely**: `cli/truncate_xlate_tables.php` accepts `--dry-run` to preview which `local_xlate_*` tables would be truncated before wiping data in a dev/test environment.
+- **Health diagnostics**: `cli/diagnose_retranslation.php` (read-only) verifies that autotranslation is only filling gaps — no retranslate loops, no machine overwrites of reviewed translations — and reports job churn plus daily token volume. `cli/find_key.php --key=XKEY` (or `--keyid=N`) inspects a single key with its course associations and translations.
+- **Queue maintenance**: `cli/dedup_queue_jobs.php` removes duplicate course jobs; `cli/replay_job.php` re-runs a completed job on a small sample for debugging; `cli/retranslate_unreviewed.php` deliberately regenerates all *unreviewed* AI translations for a course (human-reviewed rows are never touched).
+- **Model evaluation**: `cli/compare_models.php` translates a sample of course strings with several models side by side to compare quality before switching the configured model.
+
+The complete CLI catalogue (including one-off repair helpers) is maintained in [CLAUDE.md](CLAUDE.md), Section 15.
 
 ## Scheduled Autotranslation (new)
 
 This plugin now includes a scheduled task to automatically generate translations for all missing keys and enabled languages using the autotranslation backend (e.g., OpenAI). The task runs in batches to avoid overloading the database or API, and will never overwrite existing translations.
 
 - Enable or disable the task in the plugin settings ("Enable scheduled autotranslation").
-- The task runs nightly by default, but can be triggered manually:
+- The task runs every 5 minutes by default (configurable in the scheduled tasks admin UI), and can be triggered manually:
 	```bash
 	sudo -u www-data php admin/cli/scheduled_task.php --execute='\\local_xlate\\task\\autotranslate_missing_task'
 	```

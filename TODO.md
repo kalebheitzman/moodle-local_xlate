@@ -50,7 +50,7 @@ Backlog derived from the full code review (2026-07-06, Claude Fable 5; findings 
 
 ## Translation quality (from 2026-07-11 Fable audit — review §10)
 
-- [x] **T1** Temperature default 0.2 in `build_payload()` (was provider default ~1.0). *(done 2026-07-11)*
+- [x] **T1** Temperature default 0.2 in `build_payload()` (was provider default ~1.0). *(done 2026-07-11; regressed all `gpt-5` course jobs to 100% failure — reasoning-tier models reject non-default temperature with HTTP 400. Fixed 2026-07-17: temperature omitted for `gpt-5`/`o*` models unless explicitly set in options.)*
 - [x] **T2** Fail cleanly on `finish_reason === 'length'` instead of brace-extracting truncated JSON. *(done 2026-07-11)*
 - [x] **T3** Unicode-aware glossary boundary matching (`\p{L}\p{N}` lookarounds — PCRE `\b` never matched Cyrillic/Arabic terms). *(done 2026-07-11)*
 - [ ] **T4** Persist + surface quality signals: `postprocess_item()` warnings (`placeholder_missing`, `glossary_not_applied`) and model confidence are currently computed then DISCARDED by `translate_course_task`. Store them (activity log or small column) and add a "needs attention" filter + confidence sort to manage.php review queue. **Highest-value open quality item.**
