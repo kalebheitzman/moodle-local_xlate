@@ -44,19 +44,32 @@ class mlang_migration {
     const DEFAULT_CHUNK = 250;
 
     /**
-     * Generic span matcher used for multilang span handling.
+     * Multilang span matcher.
      *
-     * Deliberately matches ANY span open tag and defers multilang/lang
-     * detection to parse_multilang_span(), so attribute order and extra
-     * attributes (id, style, dir, ...) never cause tags to be silently
-     * skipped. Non-multilang spans are returned untouched by the callbacks.
+     * A match STARTS only at a span whose open tag mentions "multilang";
+     * parse_multilang_span() then does the precise check (attribute order,
+     * quoting and extra attributes are tolerated). The body is matched
+     * non-greedily to the first </span> — the same rule Moodle's own
+     * filter_multilang used, so the result is what readers actually saw, even
+     * for malformed content (e.g. a language span containing another span).
      *
-     * Limitation (pre-existing): the non-greedy body match stops at the first
-     * </span>, so multilang spans containing NESTED spans are truncated. In
-     * practice multilang spans wrap inline text; nested markup other than
-     * spans is unaffected.
+     * Previously a match could start at ANY span: an outer styled span added by
+     * editors (<span style="font-family...">) swallowed the first multilang span
+     * inside it, which was then never processed, while its sibling language
+     * blocks were removed. Found 2026-10-22: thousands of migrated fields kept
+     * an English block and lost their other-language text, and harvest paired
+     * the wrong blocks (e.g. a heading with "heading + biography").
      */
-    const SPAN_PATTERN = '/<span\b([^>]*)>(.*?)<\/span>/is';
+    const SPAN_PATTERN = '/<span\b([^>]*\bmultilang\b[^>]*)>(.*?)<\/span>/is';
+
+    /** {mlang xx}...{mlang} block matcher. */
+    const MLANG_PATTERN = '/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is';
+
+    /** TinyMCE multilang2 marker span around a {mlang} tag ("multilang-begin" / "multilang-end"). */
+    const EDITOR_MARKER_PATTERN = '/<span\b[^>]*\bclass\s*=\s*["\'][^"\']*\bmultilang-(?:begin|end)\b[^"\']*["\'][^>]*>((?:(?!<\/?span\b).)*?)<\/span>/is';
+
+    /** Placeholder marking an extracted language block: "\x01mlb<n>\x02". */
+    const BLOCK_TOKEN_PATTERN = '/\x01mlb(\d+)\x02/';
 
     /**
      * Extract the language code from a span's attribute string when the span
@@ -70,7 +83,11 @@ class mlang_migration {
      * @return string|null Lowercase language code, or null if not multilang.
      */
     public static function parse_multilang_span(string $attrs): ?string {
-        if (!preg_match('/\bclass\s*=\s*["\'][^"\']*\bmultilang\b[^"\']*["\']/i', $attrs)) {
+        // "multilang" must be a whole class token: editor marker spans
+        // ("multilang-begin"/"multilang-end") are not language blocks. Word
+        // pastes may wrap it in curly quotes (class="“multilang”"), so only
+        // letters, digits, "_" and "-" count as part of a longer token.
+        if (!preg_match('/\bclass\s*=\s*["\'][^"\']*(?<![\w-])multilang(?![\w-])[^"\']*["\']/iu', $attrs)) {
             return null;
         }
         if (!preg_match('/\blang\s*=\s*["\']([a-zA-Z0-9_-]+)["\']/i', $attrs, $m)) {
@@ -226,51 +243,32 @@ class mlang_migration {
      *
      * Extracts source/display text and translations for downstream processing.
      *
+     * 'groups' lists blocks that stand together (one string in several
+     * languages); harvest_translations() pairs within a group only.
+     *
      * @param string $text Raw content containing legacy multilang markup.
-     * @return array{source_text:string,display_text:string,translations:array<string,string>} Parsed content data.
+     * @return array{source_text:string,display_text:string,translations:array<string,string>,
+     *     groups:array<int,array{source:string,translations:array<string,string>}>} Parsed content data.
      */
     public static function process_mlang_tags(string $text): array {
         $sitelang = get_config('core', 'lang') ?: 'en';
-        $validlangs = array_map('strtolower', array_keys(get_string_manager()->get_list_of_translations()));
-        $validlangs[] = 'other';
 
         $translations = [];
         $sourcetext = '';
         $displaytext = '';
         $firstcontent = null;
 
-        // Process multilang spans first. Attribute-order tolerant: matches any
-        // span and filters via parse_multilang_span(); non-multilang spans are
-        // left untouched. Processed spans are removed in the same pass.
-        $text = preg_replace_callback(self::SPAN_PATTERN,
-            function(array $m) use (&$translations, &$sourcetext, &$displaytext, &$firstcontent, $sitelang) {
-                $lang = self::parse_multilang_span($m[1]);
-                if ($lang === null) {
-                    return $m[0]; // Not a multilang span — keep as-is.
-                }
-                $content = trim($m[2]);
-                if ($firstcontent === null) { $firstcontent = $content; }
-                if ($lang === $sitelang || $lang === 'other') {
-                    $sourcetext .= $content . ' ';
-                    $displaytext .= $content . ' ';
-                } else {
-                    $translations[$lang] = isset($translations[$lang]) ? $translations[$lang] . ' ' . $content : $content;
-                }
-                return ''; // Remove processed span so it is not handled again.
-            }, $text) ?? $text;
-
-        // Process {mlang xx}...{mlang} pairs
-        if (preg_match_all('/\{mlang\s+([\w-]+)\}(.+?)\{mlang\}/is', $text, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $lang = strtolower(trim($match[1]));
-                $content = trim($match[2]);
-                if ($firstcontent === null) { $firstcontent = $content; }
-                if ($lang === $sitelang || $lang === 'other') {
-                    $sourcetext .= $content . ' ';
-                    $displaytext .= $content . ' ';
-                } else {
-                    $translations[$lang] = isset($translations[$lang]) ? $translations[$lang] . ' ' . $content : $content;
-                }
+        $blocks = [];
+        $flat = self::extract_blocks($text, $blocks);
+        foreach ($blocks as $block) {
+            $content = $block['content'];
+            if ($firstcontent === null) { $firstcontent = $content; }
+            if ($block['lang'] === $sitelang || $block['lang'] === 'other') {
+                $sourcetext .= $content . ' ';
+                $displaytext .= $content . ' ';
+            } else {
+                $lang = $block['lang'];
+                $translations[$lang] = isset($translations[$lang]) ? $translations[$lang] . ' ' . $content : $content;
             }
         }
 
@@ -281,7 +279,77 @@ class mlang_migration {
             $displaytext = $firstcontent;
         }
 
-        return ['source_text' => $sourcetext, 'display_text' => $displaytext, 'translations' => $translations];
+        // Groups: blocks standing next to each other (only whitespace between)
+        // are one string in several languages — the unit Moodle's
+        // filter_multilang switched between. Harvest pairs within a group,
+        // never across the whole field.
+        $groups = [];
+        if (preg_match_all('/(?:\x01mlb\d+\x02(?:\s|&nbsp;)*)+/', $flat, $runs)) {
+            foreach ($runs[0] as $run) {
+                preg_match_all(self::BLOCK_TOKEN_PATTERN, $run, $ids);
+                $group = ['source' => '', 'translations' => []];
+                foreach ($ids[1] as $id) {
+                    $block = $blocks[(int)$id];
+                    if ($block['lang'] === $sitelang || $block['lang'] === 'other') {
+                        $group['source'] = trim($group['source'] . ' ' . $block['content']);
+                    } else {
+                        $lang = $block['lang'];
+                        $group['translations'][$lang] = isset($group['translations'][$lang])
+                            ? $group['translations'][$lang] . ' ' . $block['content'] : $block['content'];
+                    }
+                }
+                $groups[] = $group;
+            }
+        }
+
+        return ['source_text' => $sourcetext, 'display_text' => $displaytext, 'translations' => $translations,
+            'groups' => $groups];
+    }
+
+    /**
+     * Unwrap TinyMCE multilang2 marker spans to the {mlang} tag text they hold,
+     * so the tags pair up like plain {mlang} markup.
+     *
+     * @param string $text Raw content.
+     * @return string Content without marker spans.
+     */
+    private static function unwrap_editor_markers(string $text): string {
+        if (stripos($text, 'multilang-') === false) {
+            return $text;
+        }
+        return preg_replace(self::EDITOR_MARKER_PATTERN, '$1', $text) ?? $text;
+    }
+
+    /**
+     * Replace every language block in $text with a placeholder token and record
+     * it (for grouping/harvest). Multilang spans first, then {mlang} pairs — the
+     * same order strip_mlang_tags() uses. On a PCRE failure the affected text is
+     * left unchanged and no blocks are recorded for it.
+     *
+     * @param string $text Raw content.
+     * @param array<int,array{lang:string,content:string}> $blocks Receives the blocks.
+     * @return string Text with each block replaced by its token "\x01mlb<n>\x02".
+     */
+    private static function extract_blocks(string $text, array &$blocks): string {
+        $text = self::unwrap_editor_markers($text);
+        foreach ([self::SPAN_PATTERN, self::MLANG_PATTERN] as $pattern) {
+            $before = count($blocks);
+            $out = preg_replace_callback($pattern, function(array $m) use (&$blocks, $pattern) {
+                $lang = ($pattern === self::SPAN_PATTERN) ? self::parse_multilang_span($m[1]) : strtolower(trim($m[1]));
+                if ($lang === null) {
+                    return $m[0]; // Not a multilang span — keep as-is.
+                }
+                $n = count($blocks);
+                $blocks[] = ['lang' => $lang, 'content' => trim($m[2])];
+                return "\x01mlb{$n}\x02";
+            }, $text);
+            if ($out === null) {
+                array_splice($blocks, $before);
+            } else {
+                $text = $out;
+            }
+        }
+        return $text;
     }
 
     /**
@@ -318,6 +386,10 @@ class mlang_migration {
         if ($text === null) {
             return '';
         }
+
+        // TinyMCE multilang2 marker spans hold {mlang} tag text: unwrap them so
+        // the tags pair up below instead of being treated as language blocks.
+        $text = self::unwrap_editor_markers($text);
 
         // Handle multilang spans with IN-PLACE replacement: each span is
         // replaced at its own position by its content (preferred language) or
@@ -368,6 +440,7 @@ class mlang_migration {
         return $text;
     }
 
+
     /**
      * Persist translations embedded in legacy mlang content instead of discarding them.
      *
@@ -387,12 +460,43 @@ class mlang_migration {
      * @return int Number of translation rows created.
      */
     public static function harvest_translations(array $parsed, int $courseid = 0, string $context = ''): int {
+        // Pair per group (blocks standing together), never across the whole
+        // field: joining every block of a field paired e.g. a heading with
+        // "heading + biography" when only some blocks were seen. Callers that
+        // pass no groups get the old whole-field behaviour.
+        $groups = $parsed['groups'] ?? [[
+            'source' => $parsed['source_text'] ?? '',
+            'translations' => $parsed['translations'] ?? [],
+        ]];
+        $count = 0;
+        foreach ($groups as $group) {
+            $count += self::harvest_group((string)($group['source'] ?? ''), $group['translations'] ?? [], $courseid, $context);
+        }
+        return $count;
+    }
+
+    /**
+     * Harvest one group: a source-language block and its translations.
+     *
+     * @param string $sourcetext Source-language content of the group.
+     * @param array<string,string> $translations Other-language content keyed by language.
+     * @param int $courseid Course to associate the key with (0 = none).
+     * @param string $context Context string stored on the course association.
+     * @return int Number of translation rows created.
+     */
+    private static function harvest_group(string $sourcetext, array $translations, int $courseid, string $context): int {
         global $DB;
 
-        $translations = $parsed['translations'] ?? [];
-        $sourcetext = trim($parsed['source_text'] ?? '');
+        $sourcetext = trim($sourcetext);
         if ($sourcetext === '' || empty($translations)) {
             return 0;
+        }
+        // Malformed markup (tags straddling blocks) leaves {mlang} syntax or
+        // placeholders inside a block: the pairing is unreliable, so skip it.
+        foreach (array_merge([$sourcetext], array_values($translations)) as $part) {
+            if (stripos((string)$part, '{mlang') !== false || strpos((string)$part, "\x01") !== false) {
+                return 0;
+            }
         }
 
         // Compute the plain-text xkey exactly as translator.js / rehash_keys.php do:

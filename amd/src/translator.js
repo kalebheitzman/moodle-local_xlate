@@ -49,6 +49,10 @@ define(['core/ajax'], function (Ajax) {
     'li', 'p'
   ];
   var BLOCK_CHILD_SELECTOR = BLOCK_CHILD_TAGS.join(', ');
+  // Longest time page text stays hidden while the bundle loads.
+  var LOADING_SAFETY_MS = 5000;
+  // Give up on a stalled bundle request and fall back to the original text.
+  var BUNDLE_FETCH_TIMEOUT_MS = 20000;
   // Content that must never be rebuilt by a translation: an element holding its
   // own loose text beside any of these is "mixed" (see getMixedTextInfo).
   var STRUCTURAL_SELECTOR = BLOCK_CHILD_SELECTOR + ', table, tr, td, th, dl, blockquote, pre, form, fieldset, ' +
@@ -838,21 +842,6 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
-   * Retrieve the captured source string for a translation key when available.
-   * @param {string} key - Structural key identifier.
-   * @returns {string|null} Original source string or null when unavailable.
-   */
-  function getSourceStringForKey(key) {
-    if (!key || !window.__XLATE__ || !window.__XLATE__.sourceStrings) {
-      return null;
-    }
-    if (Object.prototype.hasOwnProperty.call(window.__XLATE__.sourceStrings, key)) {
-      return window.__XLATE__.sourceStrings[key];
-    }
-    return null;
-  }
-
-  /**
    * Dispatch a custom event for other modules (e.g., UI controls).
    * @param {string} name - Event name to dispatch.
    * @param {Object} detail - Optional detail payload.
@@ -1180,24 +1169,12 @@ define(['core/ajax'], function (Ajax) {
 
     var showingTranslations = shouldShowTranslations();
     if (!showingTranslations) {
-      var sourceValue = getSourceStringForKey(key);
+      // Put back what the page itself had (saved just above on first touch),
+      // not the stored source string: the source is only the text, so writing
+      // it in dropped inputs, icons, link classes and other markup.
+      restoreOriginalValue(element, type);
       if (type === 'text') {
-        if (typeof sourceValue === 'string' && sourceValue !== '') {
-          if (!setMixedText(element, sourceValue)) {
-            var originalHost = element.tagName ? element.tagName.toLowerCase() : '';
-            var sanitizedSource = sanitizeTranslationHtml(sourceValue, originalHost);
-            element.innerHTML = sanitizedSource;
-          }
-        } else {
-          restoreOriginalValue(element, type);
-        }
         toggleAutoIndicator(element, key, false);
-      } else {
-        if (typeof sourceValue === 'string' && sourceValue !== '') {
-          element.setAttribute(type, sourceValue);
-        } else {
-          restoreOriginalValue(element, type);
-        }
       }
       return;
     }
@@ -1238,24 +1215,13 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
 
-    var sourceValue = getSourceStringForKey(key);
+    // Restore the page's own saved original. An element that was never
+    // translated has nothing saved and already shows its original, so it is
+    // left untouched (previously the stored source string was written in,
+    // damaging markup on every page load for users who keep originals on).
+    restoreOriginalValue(element, type);
     if (type === 'text') {
-      if (typeof sourceValue === 'string' && sourceValue !== '') {
-        if (!setMixedText(element, sourceValue)) {
-          var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
-          element.innerHTML = sanitizeTranslationHtml(sourceValue, hostTag);
-        }
-      } else {
-        restoreOriginalValue(element, type);
-      }
       toggleAutoIndicator(element, key, false);
-      return;
-    }
-
-    if (typeof sourceValue === 'string' && sourceValue !== '') {
-      element.setAttribute(type, sourceValue);
-    } else {
-      restoreOriginalValue(element, type);
     }
   }
 
@@ -1834,27 +1800,24 @@ define(['core/ajax'], function (Ajax) {
     if (shouldIgnoreElement(element) || processedElements.has(element)) {
       return;
     }
-    var tagName = element.tagName ? element.tagName.toLowerCase() : '';
-    // Inline formatting never gets its own key: it belongs to its parent's text,
-    // including the loose text of a mixed parent that was left untranslated.
-    if (
-      element.parentElement &&
-      INLINE_PIGGYBACK_TAGS.indexOf(tagName) !== -1 &&
-      (element.parentElement.hasAttribute(ATTR_KEY_PREFIX + 'content') ||
-        getMixedTextInfo(element.parentElement).mixed)
-    ) {
-      if (window.__XLATE__ && window.__XLATE__.isCapture) {
-        xlateDebug('[XLATE][Capture] Skipping inline child inside keyed parent', describeElementContext(element));
-      }
-      processedElements.add(element);
-      return;
-    }
     processedElements.add(element);
 
     var currentLang = (window.__XLATE__ && window.__XLATE__.lang) || M.cfg.language || 'en';
     var sourceLang = (window.__XLATE__ && window.__XLATE__.sourceLang) ||
       (window.__XLATE__ && window.__XLATE__.captureSourceLang) || 'en';
     var isCapture = (currentLang === sourceLang);
+
+    // Simple inline tags (<a>, <em>, <span>, <code>...) never get a text key of
+    // their own when the parent's string already contains their text: the parent
+    // block is the unit. Their translatable attributes (title, aria-label...)
+    // are still processed below.
+    if (isCoveredByParentText(element)) {
+      if (window.__XLATE__ && window.__XLATE__.isCapture) {
+        xlateDebug('[XLATE][Capture] Inline child covered by parent text', describeElementContext(element));
+      }
+      processAttributes(element, map, tagOnly, isCapture);
+      return;
+    }
 
     var skipTextCapture = false;
     if (element.querySelector && element.querySelector(BLOCK_CHILD_SELECTOR)) {
@@ -1894,7 +1857,18 @@ define(['core/ajax'], function (Ajax) {
       processCandidateValue(element, sourceText, 'text', tagOnly, isCapture, map);
     }
 
-    // Process attributes
+    processAttributes(element, map, tagOnly, isCapture);
+  }
+
+  /**
+   * Process the translatable attributes (placeholder, title, alt, aria-label).
+   * @param {Element} element - Element being processed.
+   * @param {Object} map - Translation map.
+   * @param {boolean} tagOnly - Whether we are in tag-only mode.
+   * @param {boolean} isCapture - Whether capture mode is active.
+   * @returns {void}
+   */
+  function processAttributes(element, map, tagOnly, isCapture) {
     ATTRIBUTE_TYPES.forEach(function (attr) {
       if (!element.hasAttribute(attr)) {
         return;
@@ -1902,6 +1876,31 @@ define(['core/ajax'], function (Ajax) {
       var value = element.getAttribute(attr).trim();
       processCandidateValue(element, value, attr, tagOnly, isCapture, map);
     });
+  }
+
+  /**
+   * Whether an inline element's text is already part of its parent's string, so
+   * it must not get a text key of its own. True for tags in ALLOWED_INLINE_TAGS
+   * (without structure inside) whose parent is keyed on its whole content, or
+   * whose parent is a mixed element left untranslated. A mixed parent keyed on
+   * its loose text only does not cover its children.
+   * @param {Element} element - Element to check.
+   * @returns {boolean} True when the parent's text covers this element.
+   */
+  function isCoveredByParentText(element) {
+    var parent = element.parentElement;
+    var tag = element.tagName ? element.tagName.toLowerCase() : '';
+    if (!parent || !Object.prototype.hasOwnProperty.call(ALLOWED_INLINE_TAGS, tag)) {
+      return false;
+    }
+    if (element.querySelector(STRUCTURAL_SELECTOR)) {
+      return false;
+    }
+    var parentInfo = getMixedTextInfo(parent);
+    if (parentInfo.mixed) {
+      return !parentInfo.node;
+    }
+    return parent.hasAttribute(ATTR_KEY_PREFIX + 'content');
   }
   Translator.dom.collectKeysFromElement = collectKeysFromElement;
 
@@ -2559,16 +2558,33 @@ define(['core/ajax'], function (Ajax) {
         run(cachedPayload.translations);
       }
 
-      fetch(config.bundleurl, {
+      // A stalled request would otherwise never settle; abort it so the catch
+      // below falls back to the original text.
+      var fetchOptions = {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys: keys })
-      })
+      };
+      var abortTimer = null;
+      if (typeof window.AbortController === 'function') {
+        var controller = new window.AbortController();
+        fetchOptions.signal = controller.signal;
+        abortTimer = setTimeout(function () {
+          controller.abort();
+        }, BUNDLE_FETCH_TIMEOUT_MS);
+      }
+      fetch(config.bundleurl, fetchOptions)
         .then(function (response) {
+          // Error responses (403 nocourseaccess, 500...) are not bundles: do not
+          // render or cache them.
+          if (!response.ok) {
+            throw new Error('Bundle request failed: HTTP ' + response.status);
+          }
           return response.json();
         })
         .then(function (map) {
+          clearTimeout(abortTimer);
           var translations = (map && map.translations) ? map.translations : map;
           var reviewMap = (map && map.reviewed && typeof map.reviewed === 'object') ? map.reviewed : {};
           var sourceMap = (map && map.sourceMap && typeof map.sourceMap === 'object') ? map.sourceMap : {};
@@ -2601,6 +2617,7 @@ define(['core/ajax'], function (Ajax) {
           return true;
         })
         .catch(function () {
+          clearTimeout(abortTimer);
           run({});
         });
     } catch (err) {
@@ -2680,6 +2697,13 @@ define(['core/ajax'], function (Ajax) {
     }
 
     document.documentElement.classList.add('xlate-loading');
+    // The head script's own 5 s timer may already have fired by the time this
+    // module loads, so re-adding the class needs its own timer: if the bundle is
+    // slow, show the original text rather than a blank page. run() translates
+    // the page whenever the bundle does arrive.
+    setTimeout(function () {
+      document.documentElement.classList.remove('xlate-loading');
+    }, LOADING_SAFETY_MS);
     initTranslationMode(config);
   }
   Translator.api.init = init;

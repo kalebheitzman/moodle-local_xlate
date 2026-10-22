@@ -546,7 +546,15 @@ class local_xlate_external extends external_api {
             ];
         }
 
-        $details = \local_xlate\local\api::associate_keys_with_course($sanitised, $courseid, $params['context']);
+        $statuses = \local_xlate\local\api::associate_keys_with_course($sanitised, $courseid, $params['context']);
+
+        // The API returns an xkey => status map; associate_keys_returns() declares
+        // a list of {key, status}. Returning the map made Moodle's response
+        // validation throw invalid_response_exception on every non-empty call.
+        $details = [];
+        foreach ($statuses as $xkey => $status) {
+            $details[] = ['key' => (string)$xkey, 'status' => (string)$status];
+        }
 
         return [
             'success' => true,

@@ -819,8 +819,11 @@ class backend {
      * @return array<int,string> Reasons: 'marker', 'length'.
      */
     public static function detect_commentary(string $source, string $translated): array {
+        // Strip only real tags: strip_tags() treats a stray "<" in text (e.g.
+        // "lab report< corresponding...") as a tag start and drops the rest.
         $plain = static function (string $s): string {
-            return trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $s = preg_replace('/<\/?[a-z][a-z0-9-]*(?:\s[^>]*)?\/?>/i', '', $s);
+            return trim(preg_replace('/\s+/u', ' ', html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
         };
         $src = $plain($source);
         $out = $plain($translated);

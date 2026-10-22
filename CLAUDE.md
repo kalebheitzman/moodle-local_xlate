@@ -74,7 +74,7 @@ local/xlate/
 │   ├── glossary.php                 # Glossary CRUD
 │   ├── observer.php                 # Event observers: course_restored/created → queue mlang_course_cleanup_task
 │   └── mlang_migration.php          # MLang tag autodiscovery, migration, and translation harvesting
-├── cli/                             # 31 CLI utilities + 1 shared hash library (complete catalogue in Section 15)
+├── cli/                             # 34 CLI utilities + 1 shared hash library (complete catalogue in Section 15)
 ├── db/
 │   ├── install.xml                  # DB schema (10 tables)
 │   ├── upgrade.php                  # Migration steps (bump version.php to trigger)
@@ -416,7 +416,7 @@ Legacy Moodle content uses `{mlang xx}...{mlang}` tags and `<span lang="xx" clas
 
 When the `courseids` option is set, the course filter is pushed into SQL (`course`/`courseid IN (...)`) and tables without a course column are skipped. Chunking uses `$DB->get_records_sql(..., 0, $chunk)` (no raw `LIMIT`).
 
-**Known limitation:** the span matcher's non-greedy body stops at the first `</span>`, so multilang spans containing nested spans are truncated. Multilang spans conventionally wrap inline text only.
+**Span matching (fixed 2026-10-22, A12):** a match starts only at a span whose tag mentions `multilang` (exact class token; curly-quoted Word classes accepted) and ends non-greedily at the first `</span>` — the same rule Moodle's `filter_multilang` used, so malformed content migrates to what readers saw (a language span containing another span is still truncated, as readers saw it). Previously a match could start at ANY span, so a styled wrapper (`<span style=...>`) swallowed the first language block inside it: thousands of fields kept an English block and lost the other languages, and harvest mis-paired blocks. TinyMCE multilang2 marker spans (`multilang-begin`/`multilang-end`) are unwrapped to their `{mlang}` text first. Harvest pairs per **group** (adjacent blocks), never across the whole field, and skips groups with leftover `{mlang` syntax. Verify any parser change against the provenance log (NEW vs current code on every logged `old_value`) before deploying.
 
 **`block_instances.configdata`** is special: the script base64-decodes + unserializes, recursively scans all string fields, re-serializes + base64-encodes before saving. (No harvesting on this path.)
 
@@ -441,7 +441,7 @@ Every migration change is logged to `local_xlate_mlang_migration` (old_value, ne
 
 ## 15. CLI Tools
 
-All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (31 scripts + 1 shared library); keep it in sync when adding or removing scripts.
+All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (34 scripts + 1 shared library); keep it in sync when adding or removing scripts.
 
 **Servers with the `xlate-cli` wrapper.** Some servers install a root-owned wrapper at `/usr/local/bin/xlate-cli` with a matching sudoers rule, so developers can run these scripts as `www-data` without a password. On those servers, use the wrapper instead of calling `php` directly:
 
@@ -480,6 +480,7 @@ The wrapper accepts only a plain script name from `local/xlate/cli/` (no paths) 
 | `analyze_html_selectors.php` | Report on CSS selectors used in capture |
 | `mark_critical_by_selector.php` | Backfill critical flags on keys captured before the auto-critical selector feature (`--dry-run`, `--verbose`) |
 | `delete_activity_date_keys.php` | Find and delete dynamic activity-date keys, e.g. "Closes: Sunday, 4 October…" (`--pattern=…`, `--execute`) |
+| `delete_translations.php` | Delete specific translation rows so they are re-translated (`--pairs=keyid:lang,...`; dry run unless `--execute`). Goes through `api::delete_translation()` (version bump, cache invalidation, activity log). Reviewed rows come back as unreviewed AI translations. |
 | `cleanup_translation_tags.php` | Clean stale HTML tags in translation records |
 
 ### Migrations & destructive resets
@@ -487,6 +488,8 @@ The wrapper accepts only a plain script name from `local/xlate/cli/` (no paths) 
 | Script | Purpose |
 |---|---|
 | `mlang_migrate.php` | Dry-run or execute MLang tag migration (`--execute`, `--max=N`, `--preferred=<lang>`) |
+| `find_mlang_migration.php` | Read-only: search the MLang provenance log (`local_xlate_mlang_migration`) by original content (`--search=TEXT`), show one row (`--id=N`), or count/list fields whose migrated value still contains a multilang span (`--leftover`). `--full` prints complete old/new values. |
+| `reharvest_mlang.php` | Recover human translations from the MLang provenance log with the fixed parser (A13). Pairs per group; skips pairs with leftover `{mlang}`, length outliers and uninstalled language codes; never overwrites (skips any (xkey, lang) already translated under ANY component); adds to the existing key or creates a `core` key. Saves reviewed, source `mlang`; bumps version + invalidates cache once per language. Dry run unless `--execute`; `--existing-only` skips new keys; `--lang=xx`. |
 | `rehash_keys_dryrun.php` | Preview xkey migration — shows counts, merges, conflicts. No DB changes. |
 | `rehash_keys.php` | Execute xkey migration — recomputes all xkeys, merges duplicates, preserves reviewed translations. **Take DB backup first.** |
 | `truncate_xlate_tables.php` | Reset all `local_xlate_*` tables (`--dry-run` first!) |
