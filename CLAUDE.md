@@ -443,6 +443,15 @@ Every migration change is logged to `local_xlate_mlang_migration` (old_value, ne
 
 All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (30 scripts + 1 shared library); keep it in sync when adding or removing scripts.
 
+**Servers with the `xlate-cli` wrapper.** Some servers install a root-owned wrapper at `/usr/local/bin/xlate-cli` with a matching sudoers rule, so developers can run these scripts as `www-data` without a password. On those servers, use the wrapper instead of calling `php` directly:
+
+```bash
+sudo -u www-data xlate-cli <script>.php [options]     # e.g. sudo -u www-data xlate-cli find_key.php --keyid=5351
+sudo -u www-data xlate-cli                             # no arguments: lists the available scripts
+```
+
+The wrapper accepts only a plain script name from `local/xlate/cli/` (no paths) and passes every other argument through unchanged. It does not cover Moodle core scripts such as `admin/cli/scheduled_task.php`; run those with `sudo -u www-data php ...` as shown below. Why a wrapper: `sudo-rs` (the default `sudo` on recent Ubuntu) rejects wildcards in command arguments, so a sudoers rule like `/usr/bin/php /path/to/cli/*.php` no longer works.
+
 ### Queue & translation operations
 
 | Script | Purpose |
@@ -652,7 +661,7 @@ This section documents which files depend on which others. Before changing any f
 
 ## 19. Security Model
 
-- `bundle.php`: POST-only; requires `sesskey`; capability-gated per context (`viewbundle` for courses, `viewsystem` for system)
+- `bundle.php`: POST-only; requires `sesskey`; capability-gated per context (`viewbundle` for courses, `viewsystem` for system). Course requests also require `can_access_course()` (except SITEID), because `viewbundle` is granted to the authenticated-user archetype at system level. Key backfill is capped at 2000 keys.
 - All external API functions use `require_capability()` before acting
 - `associate_keys`: rejects batches > 200 keys; requires enrolment for course-scoped calls
 - HTML in translations: sanitized through `sanitizeTranslationHtml()` whitelist in `translator.js` (both on capture and on render)

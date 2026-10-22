@@ -326,7 +326,11 @@ class course_job_manager {
                           FROM {local_xlate_key_course} kc
                           JOIN {local_xlate_key} k ON k.id = kc.keyid
                      LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang AND t.status = 1
-                         WHERE kc.courseid = :courseid";
+                         WHERE kc.courseid = :courseid
+                           AND NOT EXISTS (
+                               SELECT 1 FROM {local_xlate_tr} rt
+                                WHERE rt.keyid = k.id AND rt.lang = :targetlang2 AND rt.reviewed = 1
+                           )";
 
                 if ($onlymissing) {
                     // Only keys that have no active translation at all.
@@ -336,7 +340,17 @@ class course_job_manager {
                     // reviewed=1 translations, so exclude them from the total.
                     $sql .= ' AND (t.id IS NULL OR t.reviewed <> 1)';
                 }
-                $total += (int)$DB->get_field_sql($sql, ['courseid' => $courseid, 'targetlang' => $lang]);
+                // The NOT EXISTS above additionally excludes keys where a human
+                // reviewed-and-rejected the translation (reviewed=1 on an
+                // *inactive* row, status<>1) — the JOIN above only ever sees
+                // reviewed on an active row, so without this a rejected row
+                // looks identical to genuinely missing work and gets recounted
+                // as "total" forever even though translate_course_task can
+                // never save over it (see the matching fix there).
+                $total += (int)$DB->get_field_sql(
+                    $sql,
+                    ['courseid' => $courseid, 'targetlang' => $lang, 'targetlang2' => $lang]
+                );
             }
 
             return $total;

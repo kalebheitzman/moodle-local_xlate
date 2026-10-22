@@ -280,6 +280,10 @@ class api {
             return preg_match('/^[a-z0-9\-_:]{3,64}$/i', $k);
         })));
 
+        // Same hard cap as get_keys_bundle(): the key list comes straight from the
+        // client, and each new association is one INSERT.
+        $clean = array_slice($clean, 0, 2000);
+
         if (empty($clean)) {
             return 0;
         }

@@ -120,6 +120,16 @@ if ($courseid > 0 && $resolvedcourseid > 0 && (int)$courseid !== (int)$resolvedc
 
 if ($coursecontext) {
     require_capability('local/xlate:viewbundle', $coursecontext);
+    // viewbundle is granted to the authenticated-user archetype at system level,
+    // so on its own it does not prove the requester may see this course. Without
+    // this check any logged-in user could read another course's bundle and
+    // backfill keys into it (which also drives autotranslation spend).
+    if ((int)$coursecontext->instanceid !== (int)SITEID
+            && !can_access_course(get_course($coursecontext->instanceid))) {
+        http_response_code(403);
+        echo json_encode(['error' => 'nocourseaccess']);
+        exit;
+    }
 } else {
     require_capability('local/xlate:viewsystem', context_system::instance());
 }
@@ -137,8 +147,8 @@ header('Cache-Control: private, max-age=120');
 
 try {
     // Backfill any missing course associations before assembling the bundle.
-    // This makes the plugin self-healing: the first page load by any user on a
-    // course page wires up missing local_xlate_key_course rows so the
+    // This makes the plugin self-healing: the first page load by any user who can
+    // access the course wires up missing local_xlate_key_course rows so the
     // autotranslation task finds them on its next run, without requiring a
     // manager to browse the page in source language first.
     if ($courseparam > 0 && !empty($keys)) {

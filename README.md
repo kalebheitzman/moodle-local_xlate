@@ -239,6 +239,8 @@ Notes about glossary and ordering
 
 ## CLI Utilities
 
+Run each script as the web server user from the Moodle root, for example `sudo -u www-data php local/xlate/cli/find_key.php --keyid=5351`. If your server has the `xlate-cli` wrapper installed, use `sudo -u www-data xlate-cli find_key.php --keyid=5351` instead (see [CLAUDE.md](CLAUDE.md), Section 15).
+
 - **List translatable courses**: `cli/list_translatable_courses.php` prints every course that has both a source language and at least one target selected, making it easy to spot classes that still need configuration.
 - **Scheduled autotranslation dry run**: `cli/autotranslate_dryrun.php` mirrors the scheduled task logic, showing each course’s source language, target set, and count of missing keys (add `--showmissing` for samples, `--courseid=<id>` or `--limit=<n>` to narrow the output).
 - **Repair course custom fields**: `cli/sync_source_language_indices.php` realigns stored select indices with the current option order, and `cli/recreate_customfields.php` drops/rebuilds the entire Xlate category if you need a clean slate.

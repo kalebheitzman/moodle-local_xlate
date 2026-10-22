@@ -207,7 +207,19 @@ class translate_course_task extends adhoc_task {
         $sql .= " WHERE kc.courseid = :courseid AND kc.id > :lastid";
 
         if ($sqlfiltered) {
-            $sql .= " AND sqlt.id IS NULL";
+            // sqlt.id IS NULL alone only proves there's no *active* translation;
+            // a human-reviewed-and-rejected row (reviewed=1 on an inactive row)
+            // matches that too, since the join above requires status=1. Without
+            // this NOT EXISTS, a rejected translation is indistinguishable from
+            // genuinely missing work — it gets re-sent to the API and re-translated
+            // every run, and the result is silently discarded by the reviewed
+            // guard in api::save_translation(), forever.
+            $sql .= " AND sqlt.id IS NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM {local_xlate_tr} rsqlt
+                           WHERE rsqlt.keyid = k.id AND rsqlt.lang = :sqltlang2 AND rsqlt.reviewed = 1
+                      )";
+            $params['sqltlang2'] = $targetlangs[0];
         }
 
         $sql .= " ORDER BY kc.id ASC";
@@ -286,7 +298,8 @@ class translate_course_task extends adhoc_task {
             foreach ($items as $item) {
                 if ($sqlfiltered) {
                     // SQL already excluded records that have an active translation
-                    // (including reviewed ones), so no per-item DB check is needed.
+                    // or a human-reviewed-and-rejected inactive one, so no per-item
+                    // DB check is needed.
                     $payload = $item;
                     unset($payload['keyid']);
                     $itemsbylang[$targetlang][] = $payload;
@@ -306,6 +319,21 @@ class translate_course_task extends adhoc_task {
                     }
                     // Always protect human-reviewed translations.
                     if ((int)$existing->reviewed === 1) {
+                        continue;
+                    }
+                } else {
+                    // No *active* translation — but if a human reviewed and
+                    // rejected this (key, lang) pair (reviewed=1 on an inactive
+                    // row), it's a deliberate rejection awaiting manual fixup,
+                    // not missing work. Sending it to the API would just have
+                    // the result silently discarded by the reviewed guard in
+                    // api::save_translation(), every run, forever.
+                    $rejected = $DB->record_exists('local_xlate_tr', [
+                        'keyid' => (int)($item['keyid'] ?? 0),
+                        'lang' => $targetlang,
+                        'reviewed' => 1,
+                    ]);
+                    if ($rejected) {
                         continue;
                     }
                 }
