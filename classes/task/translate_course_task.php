@@ -375,6 +375,11 @@ class translate_course_task extends adhoc_task {
                 throw $e;
             }
 
+            foreach ($result['rejected'] ?? [] as $rej) {
+                mtrace('[local_xlate] Not saved, suspected added commentary (' . implode(', ', $rej['reasons']) . '): key '
+                    . $rej['id'] . ' lang ' . $targetlang . '. Will retry next run.');
+            }
+
             if (empty($result['ok']) || empty($result['results']) || !is_array($result['results'])) {
                 continue;
             }

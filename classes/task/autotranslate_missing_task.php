@@ -174,7 +174,10 @@ class autotranslate_missing_task extends scheduled_task {
                   FROM {local_xlate_key_course} kc
                   JOIN {local_xlate_key} k ON k.id = kc.keyid
              LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
-                 WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)";
+                 WHERE kc.courseid = :courseid AND (t.id IS NULL OR (t.status <> 1 AND t.reviewed = 0))";
+        // A reviewed row that is inactive (status<>1) is a human rejection, not
+        // missing work: translate_course_task skips it, so counting it here queued
+        // an empty job every hour for every such course.
 
         $params = ['courseid' => $courseid, 'targetlang' => $targetlang];
         return (int)$DB->get_field_sql($sql, $params);

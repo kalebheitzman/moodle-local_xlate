@@ -153,7 +153,7 @@ function get_missing_translation_count(int $courseid, string $targetlang): int {
               FROM {local_xlate_key_course} kc
               JOIN {local_xlate_key} k ON k.id = kc.keyid
          LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
-             WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)";
+             WHERE kc.courseid = :courseid AND (t.id IS NULL OR (t.status <> 1 AND t.reviewed = 0))";
 
     return (int)$DB->get_field_sql($sql, ['courseid' => $courseid, 'targetlang' => $targetlang]);
 }
@@ -174,7 +174,7 @@ function get_missing_translation_sample(int $courseid, string $targetlang, int $
               FROM {local_xlate_key_course} kc
               JOIN {local_xlate_key} k ON k.id = kc.keyid
          LEFT JOIN {local_xlate_tr} t ON t.keyid = k.id AND t.lang = :targetlang
-             WHERE kc.courseid = :courseid AND (t.id IS NULL OR t.status <> 1)
+             WHERE kc.courseid = :courseid AND (t.id IS NULL OR (t.status <> 1 AND t.reviewed = 0))
           ORDER BY k.id ASC";
 
     return $DB->get_records_sql($sql, ['courseid' => $courseid, 'targetlang' => $targetlang], 0, $limit);

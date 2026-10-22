@@ -65,7 +65,7 @@ $found = false;
 foreach ($rs as $r) {
     $found = true;
     if ((int)$r->reviewed === 1) {
-        echo "reviewed=1 (TOKEN LOOP — retranslated every run, save discarded): {$r->cnt}\n";
+        echo "reviewed=1 (rejected by a reviewer — never auto-translated; needs a human translation in manage.php): {$r->cnt}\n";
     } else {
         echo "reviewed=0 (WILL BE OVERWRITTEN + reactivated by autotranslate): {$r->cnt}\n";
     }

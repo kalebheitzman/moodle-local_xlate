@@ -833,7 +833,9 @@ class local_xlate_external extends external_api {
 
         if (empty($result) || empty($result['ok']) || empty($result['results']) || !is_array($result['results'])) {
             $errors = '';
-            if (!empty($result['errors'])) {
+            if (!empty($result['rejected'])) {
+                $errors = 'suspected added commentary (' . implode(', ', $result['rejected'][0]['reasons']) . '); try again';
+            } else if (!empty($result['errors'])) {
                 $errors = is_array($result['errors']) ? implode(', ', $result['errors']) : (string)$result['errors'];
             }
             throw new \moodle_exception('autotranslate_failed', 'local_xlate', '', null, $errors);

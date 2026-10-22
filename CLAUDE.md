@@ -74,7 +74,7 @@ local/xlate/
 │   ├── glossary.php                 # Glossary CRUD
 │   ├── observer.php                 # Event observers: course_restored/created → queue mlang_course_cleanup_task
 │   └── mlang_migration.php          # MLang tag autodiscovery, migration, and translation harvesting
-├── cli/                             # 30 CLI utilities + 1 shared hash library (complete catalogue in Section 15)
+├── cli/                             # 31 CLI utilities + 1 shared hash library (complete catalogue in Section 15)
 ├── db/
 │   ├── install.xml                  # DB schema (10 tables)
 │   ├── upgrade.php                  # Migration steps (bump version.php to trigger)
@@ -441,7 +441,7 @@ Every migration change is logged to `local_xlate_mlang_migration` (old_value, ne
 
 ## 15. CLI Tools
 
-All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (30 scripts + 1 shared library); keep it in sync when adding or removing scripts.
+All CLI tools run as `sudo -u www-data php local/xlate/cli/<script>.php`. This is the complete catalogue (31 scripts + 1 shared library); keep it in sync when adding or removing scripts.
 
 **Servers with the `xlate-cli` wrapper.** Some servers install a root-owned wrapper at `/usr/local/bin/xlate-cli` with a matching sudoers rule, so developers can run these scripts as `www-data` without a password. On those servers, use the wrapper instead of calling `php` directly:
 
@@ -474,6 +474,7 @@ The wrapper accepts only a plain script name from `local/xlate/cli/` (no paths) 
 |---|---|
 | `diagnose_retranslation.php` | Read-only health check: verifies nothing is stuck in a retranslate loop and no reviewed row was machine-overwritten; reports job churn + daily token volume |
 | `find_key.php` | Inspect one key: source, course associations, translations (`--key=XKEY` or `--keyid=N`) |
+| `scan_commentary.php` | Read-only: run the AI-commentary check (`backend::detect_commentary()`) over stored translations; reports flagged rows per language, split reviewed/unreviewed, with samples (`--lang=xx`, `--samples=N`). Also surfaces garbled or wrong-content translations via the length rule. |
 | `repair_course_associations.php` | Create missing `local_xlate_key_course` rows for a course. Fixes keys captured on system-context pages (courseid=0) that are invisible to autotranslation and manage.php courseid filters. `--global-only` restricts to keys with zero existing associations. `--key=XKEY` targets one key. `--enqueue` queues autotranslation after repair. |
 | `sync_source_language_indices.php` | Repair custom field integer→locale mapping after option order change |
 | `analyze_html_selectors.php` | Report on CSS selectors used in capture |

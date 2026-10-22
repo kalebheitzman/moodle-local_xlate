@@ -309,6 +309,7 @@ class backend {
 
             // Post-process each item: enforce glossary and validate placeholders.
             $results = [];
+            $rejected = [];
             foreach ($decoded['results'] as $r) {
                 if (empty($r['id']) || !isset($r['translated'])) {
                     // Skip invalid item but record error.
@@ -326,6 +327,16 @@ class backend {
                 $postin = ['id' => $r['id'], 'source_text' => $orig['source_text'] ?? '', 'translated' => $r['translated'], 'placeholders' => $orig['placeholders'] ?? []];
                 // Postprocess is advisory-only: detect applied glossary terms and warnings but do not mutate translation.
                 $post = self::postprocess_item($postin, $glossary);
+
+                // Suspected added commentary: keep it out of the results so no
+                // caller saves it; the key stays missing and is retried next run.
+                $commentary = array_values(array_filter($post['warnings'], static function ($w) {
+                    return strpos($w, 'commentary_suspected:') === 0;
+                }));
+                if (!empty($commentary)) {
+                    $rejected[] = ['id' => (string)$r['id'], 'reasons' => $commentary, 'translated' => (string)$r['translated']];
+                    continue;
+                }
 
                 $results[] = array_merge([
                     'id' => (string)$r['id'],
@@ -394,7 +405,7 @@ class backend {
                 $modelstr = $meta['model'] ?? '';
                 $elapsed = $meta['elapsed_ms'] ?? 0;
                 $langvalue = is_array($targetlang) ? implode(',', $targetlang) : (string)$targetlang;
-                $batchsize = is_array($results) ? count($results) : 0;
+                $batchsize = count($results) + count($rejected);
 
                 $usagejobid = null;
                 if (is_array($options)) {
@@ -428,7 +439,7 @@ class backend {
                     debugging('[local_xlate] Failed to log batch token usage: ' . $e->getMessage(), DEBUG_DEVELOPER);
                 }
             }
-            return ['ok' => true, 'results' => $results, 'meta' => $meta, 'raw' => $response];
+            return ['ok' => true, 'results' => $results, 'rejected' => $rejected, 'meta' => $meta, 'raw' => $response];
 
         } catch (\Exception $e) {
             // Log the full detail for server-side diagnosis only. Do not include
@@ -781,7 +792,60 @@ class backend {
             }
         }
 
+        foreach (self::detect_commentary((string)($item['source_text'] ?? ''), (string)$translated) as $reason) {
+            $warnings[] = 'commentary_suspected:' . $reason;
+        }
+
         return ['translated' => $translated, 'applied_glossary_terms' => $applied, 'warnings' => $warnings];
+    }
+
+    /**
+     * Detect a translation that carries added commentary (translator notes,
+     * explanations) the prompt forbids. Flagged results are not saved, so the
+     * string stays missing and is retried on the next run.
+     *
+     * Heuristics, each deliberately loose to avoid rejecting real translations:
+     * - marker: a "note"/"translator" label in the target text when the source
+     *   has no such label of its own (covers the target languages in use plus
+     *   leaked English; "Uwaga:" etc. also translate "Warning:"; bare "Not" is
+     *   excluded because it is Turkish for "Grade");
+     * - length: plain text longer than max(3x source, source + 40 chars).
+     * Brackets are deliberately not checked: reviewed translations legitimately
+     * add [original titles] in bibliographies and [editorial insertions] in
+     * Scripture quotations (measured with cli/scan_commentary.php, 2026-10-22).
+     *
+     * @param string $source Source text (may contain inline HTML).
+     * @param string $translated Model output (may contain inline HTML).
+     * @return array<int,string> Reasons: 'marker', 'length'.
+     */
+    public static function detect_commentary(string $source, string $translated): array {
+        $plain = static function (string $s): string {
+            return trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        };
+        $src = $plain($source);
+        $out = $plain($translated);
+        if ($src === '' || $out === '' || $out === $src) {
+            return [];
+        }
+
+        $reasons = [];
+        $sourcelabels = '/(?<![\p{L}\p{N}])(?:note|nb|notice|remark|comment|hint|tip|warning|attention|caution'
+            . '|important|translat)/iu';
+        if (!preg_match($sourcelabels, $src)) {
+            $marker = '/(?<![\p{L}\p{N}])(?:note|nota|notă|uwaga|poznámka|примечание|примітка|забележка|бележка'
+                . '|megjegyzés|hinweis|anmerkung|ملاحظة|ملحوظة|הערה)\s*:'
+                . '|(?<![\p{L}\p{N}])(?:translator|translation|прим\.\s*пер|примечание\s+переводчика)/iu';
+            if (preg_match($marker, $out)) {
+                $reasons[] = 'marker';
+            }
+        }
+
+        $srclen = \core_text::strlen($src);
+        if (\core_text::strlen($out) > max(3 * $srclen, $srclen + 40)) {
+            $reasons[] = 'length';
+        }
+
+        return $reasons;
     }
 
     /**
