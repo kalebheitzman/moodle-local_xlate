@@ -646,9 +646,11 @@ define(['core/ajax'], function (Ajax) {
         if (!value || value.indexOf('<') === -1) {
             return value || '';
         }
-        var div = document.createElement('div');
+        // Parse in an inert document: an element owned by the live page would
+        // load images and fire handlers (e.g. img onerror) in untrusted markup.
+        var div = document.implementation.createHTMLDocument('').createElement('div');
         div.innerHTML = value;
-        return (div.textContent || div.innerText || '').trim();
+        return (div.textContent || '').trim();
     }
 
     function getCriticalMap() {

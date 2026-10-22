@@ -49,6 +49,10 @@ define(['core/ajax'], function (Ajax) {
     'li', 'p'
   ];
   var BLOCK_CHILD_SELECTOR = BLOCK_CHILD_TAGS.join(', ');
+  // Content that must never be rebuilt by a translation: an element holding its
+  // own loose text beside any of these is "mixed" (see getMixedTextInfo).
+  var STRUCTURAL_SELECTOR = BLOCK_CHILD_SELECTOR + ', table, tr, td, th, dl, blockquote, pre, form, fieldset, ' +
+    'input, select, textarea, button, iframe, video, audio, svg, canvas, object, embed';
   if (typeof window !== 'undefined') {
     if (typeof window.XLATE_LAST_TOGGLE_REQUEST === 'undefined') {
       window.XLATE_LAST_TOGGLE_REQUEST = null;
@@ -204,6 +208,24 @@ define(['core/ajax'], function (Ajax) {
     });
   }
 
+  var inertDoc = null;
+
+  /**
+   * Create an empty div owned by an inert document for parsing untrusted HTML.
+   * Markup parsed into an element owned by the live document can fire event
+   * handlers (e.g. img onerror) before sanitizeNode() strips them. A document
+   * from createHTMLDocument() has no browsing context: it loads no resources
+   * and runs no handlers. textContent is identical either way, so key hashes
+   * derived via extractPlainText() are unaffected.
+   * @returns {Element} Empty div owned by an inert document.
+   */
+  function createInertContainer() {
+    if (!inertDoc) {
+      inertDoc = document.implementation.createHTMLDocument('');
+    }
+    return inertDoc.createElement('div');
+  }
+
   /**
    * Sanitize translated HTML before injecting into the DOM.
    * @param {string} value - Raw translation string.
@@ -214,7 +236,7 @@ define(['core/ajax'], function (Ajax) {
     if (!value) {
       return '';
     }
-    var container = document.createElement('div');
+    var container = createInertContainer();
     container.innerHTML = value;
     sanitizeNode(container);
 
@@ -222,7 +244,7 @@ define(['core/ajax'], function (Ajax) {
     if (targetTag && container.childNodes.length === 1) {
       var firstChild = container.childNodes[0];
       if (firstChild.nodeType === 1 && firstChild.tagName.toLowerCase() === targetTag && firstChild.childNodes.length) {
-        var unwrap = document.createElement('div');
+        var unwrap = createInertContainer();
         while (firstChild.firstChild) {
           unwrap.appendChild(firstChild.firstChild);
         }
@@ -264,7 +286,7 @@ define(['core/ajax'], function (Ajax) {
     if (value.indexOf('<') === -1) {
       return value.trim();
     }
-    var container = document.createElement('div');
+    var container = createInertContainer();
     container.innerHTML = value;
     return (container.textContent || container.innerText || '').trim();
   }
@@ -317,6 +339,66 @@ define(['core/ajax'], function (Ajax) {
   }
 
   /**
+   * Classify an element whose own loose text sits beside structural content
+   * (a list, table, form field, media...). Such elements are translated by
+   * changing that one text node only, so the structure is never rebuilt.
+   * Eligible only when the loose text is a single text node; when it is split
+   * or mixed with inline formatting the element is left untranslated instead.
+   * @param {Element} element - Element to inspect.
+   * @returns {{mixed: boolean, node: (Text|null)}} node is set when eligible.
+   */
+  function getMixedTextInfo(element) {
+    var none = { mixed: false, node: null };
+    if (!element || !element.firstElementChild || !element.querySelector(STRUCTURAL_SELECTOR)) {
+      return none;
+    }
+    if (!getDirectChildText(element)) {
+      return none;
+    }
+    var textNode = null;
+    var eligible = true;
+    for (var i = 0; i < element.childNodes.length; i++) {
+      var child = element.childNodes[i];
+      if (child.nodeType === 3) {
+        if (child.nodeValue.trim()) {
+          if (textNode) {
+            eligible = false;
+          }
+          textNode = child;
+        }
+      } else if (child.nodeType === 1 && child.textContent.trim() &&
+          !child.matches(STRUCTURAL_SELECTOR) && !child.querySelector(STRUCTURAL_SELECTOR) &&
+          !(child.classList && child.classList.contains('accesshide'))) {
+        // Inline formatting with text (e.g. <strong>) belongs to the loose text,
+        // which a single text-node change cannot carry.
+        eligible = false;
+      }
+    }
+    return { mixed: true, node: eligible ? textNode : null };
+  }
+
+  /**
+   * Put text into a mixed element's loose text node, keeping its surrounding
+   * whitespace. The value is reduced to plain text and set as nodeValue, so no
+   * markup is ever parsed into the page.
+   * @param {Element} element - Target element.
+   * @param {string} html - Translation, source or original value.
+   * @returns {boolean} True when the element was mixed and has been handled.
+   */
+  function setMixedText(element, html) {
+    var info = getMixedTextInfo(element);
+    if (!info.node) {
+      return false;
+    }
+    var text = extractPlainText(html);
+    if (text) {
+      var edges = /^(\s*)[\s\S]*?(\s*)$/.exec(info.node.nodeValue);
+      info.node.nodeValue = edges[1] + text + edges[2];
+    }
+    return true;
+  }
+
+  /**
    * Determine the capture payload for an element, preserving safe inline markup.
    * .accesshide children are stripped before hashing so the key is stable across
    * all languages (Moodle renders those spans in the browsing language).
@@ -326,6 +408,14 @@ define(['core/ajax'], function (Ajax) {
   function getElementSourcePayload(element) {
     if (!element) {
       return '';
+    }
+    // Mixed elements: the payload is the loose text alone, HTML-escaped like the
+    // innerHTML-derived payloads so extractPlainText() hashes it unchanged.
+    var mixedNode = getMixedTextInfo(element).node;
+    if (mixedNode) {
+      var escaper = createInertContainer();
+      escaper.textContent = mixedNode.nodeValue.trim();
+      return escaper.innerHTML;
     }
     // Strip .accesshide descendants before computing source — these contain
     // Moodle's own translated labels that differ per browsing language, so
@@ -566,6 +656,23 @@ define(['core/ajax'], function (Ajax) {
     var mapped = window.__XLATE__.sourceMap[normalized];
     return (typeof mapped === 'string' && mapped !== '') ? mapped : '';
   }
+  // Letters of scripts without case (Hebrew, Arabic, Indic, Thai, Lao, Georgian,
+  // Hangul, kana, CJK). Cased scripts are caught by isLetterChar's case test.
+  var UNCASED_LETTER_RE = new RegExp('[֐-׿؀-ۿݐ-ݿࢠ-ࣿ' +
+    'ऀ-෿฀-໿Ⴀ-ჿᄀ-ᇿ぀-ヿ㄰-㆏' +
+    '一-鿿가-힯יִ-﷿ﹰ-﻿]');
+
+  /**
+   * Determine whether a character is a letter in any script. ES5 regexes have
+   * no \p{L}, so cased scripts (Latin, Cyrillic, Greek, Armenian...) are found
+   * by case mapping and uncased scripts by UNCASED_LETTER_RE.
+   * @param {string} ch - Single UTF-16 code unit.
+   * @returns {boolean} True when the character is a letter.
+   */
+  function isLetterChar(ch) {
+    return ch.toLowerCase() !== ch.toUpperCase() || UNCASED_LETTER_RE.test(ch);
+  }
+
   /**
    * Determine whether text should be considered for translation.
    * @param {string} text - Candidate text
@@ -576,8 +683,24 @@ define(['core/ajax'], function (Ajax) {
       return false;
     }
 
-    var alphaCount = (text.match(/[a-zA-Z]/g) || []).length;
-    if (alphaCount < text.length * 0.3) {
+    // Letters in any script, not just A-Z (non-Latin source languages captured
+    // nothing). Accept text that is mostly letters, or that holds at least one
+    // real word: "10:30 – 11:00 Break" is only 26% letters but must translate.
+    var letterCount = 0;
+    var run = 0;
+    var longestRun = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (isLetterChar(text.charAt(i))) {
+        letterCount++;
+        run++;
+        if (run > longestRun) {
+          longestRun = run;
+        }
+      } else {
+        run = 0;
+      }
+    }
+    if (letterCount < text.length * 0.3 && longestRun < 3) {
       return false;
     }
 
@@ -619,7 +742,8 @@ define(['core/ajax'], function (Ajax) {
     }
     var original = '';
     if (type === 'text') {
-      original = element.innerHTML;
+      var mixedNode = getMixedTextInfo(element).node;
+      original = mixedNode ? mixedNode.nodeValue : element.innerHTML;
     } else {
       original = element.getAttribute(type) || '';
     }
@@ -643,7 +767,12 @@ define(['core/ajax'], function (Ajax) {
     }
     var original = element.getAttribute(dataAttr) || '';
     if (type === 'text') {
-      element.innerHTML = original;
+      var mixedNode = getMixedTextInfo(element).node;
+      if (mixedNode) {
+        mixedNode.nodeValue = original;
+      } else {
+        element.innerHTML = original;
+      }
     } else {
       element.setAttribute(type, original);
     }
@@ -1054,9 +1183,11 @@ define(['core/ajax'], function (Ajax) {
       var sourceValue = getSourceStringForKey(key);
       if (type === 'text') {
         if (typeof sourceValue === 'string' && sourceValue !== '') {
-          var originalHost = element.tagName ? element.tagName.toLowerCase() : '';
-          var sanitizedSource = sanitizeTranslationHtml(sourceValue, originalHost);
-          element.innerHTML = sanitizedSource;
+          if (!setMixedText(element, sourceValue)) {
+            var originalHost = element.tagName ? element.tagName.toLowerCase() : '';
+            var sanitizedSource = sanitizeTranslationHtml(sourceValue, originalHost);
+            element.innerHTML = sanitizedSource;
+          }
         } else {
           restoreOriginalValue(element, type);
         }
@@ -1084,9 +1215,11 @@ define(['core/ajax'], function (Ajax) {
     }
 
     if (type === 'text') {
-      var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
-      var sanitized = sanitizeTranslationHtml(value, hostTag);
-      setElementHtml(element, sanitized);
+      if (!setMixedText(element, value)) {
+        var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
+        var sanitized = sanitizeTranslationHtml(value, hostTag);
+        setElementHtml(element, sanitized);
+      }
       toggleAutoIndicator(element, key, !isKeyReviewed(key));
     } else {
       element.setAttribute(type, value);
@@ -1108,8 +1241,10 @@ define(['core/ajax'], function (Ajax) {
     var sourceValue = getSourceStringForKey(key);
     if (type === 'text') {
       if (typeof sourceValue === 'string' && sourceValue !== '') {
-        var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
-        element.innerHTML = sanitizeTranslationHtml(sourceValue, hostTag);
+        if (!setMixedText(element, sourceValue)) {
+          var hostTag = element.tagName ? element.tagName.toLowerCase() : '';
+          element.innerHTML = sanitizeTranslationHtml(sourceValue, hostTag);
+        }
       } else {
         restoreOriginalValue(element, type);
       }
@@ -1700,10 +1835,13 @@ define(['core/ajax'], function (Ajax) {
       return;
     }
     var tagName = element.tagName ? element.tagName.toLowerCase() : '';
+    // Inline formatting never gets its own key: it belongs to its parent's text,
+    // including the loose text of a mixed parent that was left untranslated.
     if (
       element.parentElement &&
-      element.parentElement.hasAttribute(ATTR_KEY_PREFIX + 'content') &&
-      INLINE_PIGGYBACK_TAGS.indexOf(tagName) !== -1
+      INLINE_PIGGYBACK_TAGS.indexOf(tagName) !== -1 &&
+      (element.parentElement.hasAttribute(ATTR_KEY_PREFIX + 'content') ||
+        getMixedTextInfo(element.parentElement).mixed)
     ) {
       if (window.__XLATE__ && window.__XLATE__.isCapture) {
         xlateDebug('[XLATE][Capture] Skipping inline child inside keyed parent', describeElementContext(element));
@@ -1728,6 +1866,18 @@ define(['core/ajax'], function (Ajax) {
         skipTextCapture = true;
         if (window.__XLATE__ && window.__XLATE__.isCapture) {
           xlateDebug('[XLATE][Capture] Skipping container without direct text', describeElementContext(element));
+        }
+      }
+    }
+
+    if (!skipTextCapture) {
+      var mixedInfo = getMixedTextInfo(element);
+      if (mixedInfo.mixed && !mixedInfo.node) {
+        // Loose text is split or interleaved with inline formatting: leave it in
+        // the source language rather than rebuild the structure around it.
+        skipTextCapture = true;
+        if (window.__XLATE__ && window.__XLATE__.isCapture) {
+          xlateDebug('[XLATE][Capture] Skipping mixed element with split loose text', describeElementContext(element));
         }
       }
     }

@@ -272,6 +272,19 @@ if ($langfiltersubmitted) {
 }
 $PAGE->set_url(new moodle_url('/local/xlate/manage.php', $pageparams));
 
+// Course-level managers (managecourse without site-level manage) may only act on
+// keys associated with the course they are managing. Without this check any
+// editing teacher could edit, delete or flag shared translations site-wide.
+$keyactions = ['save_translation', 'savetranslation', 'delete_translation', 'set_critical'];
+if (in_array($action, $keyactions, true) && !has_capability('local/xlate:manage', $systemcontext)) {
+    $actionkeyid = required_param('keyid', PARAM_INT);
+    if ($filter_courseid <= 0 || !$DB->record_exists('local_xlate_key_course',
+            ['keyid' => $actionkeyid, 'courseid' => $filter_courseid])) {
+        redirect($PAGE->url, get_string('nopermissions', 'error', 'local/xlate:manage'), null,
+            \core\output\notification::NOTIFY_ERROR);
+    }
+}
+
 if (($action === 'save_translation' || $action === 'savetranslation') && confirm_sesskey()) {
     $keyid = required_param('keyid', PARAM_INT);
     $targetlang = required_param('target_lang', PARAM_ALPHA);
@@ -303,7 +316,9 @@ if (($action === 'save_translation' || $action === 'savetranslation') && confirm
     $targetlang = required_param('target_lang', PARAM_ALPHA);
 
     try {
-        $DB->delete_records('local_xlate_tr', ['keyid' => $keyid, 'lang' => $targetlang]);
+        // Route through the API so the bundle version is bumped, the cache is
+        // invalidated and the deletion is written to the activity log.
+        \local_xlate\local\api::delete_translation($keyid, $targetlang, $filter_courseid);
         redirect($PAGE->url, get_string('translation_deleted', 'local_xlate'), null, \core\output\notification::NOTIFY_SUCCESS);
     } catch (Exception $e) {
         redirect($PAGE->url, get_string('delete_failed', 'local_xlate'), null, \core\output\notification::NOTIFY_ERROR);
